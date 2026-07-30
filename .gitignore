@@ -1,3 +1,7 @@
 .DS_Store
 *.swp
 node_modules/
+
+# 创建过程中的空目录残留（沙箱权限限制无法删除，可手动 rm -rf）
+skills/skills-rebuild/
+claude/claude-rebuild/
