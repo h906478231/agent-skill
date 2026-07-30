@@ -1,0 +1,4 @@
+interface:
+  display_name: "技术评审门禁"
+  short_description: "编码前调度架构/并发/性能/数据库/安全五角色评审并停在人工确认"
+  default_prompt: "Use $opsx-technical-review to run the Technical Review Gate on this OpenSpec change before apply."
