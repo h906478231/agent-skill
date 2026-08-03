@@ -5,7 +5,7 @@
 ## 目录结构
 
 ```
-skills/          跨 agent 通用能力（26 个），SKILL.md 标准格式
+skills/          跨 agent 通用能力（28 个），SKILL.md 标准格式
 claude/          Claude Code 专用资产（command / subagent），其他 agent 不支持
 ```
 
@@ -69,8 +69,9 @@ npx skills remove --skill ddd-aggregate
 `ddd-event-storming` `ddd-event-sourcing-lmax` `ddd-cqrs` `ddd-saga`
 `ddd-persistence` `ddd-ports-adapters` `ddd-unit-testing`
 
-### OpenSpec 工作流（6 个）
+### OpenSpec 工作流（8 个）
 
+`openspec-verify-change` `openspec-ff-change`
 `openspec-propose` `openspec-apply-change` `openspec-update-change`
 `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
@@ -88,7 +89,7 @@ npx skills remove --skill ddd-aggregate
 
 | 资产 | 说明 | 手动安装位置 |
 |---|---|---|
-| `commands/opsx/` | opsx 命令组（7 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
+| `commands/opsx/` | opsx 命令组（9 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
 | `agents/ddd-modeler.md` | DDD 建模 subagent | `~/.claude/agents/` |
 | `agents/ddd-architect-claude.md` | DDD 主控 subagent | `~/.claude/agents/` |
 

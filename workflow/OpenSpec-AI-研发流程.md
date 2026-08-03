@@ -36,7 +36,7 @@ OpenSpec Explore
       ◄────────────────────────────────────────────────────────┘
 OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/测试）
       ▼
-验证（Phase 6）→ 单测/集测/Sonar/编译 + AI Code Review → final-review.md
+验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对 + 项目自有测试
       ▼
 OpenSpec Archive → specs 沉淀
 ```
@@ -52,7 +52,7 @@ OpenSpec Archive → specs 沉淀
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply` | 按已评审通过的设计实现，不重新设计 | 代码 + `tasks.md` 勾选 | 是 |
-| Phase 6 验证 | 见 Phase 6 章节 | 编译/单测/集测/静态扫描 + AI Code Review | `final-review.md` | 修复项 |
+| Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 | 校验报告（对话内） | 修复项 |
 | 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs | `openspec/specs/**` | 否 |
 
 ## 门禁适用范围分级
@@ -220,7 +220,7 @@ Technical Review Approved: 张三  2026-07-31
 
 | 防线 | 覆盖范围 | 拦不住什么 |
 |------|---------|-----------|
-| ① `hooks/check-review-approval.sh`（PreToolUse/Bash） | Bash 执行 `openspec apply` / `opsx apply` | **`/opsx:apply` 斜杠命令与 skill 调用** —— 它们不产生 Bash 命令，PreToolUse(Bash) 永不触发 |
+| ① `hooks/check-review-approval.sh`（PreToolUse/Bash） | Bash 执行 `openspec apply` / `opsx apply` | **`/opsx:apply` 斜杠命令与 skill 调用** —— 它们不产生 Bash 命令，PreToolUse(Bash) 永不触发；**且注册指向旧版副本时会静默放行**（见「门禁启用与部署」） |
 | ② apply skill / command 的 Step 2 前置校验 | `/opsx:apply` 与 `openspec-apply-change` 两条路径 | 提示词级约束，可能被用户明确指令覆盖 |
 | ③ 人工签字 + code review | 最终把关 | 签字人不看就签 |
 
@@ -232,7 +232,19 @@ Technical Review Approved: 张三  2026-07-31
 
 hook **必须注册后才生效**。未注册时第一道防线为零 —— 这是最常见的「以为有门禁其实没有」的原因。
 
-在 `~/.claude/settings.json` 中注册：
+**先确认要注册哪个路径**。`~/.claude/skills/` 下的同名目录很可能是符号链接，指向别处的独立副本（如 `~/.cc-switch/skills/`、其他 skill 管理器的仓库）。**那些副本未必包含本仓的门禁修复** —— 指过去等于启用了一个看似生效、实则放行的旧版 hook，比不注册更危险。先查清楚：
+
+```bash
+ls -ld ~/.claude/skills/opsx-technical-review
+```
+
+若输出以 `l` 开头（符号链接）且箭头指向非本仓路径，**改为直接指向本仓源文件**，或先把本仓内容同步过去。用下面这条命令得到确切路径：
+
+```bash
+realpath skills/opsx-technical-review/hooks/check-review-approval.sh
+```
+
+在 `~/.claude/settings.json` 中注册（把 `<上一步的输出>` 替换为实际绝对路径，此处不能用 `~` 以外的相对路径）：
 
 ```json
 {
@@ -243,7 +255,7 @@ hook **必须注册后才生效**。未注册时第一道防线为零 —— 这
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/skills/opsx-technical-review/hooks/check-review-approval.sh"
+            "command": "bash <上一步的输出>"
           }
         ]
       }
@@ -252,7 +264,15 @@ hook **必须注册后才生效**。未注册时第一道防线为零 —— 这
 }
 ```
 
-验证是否生效（在一个没有 `review-summary.md` 的变更上执行，应被拒绝）：
+**注册后必须验证内容版本**，只看「有没有 hooks 字段」不够 —— 旧版 hook 在缺 `review-summary.md` 时会放行：
+
+```bash
+grep -c '技术评审门禁尚未执行' "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' ~/.claude/settings.json | sed 's/^bash //')"
+```
+
+输出 `1` 才是含 fail-open 修复的版本；输出 `0` 说明指向了旧副本，必须改路径。
+
+再做行为验证（在一个没有 `review-summary.md` 的变更上执行，应被拒绝）：
 
 ```bash
 openspec apply some-change-without-review
@@ -304,13 +324,31 @@ jq --version
 
 ## Phase 6 验证详解
 
-Phase 6 的成熟度低于 Phase 3–4，以下为约定动作，其中静态扫描与 AI Code Review 依赖项目自身配置：
+核心是一条命令 —— `/opsx:verify`（OpenSpec 上游命令，非本仓自建）：
 
-1. **编译 + 单测 + 集测**：按项目实际构建命令执行（Maven/Gradle/npm 等），全绿才继续。
-2. **静态扫描**：Sonar 或等价工具，按项目质量门限判定。
-3. **AI Code Review**：对本次变更的 diff 做审查，产出 `final-review.md`。
-4. **条件核对**：逐条核对 `review-summary.md`「有条件通过的条件清单」是否真的实现 —— **这是门禁闭环的最后一环，最容易被跳过**。
-5. **实现与设计的一致性核对**：实现是否偏离了已评审的方案。
+```bash
+/opsx:verify <change-name>
+```
+
+它对实现做三维校验，其中 **Coherence 正是「实现与设计的一致性核对」**：
+
+| 维度 | 校验内容 |
+|------|---------|
+| Completeness | `tasks.md` 勾选是否完整、spec 中的 requirement 是否都已实现 |
+| Correctness | requirement ↔ 代码实现映射、scenario 是否被覆盖 |
+| **Coherence** | **实现是否偏离 `design.md` 的既定决策**、代码风格与项目模式是否一致 |
+
+输出为对话内的评分卡 + 按 CRITICAL / WARNING / SUGGESTION 分级的问题清单。**存在 CRITICAL 时不得归档。**
+
+### 门禁特有的补充：条件核对
+
+`/opsx:verify` 不认识 `review-summary.md`（那是本门禁的产物，非 OpenSpec 原生 artifact），因此它**不会**核对「有条件通过」的条件。这一步需单独做：
+
+逐条核对 `review-summary.md`「有条件通过的条件清单」中的每项是否真的实现 —— **这是门禁闭环的最后一环，也最容易被跳过**。条件既然映射到了 `tasks.md` 的勾选项，此处即核对这些任务是否真的完成而非只是打了勾。
+
+### 项目自有的验证动作
+
+编译、单测、集测、静态扫描（Sonar 等）按**项目自身规范**执行，本仓不做约定（这是跨项目 skill 仓，写死构建命令没有意义）。全绿才可归档。
 
 ### 修复后要不要重走门禁？
 
@@ -318,11 +356,9 @@ Phase 6 的成熟度低于 Phase 3–4，以下为约定动作，其中静态扫
 |---------|---------------------|
 | 纯 bug 修复，未动设计 | 否，重跑 Phase 6 即可 |
 | 修复过程中**改了技术方案**（换存储、改并发模型、改表结构） | **是**，回 `design.md` 更新后按牵连关系重走对应维度 |
-| 发现设计缺陷但决定下个变更再改 | 否，记录为 risk accepted 并在 `final-review.md` 留痕 |
+| 发现设计缺陷但决定下个变更再改 | 否，记录为 risk accepted 并在 `review-summary.md` 留痕（见「不认可评审结论」） |
 
 **判据与 Phase 3 一致：`design.md` 变了没有。** 代码改了但设计没变 → 不重走门禁。
-
-`final-review.md` 建议包含：验证项清单与结果、条件核对表、遗留问题与后续计划。
 
 ## 开发者速查
 
@@ -353,8 +389,10 @@ Phase 6 的成熟度低于 Phase 3–4，以下为约定动作，其中静态扫
 # Phase 5：代码实现（人工签字后才放行）
 /opsx:apply add-contact-batch-import
 
-# Phase 6：验证 + AI 审查 + 条件核对
-#   → final-review.md
+# Phase 6：验证（实现与设计一致性 + 条件核对）
+/opsx:verify add-contact-batch-import
+#   → 三维校验报告；有 CRITICAL 则修复后重跑
+#   → 另需人工核对 review-summary.md 的「有条件通过」条件是否真的实现
 
 # 收口
 /opsx:archive add-contact-batch-import
