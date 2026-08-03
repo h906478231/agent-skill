@@ -27,7 +27,24 @@ Implement tasks from an OpenSpec change.
 
    Always announce: "Using change: <name>" and how to override (e.g., `/opsx:apply <other>`).
 
-2. **Check status to understand the schema**
+2. **Technical Review Gate check (BLOCKING — do this before writing any code)**
+
+   If the project uses the Technical Review Gate (i.e. `openspec/changes/<name>/review-summary.md` exists, or the project documents the gate in `workflow/OpenSpec-AI-研发流程.md`), you MUST verify human sign-off before implementing anything:
+
+   ```bash
+   cat "openspec/changes/<name>/review-summary.md" | grep -m1 'Technical Review Approved:'
+   ```
+
+   - **No `review-summary.md`** → the gate never ran. STOP. Tell the user to run `/opsx:review <name>` first. Do not implement. (Exception: the change is documented as gate-exempt — see the L0 tier in the workflow doc — in which case the exemption itself must be recorded and signed in `review-summary.md`.)
+   - **Sign-off line is a blank placeholder** (empty, `____`, `<签名>`) → the gate ran but no human approved it. STOP. Ask the user to review `review/*.md` and sign. Do not implement.
+   - **Gate verdict is `BLOCKED`** → STOP even if a signature is present; unresolved Blockers must be closed in `design.md` and the gate re-run.
+   - **Signed and `READY_FOR_HUMAN_APPROVAL`** → proceed.
+
+   You must not sign on the user's behalf, edit the sign-off line, or talk the user into skipping this. A `PreToolUse` hook enforces the same rule for `openspec apply` run via Bash, but it cannot see skill/slash-command invocations — this step is the only check on that path, so do not skip it.
+
+   Additionally, carry any **「有条件通过」conditions** from `review-summary.md` into implementation: each condition should map to a task in `tasks.md` and be satisfied before that task is checked off.
+
+3. **Check status to understand the schema**
    ```bash
    openspec status --change "<name>" --json
    ```
@@ -36,7 +53,7 @@ Implement tasks from an OpenSpec change.
    - `planningHome`, `changeRoot`, and `actionContext`: planning scope and edit constraints
    - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
 
-3. **Get apply instructions**
+4. **Get apply instructions**
 
    ```bash
    openspec instructions apply --change "<name>" --json
@@ -53,14 +70,14 @@ Implement tasks from an OpenSpec change.
    - If `state: "all_done"`: congratulate, suggest archive
    - Otherwise: proceed to implementation
 
-4. **Read context files**
+5. **Read context files**
 
    Read every file path listed under `contextFiles` from the apply instructions output.
    The files depend on the schema being used:
    - **spec-driven**: proposal, specs, design, tasks
    - Other schemas: follow the contextFiles from CLI output
 
-5. **Show current progress**
+6. **Show current progress**
 
    Display:
    - Schema being used
@@ -68,7 +85,7 @@ Implement tasks from an OpenSpec change.
    - Remaining tasks overview
    - Dynamic instruction from CLI
 
-6. **Implement tasks (loop until done or blocked)**
+7. **Implement tasks (loop until done or blocked)**
 
    For each pending task:
    - Show which task is being worked on
@@ -83,7 +100,7 @@ Implement tasks from an OpenSpec change.
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
-7. **On completion or pause, show status**
+8. **On completion or pause, show status**
 
    Display:
    - Tasks completed this session
@@ -143,6 +160,7 @@ What would you like to do?
 ```
 
 **Guardrails**
+- **Never implement before the Technical Review Gate is signed off** (Step 2) when the project uses it — no exceptions, no signing on the user's behalf
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing

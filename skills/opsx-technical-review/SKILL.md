@@ -31,6 +31,20 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 - **前置条件**：变更必须已有 `proposal.md`（需求已澄清）和 `design.md`（方案已确定且含推荐方案）。缺任一则拒绝启动门禁，提示先补齐。
 - **人工门禁不可跳过**：产出 `review-summary.md` 后必须停下，等待人工写入批准标记，禁止自动继续 `apply`。
 
+### 门禁的真实强制力（别高估）
+
+门禁由三道防线组成，强度递减 —— 它拦得住「忘了」，拦不住「铁了心要绕」：
+
+| 防线 | 覆盖 | 拦不住什么 |
+|------|------|-----------|
+| `hooks/check-review-approval.sh`（PreToolUse/Bash） | Bash 执行 `openspec apply` / `opsx apply` | `/opsx:apply` 斜杠命令、skill 调用（不产生 Bash 命令，hook 永不触发） |
+| apply skill / command 的 Step 2 前置校验 | `/opsx:apply` 与 `openspec-apply-change` 两条调用路径 | 提示词级约束，模型可能被用户指令覆盖 |
+| 人工签字 + code review | 最终把关 | 签字人不看就签 |
+
+**三道全绕过的方式始终存在**：直接让 Agent 用 Edit/Write 改代码，不经过任何 apply 入口。所以门禁定位是**流程纪律工具，不是安全边界**；它保证「正常路径上不会漏评审」，不保证「无法绕过」。
+
+hook 需在 `~/.claude/settings.json` 的 `PreToolUse` 中注册后才生效，未注册时第一道防线为零 —— 注册方法见 `workflow/OpenSpec-AI-研发流程.md`「门禁启用与部署」。
+
 ## 前置校验
 
 1. 解析变更名（参数传入，或从对话上下文推断，或 `openspec list --json` 让用户选）。
@@ -62,6 +76,14 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 每条 finding 统一字段：`ID | 严重级别(Blocker/Major/Minor) | 位置 | 风险根因 | 建议修复`。
 每份评审末尾给出该维度结论：`通过 / 有条件通过 / 打回`。
 
+**重走门禁时的闭环验证（关键）**：若 `design.md` 末尾存在「## 评审意见闭环记录」区块，**必须把该区块一并放进每个子 agent 的 prompt**，并要求它先验证上轮闭环、再做本轮审查。子 agent 是全新上下文，没有上轮记忆 —— 不给该区块，它要么重复报同一问题，要么完全漏掉验证。指令要点：
+
+- 对闭环记录中「维度」属于该角色的每一行，按「落在 design 的哪一节」去 `design.md` 核实改动是否真的落地且真正解决了原始问题。
+- 已真正闭环 → 不重复报告，在 `review/<role>.md` 的「上轮闭环验证」小节记为「已闭环」。
+- 声称已改但查无对应内容、或改动不足以解决原始问题 → **沿用原 finding ID** 重新报告，severity 保持 Blocker，说明「上轮声称已闭环但实际未闭环」。
+- 标注 risk accepted / 驳回 → 尊重决策，不再作为 Blocker 重复报告；若认为决策依据已不成立，可降级为 Major 并说明理由。
+- 本轮新问题用新 ID，避免与历史 ID 冲突。
+
 ### Step 2 — 汇总为 review-summary.md
 
 读取 `review/*.md`，汇总写入 `review-summary.md`：
@@ -70,7 +92,10 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 - **已确认风险**：按维度 + 严重级别汇总（Blocker/Major/Minor 计数）。
 - **修改建议**：合并各维度建议，去重，标注需在 `design.md`/`tasks.md` 落实的项。
 - **最终设计调整**：需要回改 design 的点（若有）。
+- **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环。**「声称已闭环但实际未闭环」一律按未闭环 Blocker 计入裁决。**
 - **人工确认区**：留一行待人工填写的批准标记。
+
+裁决为 `BLOCKED` 时，须明确告知用户：回改 `design.md` 后必须在其末尾「## 评审意见闭环记录」区块登记每条 Blocker，格式 `finding ID | 维度 | 原始问题 | 处理方式 | 落在 design 的哪一节 | 轮次`。下一轮评审 Agent 依赖该区块验证闭环。
 
 ### Step 3 — 停在人工确认门禁
 
@@ -83,7 +108,7 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 
 ## 重走门禁（迭代回路）
 
-铁律：**门禁输入是 `design.md`（+ `proposal.md`）。输入变了且变在评审 5 维度上 → 重走；没变 → 不重走。** 详见 `docs/OpenSpec-AI-研发流程.md` 的「迭代回路操作手册」。
+铁律：**门禁输入是 `design.md`（+ `proposal.md`）。输入变了且变在评审 5 维度上 → 重走；没变 → 不重走。** 详见 `workflow/OpenSpec-AI-研发流程.md` 的「迭代回路操作手册」。
 
 - **全量重走**：改动牵动跨维度地基（模块归属、计数一致性、表模型）时，5 维度全跑。
   - Workflow：`{ "change": "<name>" }`（roles 缺省）
@@ -99,5 +124,5 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 
 - 上游：`/opsx:explore`（需求澄清+方案探索）产出 proposal.md / design.md。
 - 本门禁：`/opsx:review`（本 skill）产出 review/*.md + review-summary.md，停在人工确认。
-- 下游：人工批准后 `/opsx:apply` 编码 → 测试 → `/code-review` → `openspec archive`。
+- 下游：人工批准后 `/opsx:apply` 编码 → Phase 6 验证（编译/单测/集测/静态扫描 + AI Code Review，详见 `workflow/OpenSpec-AI-研发流程.md`）→ `openspec archive`。
 - 角色分工：OpenSpec = 流程与设计文档中心；本门禁 = AI 评审编排；Coding Agent = 代码执行者。

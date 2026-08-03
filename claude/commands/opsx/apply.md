@@ -23,7 +23,24 @@ Implement tasks from an OpenSpec change.
 
    Always announce: "Using change: <name>" and how to override (e.g., `/opsx:apply <other>`).
 
-2. **Check status to understand the schema**
+2. **技术评审门禁校验（BLOCKING —— 写任何代码之前必须做）**
+
+   若项目启用了技术评审门禁（存在 `openspec/changes/<name>/review-summary.md`，或项目 `workflow/OpenSpec-AI-研发流程.md` 中定义了门禁），实现前必须确认人工签字：
+
+   ```bash
+   grep -m1 'Technical Review Approved:' "openspec/changes/<name>/review-summary.md"
+   ```
+
+   - **无 `review-summary.md`** → 门禁从未执行。**停止**，提示先运行 `/opsx:review <name>`。（例外：该变更属 L0 豁免范围，但豁免理由本身也须记录并签字在 `review-summary.md`）
+   - **签字行仍是空白占位**（空、`____`、`<签名>`）→ 门禁跑过但无人批准。**停止**，请用户审阅 `review/*.md` 后签字。
+   - **裁决为 `BLOCKED`** → 即使有签字也**停止**；未闭环 Blocker 必须先回 `design.md` 闭环并重走门禁。
+   - **已签字且 `READY_FOR_HUMAN_APPROVAL`** → 放行，继续下一步。
+
+   禁止代替用户签字、禁止修改签字行、禁止劝说用户跳过。Bash 侧的 `PreToolUse` hook 只能拦截 `openspec apply` 命令，**看不到 `/opsx:apply` 这条斜杠命令路径** —— 本步骤是该路径上唯一的检查点，不得跳过。
+
+   另：`review-summary.md` 中「有条件通过」的条件必须带入实现，每条应对应 `tasks.md` 的一个任务项，满足后才可勾选。
+
+3. **Check status to understand the schema**
    ```bash
    openspec status --change "<name>" --json
    ```
@@ -32,7 +49,7 @@ Implement tasks from an OpenSpec change.
    - `planningHome`, `changeRoot`, and `actionContext`: planning scope and edit constraints
    - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
 
-3. **Get apply instructions**
+4. **Get apply instructions**
 
    ```bash
    openspec instructions apply --change "<name>" --json
@@ -49,14 +66,14 @@ Implement tasks from an OpenSpec change.
    - If `state: "all_done"`: congratulate, suggest archive
    - Otherwise: proceed to implementation
 
-4. **Read context files**
+5. **Read context files**
 
    Read every file path listed under `contextFiles` from the apply instructions output.
    The files depend on the schema being used:
    - **spec-driven**: proposal, specs, design, tasks
    - Other schemas: follow the contextFiles from CLI output
 
-5. **Show current progress**
+6. **Show current progress**
 
    Display:
    - Schema being used
@@ -64,7 +81,7 @@ Implement tasks from an OpenSpec change.
    - Remaining tasks overview
    - Dynamic instruction from CLI
 
-6. **Implement tasks (loop until done or blocked)**
+7. **Implement tasks (loop until done or blocked)**
 
    For each pending task:
    - Show which task is being worked on
@@ -79,7 +96,7 @@ Implement tasks from an OpenSpec change.
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
-7. **On completion or pause, show status**
+8. **On completion or pause, show status**
 
    Display:
    - Tasks completed this session
@@ -139,6 +156,7 @@ What would you like to do?
 ```
 
 **Guardrails**
+- **技术评审门禁未签字前，绝不写任何实现代码**（Step 2）—— 无例外，不代签
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing

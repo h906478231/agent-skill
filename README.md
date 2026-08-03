@@ -78,11 +78,17 @@ npx skills remove --skill ddd-aggregate
 
 `concurrency-analysis` `opsx-technical-review`（含 roles / hooks / workflow 附属文件）
 
+## 研发流程
+
+`workflow/OpenSpec-AI-研发流程.md` —— OpenSpec + 技术评审门禁的完整研发流程：分级规则、门禁裁决、闭环留痕、签字责任、门禁强制力边界与部署方法。配套资产为 `skills/opsx-technical-review` 与 `claude/commands/opsx/review.md`。
+
+门禁 hook 需在 `~/.claude/settings.json` 注册后才生效，注册方法见该文档「门禁启用与部署」。
+
 ## claude/ 专用资产
 
 | 资产 | 说明 | 手动安装位置 |
 |---|---|---|
-| `commands/opsx/` | opsx 命令组（6 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
+| `commands/opsx/` | opsx 命令组（7 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
 | `agents/ddd-modeler.md` | DDD 建模 subagent | `~/.claude/agents/` |
 | `agents/ddd-architect-claude.md` | DDD 主控 subagent | `~/.claude/agents/` |
 

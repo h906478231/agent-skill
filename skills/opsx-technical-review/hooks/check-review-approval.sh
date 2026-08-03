@@ -14,6 +14,14 @@
 #
 # 输入：stdin 为 Claude Code 传入的 PreToolUse 事件 JSON，含 tool_input.command。
 # 输出：放行则 exit 0；拦截则输出 deny 决策 JSON 并 exit 0（由 permissionDecision 决定）。
+#
+# 覆盖边界（重要，勿误以为本 hook 拦得住一切）：
+#   ✔ 拦得住：Bash 工具执行 `openspec apply <name>` / `opsx apply <name>`
+#   ✘ 拦不住：`/opsx:apply` 斜杠命令与 openspec-apply-change skill 调用
+#             —— 它们是 Skill/Command 调用，不产生 Bash 命令，PreToolUse(Bash) 永不触发。
+#             该路径由 openspec-apply-change/SKILL.md 的 Step 0 前置校验兜底（提示词级约束）。
+#   ✘ 拦不住：Agent 直接用 Edit/Write 改业务代码而完全不调 apply。
+# 结论：本 hook 是「机制层」防线之一，不是唯一防线，也不能替代人工 code review。
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -59,9 +67,17 @@ deny() {
   exit 0
 }
 
-# 找不到变更名或 summary：保守放行（可能是 openspec apply 的其他子形态），但打印提示
-if [ -z "$CHANGE_NAME" ] || [ ! -f "$SUMMARY" ]; then
+# 变更名解析不出来（apply 的其他子形态，如无参数交互式）：无法定位 summary，只能放行。
+# 这是本 hook 的已知盲区，apply skill 的 Step 0 会做第二道校验。
+if [ -z "$CHANGE_NAME" ]; then
   exit 0
+fi
+
+# summary 不存在 → 门禁压根没跑过 → 拦截。
+# 注意：绝不能在这里放行，否则「从未跑门禁」的变更反而畅通无阻，
+# 门禁就只拦得住「跑过但没签字」的，形同虚设。
+if [ ! -f "$SUMMARY" ]; then
+  deny "变更 [$CHANGE_NAME] 未找到 review-summary.md（期望路径：openspec/changes/$CHANGE_NAME/review-summary.md），技术评审门禁尚未执行，禁止 apply。请先运行 /opsx:review $CHANGE_NAME 完成门禁并人工签字。若该变更属于 L0 豁免范围，请在 review-summary.md 中记录豁免理由并签字。"
 fi
 
 # 取签字行
