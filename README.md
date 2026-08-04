@@ -5,7 +5,7 @@
 ## 目录结构
 
 ```
-skills/          跨 agent 通用能力（28 个），SKILL.md 标准格式
+skills/          跨 agent 通用能力（31 个），SKILL.md 标准格式
 claude/          Claude Code 专用资产（command / subagent），其他 agent 不支持
 ```
 
@@ -75,13 +75,24 @@ npx skills remove --skill ddd-aggregate
 `openspec-propose` `openspec-apply-change` `openspec-update-change`
 `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
+### OpenSpec 流程增强（4 个）
+
+| skill | 作用 | 命令 |
+|---|---|---|
+| `opsx-technical-review` | 编码前五维度技术评审门禁（含 `shared/` 规则事实源、roles、hook、workflow） | `/opsx:review` |
+| `opsx-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵 | `/opsx:overview` |
+| `opsx-code-quality` | 实现层代码质量评审：对 diff 查重复率 / 可读性 / 死代码 / 复杂度 / 设计偏离 | `/opsx:quality` |
+| `opsx-discussion-sync` | 子 agent 讨论结论回流契约与落盘规则 | 无（由主 agent 加载） |
+
 ### 其他
 
-`concurrency-analysis` `opsx-technical-review`（含 roles / hooks / workflow 附属文件）
+`concurrency-analysis`
 
 ## 研发流程
 
-`workflow/OpenSpec-AI-研发流程.md` —— OpenSpec + 技术评审门禁的完整研发流程：分级规则、门禁裁决、闭环留痕、签字责任、门禁强制力边界与部署方法。配套资产为 `skills/opsx-technical-review` 与 `claude/commands/opsx/review.md`。
+`workflow/OpenSpec-AI-研发流程.md` —— OpenSpec + 技术评审门禁的完整研发流程：分级规则、门禁裁决、闭环留痕、签字责任、**门禁产物的 git 归属与生命周期**、门禁强制力边界与部署方法。
+
+规则的事实源划分：**面向人的策略**（分级 / 签字责任 / 强制力边界 / git 生命周期）只写在该流程文档；**面向 agent 的执行规则**（finding 字段 / 闭环验证 / 裁决判定 / apply 签字校验）只写在 `skills/opsx-technical-review/shared/`。其余文件一律引用，不复制 —— 改规则时只改事实源那一处。
 
 门禁 hook 需在 `~/.claude/settings.json` 注册后才生效，注册方法见该文档「门禁启用与部署」。
 
@@ -89,11 +100,19 @@ npx skills remove --skill ddd-aggregate
 
 | 资产 | 说明 | 手动安装位置 |
 |---|---|---|
-| `commands/opsx/` | opsx 命令组（9 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
+| `commands/opsx/` | opsx 命令组（11 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
 | `agents/ddd-modeler.md` | DDD 建模 subagent | `~/.claude/agents/` |
-| `agents/ddd-architect-claude.md` | DDD 主控 subagent | `~/.claude/agents/` |
+| `agents/ddd-architect-claude.md` | DDD 主控 subagent（含子 agent 结论回流规则） | `~/.claude/agents/` |
 
 注意：`commands/opsx/` 与 `skills/openspec-*` 是同一套 OpenSpec 能力的两种形态。command 仅 Claude Code 可用，skill 跨平台可用。两者同时安装会出现重复能力，建议按平台择一。
+
+### 关于 vendored 资产的重复
+
+`skills/openspec-*/SKILL.md` 与 `claude/commands/opsx/{explore,propose,apply,update,sync,archive,verify,ff}.md` 是 OpenSpec CLI 生成的上游副本（frontmatter 标 `generatedBy`），两两高度重复。**这部分刻意不做去重** —— 改动会在上游升级时产生冲突。
+
+唯一例外是 apply 的技术评审门禁校验块（本仓自加，非上游原文），已抽到 `skills/opsx-technical-review/shared/apply-gate-check.md`，两处改为引用。
+
+本仓自建资产（`opsx-*` 四个 skill 与 `review/overview/quality` 三个命令）则严格遵守单一事实源，命令文件均为薄壳。
 
 ## 编写规范
 

@@ -7,8 +7,11 @@
 #       仍为空白占位（连续下划线）。若仍空白，说明人工硬门禁未签署，直接 block，
 #       避免未经技术评审确认就进入编码实现阶段。
 #
-# 部署：本脚本位于 ~/.claude/skills/opsx-technical-review/hooks/（全局，跨项目复用），
-#       在 ~/.claude/settings.json 的 PreToolUse(Bash) 中注册。
+# 部署：本脚本随 skill opsx-technical-review 一起安装，位于该 skill 的 hooks/ 子目录。
+#       skills 根目录随 agent 而不同（Claude Code ~/.claude/skills、Codex ~/.codex/skills、
+#       opencode ~/.config/opencode/skills、Cursor ~/.cursor/skills、项目级 .claude/skills 等），
+#       注册时用 `realpath` 取本脚本的实际绝对路径，不要照抄任何一个写死的路径。
+#       hook 注册本身是 Claude Code 特有机制：在 ~/.claude/settings.json 的 PreToolUse(Bash) 中登记。
 #       项目根通过 Claude Code 注入的 $CLAUDE_PROJECT_DIR 获取（兜底当前工作目录），
 #       禁止从脚本自身路径反推项目根（全局部署下会错误指向 $HOME）。
 #

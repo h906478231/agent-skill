@@ -12,8 +12,11 @@
 OpenSpec Explore
       │  需求澄清（Phase 1）→ proposal.md
       │  方案探索（Phase 2）→ design.md（候选方案 + 推荐方案）
+      │  ※ 子 agent 讨论结论回流 → discussion-log.md（贯穿 Phase 1–2）
       ▼
 技术方案确认（design.md 含推荐方案）
+      │
+      ├─ /opsx:overview → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
       ▼
    【分级判定】L0 豁免 ──────────────────────────┐
       │ L1/L2/L3                                │
@@ -36,9 +39,12 @@ OpenSpec Explore
       ◄────────────────────────────────────────────────────────┘
 OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/测试）
       ▼
-验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对 + 项目自有测试
+代码质量评审（Phase 5.5）→ /opsx:quality → review/code-quality.md
+      │  查 diff 的重复率/可读性/死代码/复杂度/设计偏离；未闭环 Blocker 不得归档
       ▼
-OpenSpec Archive → specs 沉淀
+验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（用 overview.md 条件矩阵）+ 项目自有测试
+      ▼
+OpenSpec Archive → specs 沉淀能力；评审与讨论产物随变更进 changes/archive/
 ```
 
 ## 各阶段职责与产物
@@ -47,13 +53,16 @@ OpenSpec Archive → specs 沉淀
 |------|------|--------|------|-----------|
 | Phase 1 需求澄清 | `/opsx:explore` | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求 | `proposal.md` | 否 |
 | Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由 | `design.md` | 否 |
+| （贯穿 1–2）讨论回流 | skill `opsx-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
+| 变更总览 | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵 | `overview.md`（派生视图，勿手改） | 否 |
 | 分级判定 | 人工（参照下表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `review-summary.md` | 否 |
 | Phase 3 技术评审门禁 | `/opsx:review` | 专项 Agent 并行评审已确定方案 | `review/*.md` | 否 |
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply` | 按已评审通过的设计实现，不重新设计 | 代码 + `tasks.md` 勾选 | 是 |
+| Phase 5.5 代码质量评审 | `/opsx:quality` | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 | 校验报告（对话内） | 修复项 |
-| 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs | `openspec/specs/**` | 否 |
+| 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 
 ## 门禁适用范围分级
 
@@ -105,21 +114,31 @@ Coding Agent    = 代码执行者（Claude / Codex / GPT），只实现已评审
 
 ## 技术评审门禁（Phase 3–4）详解
 
-门禁资产位于 skill `opsx-technical-review`（本仓 `skills/opsx-technical-review/`，安装后为 `~/.claude/skills/opsx-technical-review/`）：
+门禁资产位于 skill `opsx-technical-review`（本仓源码在 `skills/opsx-technical-review/`；安装后落在**你所用 agent 的 skills 根目录**下 —— Claude Code 为 `~/.claude/skills/`，Codex 为 `~/.codex/skills/`，项目级安装为 `<项目>/.claude/skills/`，详见 README「各 agent 全局安装目录」。文档与提示词中一律用相对路径或 `<SKILL_DIR>` 占位，不写死绝对路径）：
 
 ```
 opsx-technical-review/
 ├── SKILL.md                          # 门禁编排说明（前置校验/并行调度/汇总/人工门禁）
+├── shared/                           # agent 执行规则的唯一事实源，roles/命令/workflow 一律引用不复制
+│   ├── finding-format.md             #   finding 七字段 + 三条硬规则 + verdict + 输出骨架
+│   ├── closed-loop-verification.md   #   重走门禁时如何验证上轮 Blocker 真的闭环
+│   ├── gate-policy.md                #   裁决判定 / 重走范围 / 牵连关系 / 驳回与 risk accepted
+│   └── apply-gate-check.md           #   apply 前的人工签字校验
+├── roles/                            # 五个评审角色：角色定位 + 审查清单 + 本维度差异
+│   ├── architecture.md  concurrency.md  performance.md  database.md  security.md
 ├── agents/openai.yaml                # skill 接口描述
 ├── hooks/check-review-approval.sh    # PreToolUse 门禁 hook（拦截未签字的 apply）
-├── roles/                            # 五个评审角色提示词（各自审查清单 + 输出格式）
-│   ├── architecture.md
-│   ├── concurrency.md
-│   ├── performance.md
-│   ├── database.md
-│   └── security.md
 └── technical-review-gate.workflow.js # Pi Workflow：并行 fan-out 五角色 + 结构化汇总
 ```
+
+**事实源划分**（改文档前先看这条，避免又写出两份互相矛盾的规则）：
+
+| 内容类型 | 唯一事实源 | 例子 |
+|---------|-----------|------|
+| 面向**人**的策略 | **本文档** | 分级规则、签字资格与责任、门禁强制力边界、产物 git 生命周期 |
+| 面向 **agent** 的执行规则 | `skills/opsx-technical-review/shared/` | finding 字段、闭环验证步骤、裁决判定、驳回留痕格式 |
+
+其余文件（roles、`/opsx:*` 命令、workflow.js）一律**引用**，不复制。
 
 两种触发方式，产物一致（`review/*.md` + `review-summary.md`）：
 
@@ -132,9 +151,25 @@ opsx-technical-review/
 - 全部 `通过 / 有条件通过` 且无未闭环 Blocker → `READY_FOR_HUMAN_APPROVAL`：交人工确认。
 - **人工确认是硬门禁**：人工在 `review-summary.md` 写入 `Technical Review Approved` 前，禁止 `/opsx:apply`。
 
+完整判定表与边界情形（声称已闭环但实际未闭环、条件映射不到 tasks 等）见 `skills/opsx-technical-review/shared/gate-policy.md`。
+
 ### finding 统一字段
 
-`ID | 严重级别(Blocker/Major/Minor) | 位置 | 风险根因 | 建议修复`
+```
+ID | 严重级别(Blocker/Major/Minor) | 位置 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复
+```
+
+后三个字段是为了解决「Blocker 术语太多，没参与设计的人看不懂到底会出什么事」：
+
+| 字段 | 要求 | 反例 |
+|------|------|------|
+| **一句话白话** | 不得出现未解释的专有名词 | 「幂等键缺失导致 CAS 失效」 |
+| **触发场景** | 什么输入/时序/数据量/故障 → 什么可观测现象 | 「并发高时可能有问题」 |
+| **不修的后果** | 影响面（哪些用户/数据/接口）+ 严重度 | 「可能有风险」 |
+
+**写不出具体触发场景的 Blocker 一律降级为 Major** —— 这条同时治两个病：术语堆砌看不懂，以及 AI 误报把门禁卡死。
+
+字段定义与输出骨架的事实源在 `shared/finding-format.md`，本节只作说明。`review-summary.md` 另需给出**摘要（给非设计者的三句话）**与**术语表**，让签字人读得懂自己签的是什么。
 
 ### 「有条件通过」的条件必须落地
 
@@ -174,28 +209,16 @@ Phase 6 验证时逐条核对条件是否真的满足，未满足不得归档。
 
 ### 不认可评审结论（误报 / 知情接受）
 
-AI 评审会误报。**被误报卡死不是流程的本意**，逃生通道如下：
+AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通道：
 
-- **不改 design 就不重走门禁** —— 输入没变，重跑只会得到同样结论。
-- 在 `review/<role>.md` 对应 finding 下追加驳回记录，并在 `review-summary.md` 的裁决计数中扣除：
+- **误报**（问题不成立）→ 在 `review/<role>.md` 追加「驳回」记录。
+- **risk accepted**（问题真实但决定不修）→ 追加「risk accepted」记录，并写明**复查触发阈值**。
 
-```markdown
-> **驳回**：SEC-01
-> 理由：该导出接口仅对内部管理员开放，且经 Sa-Token 角色校验，不存在外部输入路径。
-> 判定：误报（非 Blocker）
-> 驳回人：张三  日期：2026-07-31
-```
+两者不能混用：**问题不成立叫误报，问题成立但不修叫 risk accepted**。混用会让后续复查失去线索。都必须**具名留痕**，禁止直接删除 finding —— 删掉就没有决策记录了。
 
-- **知情接受风险**（问题真实但决定不修）用 `risk accepted` 而非「误报」，并写明接受理由与复查时机：
+前提：**不改 `design.md` 就不重走门禁**，输入没变重跑只会得到同样结论。
 
-```markdown
-> **risk accepted**：PERF-03
-> 理由：当前数据量 3000 条，全量加载内存可控。
-> 触发阈值：单次 > 5 万条时须改流式处理，届时重开变更。
-> 接受人：李四  日期：2026-07-31
-```
-
-两者都必须**具名留痕**。禁止直接删除 finding —— 删掉就没有决策记录了。
+留痕的确切格式与示例见 `skills/opsx-technical-review/shared/gate-policy.md` 第 4 节。
 
 ### 签字人的资格与责任
 
@@ -213,6 +236,41 @@ AI 评审会误报。**被误报卡死不是流程的本意**，逃生通道如�
 Technical Review Approved: 张三  2026-07-31
 复核（L3 必填）: 李四  2026-07-31
 ```
+
+## 门禁产物的 git 归属与生命周期
+
+**结论先说：门禁产物提交 git，随变更归档，不删除。**
+
+| 产物 | 提交 git | 归档后去向 | 是否进 `specs/` |
+|------|---------|-----------|----------------|
+| `review/<role>.md` | 是 | `openspec/changes/archive/<name>/review/` | 否 |
+| `review-summary.md`（含签字行） | 是 | `openspec/changes/archive/<name>/` | 否 |
+| `review/code-quality.md` | 是 | 同上 | 否 |
+| `discussion-log.md` | 是 | 同上 | 否 |
+| `overview.md` | 是 | 同上 | 否 |
+
+`openspec archive` 把整个 `changes/<name>/` 目录搬到 `changes/archive/<name>/`，上述文件**自动随之归档，不需要额外操作，也不要在归档前手工删除**。
+
+### 为什么不是「开发完就删」
+
+- **签字是责任凭证**。`Technical Review Approved: 张三 2026-07-31` 删掉之后，就没有任何记录能回答「这个方案当初谁批的、基于什么结论批的」。签字人承担的责任需要有据可查。
+- **驳回与 risk accepted 是决策记录**。`SEC-01 判定误报` / `PERF-03 risk accepted，触发阈值 5 万条` 这类记录，价值恰恰在出事之后 —— 半年后数据量涨到 5 万条时，只有这份记录能告诉你当初约定的复查触发点。
+- **弃案防止重复劳动**。`discussion-log.md` 里「考虑过 X 方案，因为 Y 否掉」，是下一个接手的人（或下一轮全新上下文的 AI）不再把死路重走一遍的唯一依据。
+- **体积可忽略**。全是纯文本 Markdown，一个变更几十 KB 量级，不构成仓库负担。
+
+### 为什么不进 `specs/`
+
+`specs/` 沉淀的是**系统当前应该具备的能力**，是「现在是什么样」。评审记录是**过程决策**，是「当时为什么这么定」。两者混在一起会让 spec 越读越乱 —— spec 要能被当作契约直接读，不该夹带历史评审意见。
+
+### 落地检查
+
+确认 `.gitignore` 没有排除这些路径：
+
+```bash
+git check-ignore -v openspec/changes/*/review-summary.md openspec/changes/*/review/ || echo "未被忽略，正常"
+```
+
+有输出说明被 `.gitignore` 排除了，需要移除对应规则 —— 否则签字凭证只存在于本地，等同于没有。
 
 ## 门禁的真实强制力（重要）
 
@@ -232,13 +290,15 @@ Technical Review Approved: 张三  2026-07-31
 
 hook **必须注册后才生效**。未注册时第一道防线为零 —— 这是最常见的「以为有门禁其实没有」的原因。
 
-**先确认要注册哪个路径**。`~/.claude/skills/` 下的同名目录很可能是符号链接，指向别处的独立副本（如 `~/.cc-switch/skills/`、其他 skill 管理器的仓库）。**那些副本未必包含本仓的门禁修复** —— 指过去等于启用了一个看似生效、实则放行的旧版 hook，比不注册更危险。先查清楚：
+> hook 注册是 **Claude Code 特有机制**（`~/.claude/settings.json`），下面的注册步骤仅适用于 Claude Code。其他 agent（Codex / opencode / Cursor / Gemini）没有等价的 PreToolUse 拦截，第一道防线天然为零，只剩第②③道 —— 这些环境下更要靠 apply skill 的前置校验与人工签字。
+
+**先确认要注册哪个路径**。skills 根目录随 agent 而不同（Claude Code `~/.claude/skills/`、Codex `~/.codex/skills/`、项目级 `<项目>/.claude/skills/` 等，见 README），且其中的同名目录很可能是符号链接，指向别处的独立副本（如 `~/.cc-switch/skills/`、其他 skill 管理器的仓库）。**那些副本未必包含本仓的门禁修复** —— 指过去等于启用了一个看似生效、实则放行的旧版 hook，比不注册更危险。先查清楚（把路径换成你实际的 skills 根目录）：
 
 ```bash
 ls -ld ~/.claude/skills/opsx-technical-review
 ```
 
-若输出以 `l` 开头（符号链接）且箭头指向非本仓路径，**改为直接指向本仓源文件**，或先把本仓内容同步过去。用下面这条命令得到确切路径：
+若输出以 `l` 开头（符号链接）且箭头指向非本仓路径，**改为直接指向本仓源文件**，或先把本仓内容同步过去。用下面这条命令得到确切路径（在本仓根目录执行）：
 
 ```bash
 realpath skills/opsx-technical-review/hooks/check-review-approval.sh
@@ -288,39 +348,31 @@ jq --version
 
 铁律：**门禁输入是 `design.md`（+ `proposal.md`）。输入变了且变在评审维度上 → 重走；没变 → 不重走。**
 
-| 场景 | 做法 | 命令 |
-|------|------|------|
-| 改动牵动跨维度地基（模块归属、一致性口径、表模型） | **全量重走**，纳入范围的维度全跑 | `/opsx:review <change>` |
-| 改动只碰单一维度（纯转义、纯索引调整） | **增量重走**，只重跑受影响维度，其余沿用上轮 `review/<role>.md` | `/opsx:review <change> --roles security` |
-| 不认可结论（误报/知情接受） | **不重走**，留驳回痕迹，仅更新裁决计数 | — |
-| 仅改文案措辞、补充说明，未动技术决策 | **不重走** | — |
+判断口诀：**宁可多跑一个维度，不可漏跑被牵连的维度。**
 
-- **裁决始终对全部纳入维度求值**：沿用维度若仍有未闭环 Blocker，门禁仍 `BLOCKED`。
-- **判断口诀**：宁可多跑一个维度，不可漏跑被牵连的维度。
+完整的场景判定表与**牵连关系速查表**（改了表结构要连带重跑哪些维度等）见 `skills/opsx-technical-review/shared/gate-policy.md` 第 2、3 节 —— 那是唯一事实源，本文不复制一份以免两处失配。
 
-**牵连关系速查**（改了左边，右边也要重跑）：
+操作命令：
 
-| 改动内容 | 必须一并重跑 |
-|---------|-------------|
-| 表结构 / 索引 | database + performance + concurrency（幂等键依赖唯一索引） |
-| 幂等 / 状态机设计 | concurrency + database |
-| 同步改异步（引入 MQ） | 全部五维度 |
-| 批大小 / 并发度 | performance + concurrency + database |
-| 接口出入参 | security + architecture |
-| 加密 / 脱敏方案 | security + database（加密字段无法直接建唯一索引） |
+```bash
+/opsx:review <change>                          # 全量重走
+/opsx:review <change> --roles security         # 增量重走，其余沿用上轮 review/<role>.md
+```
+
+**裁决始终对全部纳入维度求值**：沿用维度若仍有未闭环 Blocker，门禁仍 `BLOCKED`。
 
 ## 评审维度覆盖边界
 
-当前五个维度**不覆盖**以下方面，这些恰恰是上线出事的高频原因。在 `design.md` 中自行补充，或由架构维度兼顾：
+设计层五维度 + 实现层代码质量维度之外，仍有以下缺口 —— 这些恰恰是上线出事的高频原因。在 `design.md` 中自行补充，或由架构维度兼顾：
 
 | 缺口 | 应当回答的问题 | 当前归属 |
 |------|--------------|---------|
-| **可观测性** | 关键路径有无日志埋点？监控指标是什么？告警阈值？出问题怎么定位？ | 未覆盖，建议并入 architecture 清单 |
-| **兼容性与回滚** | 灰度怎么放？有无开关？数据能否回滚？老客户端/存量数据兼容吗？ | 未覆盖，建议并入 architecture 清单 |
-| **可测试性** | 这个设计怎么写单测？外部依赖能否 mock？有无需要造的测试数据？ | 未覆盖 |
+| **可观测性** | 关键路径有无日志埋点？监控指标是什么？告警阈值？出问题怎么定位？ | 已并入 architecture 清单 |
+| **兼容性与回滚** | 灰度怎么放？有无开关？数据能否回滚？老客户端/存量数据兼容吗？ | 已并入 architecture 清单 |
+| **可测试性** | 这个设计怎么写单测？外部依赖能否 mock？有无需要造的测试数据？ | **部分覆盖** —— Phase 5.5 代码质量维度查「难以单测的构造」（静态调用链、隐藏依赖、构造函数里干活），但那是实现之后；**设计阶段的可测试性仍未覆盖** |
 | **运维成本** | 新增了哪些需要人工干预的场景？有无对账/重跑工具？ | 未覆盖 |
 
-**在补充角色提示词之前，签字人应当把这四项作为签字前的自查清单手动过一遍。**
+**签字人应当把「设计阶段可测试性」与「运维成本」两项作为签字前的自查清单手动过一遍。**
 
 ## Phase 6 验证详解
 
@@ -344,7 +396,9 @@ jq --version
 
 `/opsx:verify` 不认识 `review-summary.md`（那是本门禁的产物，非 OpenSpec 原生 artifact），因此它**不会**核对「有条件通过」的条件。这一步需单独做：
 
-逐条核对 `review-summary.md`「有条件通过的条件清单」中的每项是否真的实现 —— **这是门禁闭环的最后一环，也最容易被跳过**。条件既然映射到了 `tasks.md` 的勾选项，此处即核对这些任务是否真的完成而非只是打了勾。
+先跑一次 `/opsx:overview <change>` 刷新「规则条件可追溯矩阵」，再逐条核对矩阵中每项是否真的实现 —— **这是门禁闭环的最后一环，也最容易被跳过**。矩阵已把 `proposal` 验收条件、`spec` scenario、`design` 约束、`review-summary` 的「有条件通过」四类来源合并到一张表，逐行看即可，不必再翻四份文档。标 `⚠️ 未落地` 的行视同 Blocker，不得归档。
+
+条件既然映射到了 `tasks.md` 的勾选项，此处即核对这些任务是否真的完成而非只是打了勾。
 
 ### 项目自有的验证动作
 
@@ -372,6 +426,11 @@ jq --version
 /opsx:explore add-contact-batch-import
 #   → openspec/changes/add-contact-batch-import/proposal.md
 #   → openspec/changes/add-contact-batch-import/design.md（推荐方案B：异步MQ分片消费）
+#   → discussion-log.md（子 agent 讨论结论回流，见 skill opsx-discussion-sync）
+
+# 生成变更总览：一页看懂流程、字段变更与规则条件是否遗漏
+/opsx:overview add-contact-batch-import
+#   → overview.md（派生视图，勿手改；标 ⚠️ 未落地的条件视同 Blocker）
 
 # 分级判定：命中「异步/MQ/批量10万」→ L3 全量
 
@@ -389,12 +448,18 @@ jq --version
 # Phase 5：代码实现（人工签字后才放行）
 /opsx:apply add-contact-batch-import
 
+# Phase 5.5：实现层代码质量评审（只报告不改代码）
+/opsx:quality add-contact-batch-import
+#   → review/code-quality.md（重复率/可读性/死代码/复杂度/设计偏离）
+#   → 未闭环 Blocker 不得归档；修复走 tasks.md 勾选
+
 # Phase 6：验证（实现与设计一致性 + 条件核对）
+/opsx:overview add-contact-batch-import   # 先刷新条件矩阵
 /opsx:verify add-contact-batch-import
 #   → 三维校验报告；有 CRITICAL 则修复后重跑
-#   → 另需人工核对 review-summary.md 的「有条件通过」条件是否真的实现
+#   → 再逐条核对 overview.md 的条件矩阵，⚠️ 未落地项视同 Blocker
 
-# 收口
+# 收口（评审/讨论/总览产物随变更整体归档，不要手工删除）
 /opsx:archive add-contact-batch-import
 ```
 
@@ -414,6 +479,18 @@ jq --version
 
 **Q：签字了但门禁裁决是 BLOCKED，能 apply 吗？**
 不能。apply 的前置校验会拦。BLOCKED 必须先闭环 Blocker 并重走门禁。
+
+**Q：评审文档要提交 git 吗？开发完能删吗？**
+提交，不删。见「门禁产物的 git 归属与生命周期」—— 签字是责任凭证，risk accepted 记录着复查触发点，删掉就没有决策记录了。归档时 `openspec archive` 会自动把它们随变更搬进 `changes/archive/<name>/`。
+
+**Q：proposal / design / spec / tasks 四份文档太散，怎么确认规则条件没遗漏？**
+跑 `/opsx:overview <change>`。它的「规则条件可追溯矩阵」把四类来源（proposal 验收条件、spec scenario、design 约束、review 的「有条件通过」）合成一张表，映射不到 `tasks.md` 的条目会标 `⚠️ 未落地`。同一份 `overview.md` 里还有端到端运行流程图与字段变更台账。
+
+**Q：Blocker 写得全是术语，看不懂到底会出什么事？**
+新版 finding 强制带「一句话白话 / 触发场景 / 不修的后果」三列，`review-summary.md` 另有摘要与术语表。**写不出具体触发场景的 Blocker 会被自动降级为 Major** —— 若仍看到看不懂的 Blocker，那本身就是评审质量问题，可以要求重写而不是硬猜。
+
+**Q：子 agent 讨论完的结论怎么不丢？**
+按 skill `opsx-discussion-sync`：子 agent 返回固定五段（结论/依据/建议落点/未决问题/弃案），主 agent 必须把每条建议落点落到 artifact 或记为「未采纳 + 理由」，并追加 `discussion-log.md`。结束本轮前有防丢自检。
 
 ## 与项目既有约定的衔接
 

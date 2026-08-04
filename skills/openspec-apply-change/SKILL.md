@@ -29,20 +29,9 @@ Implement tasks from an OpenSpec change.
 
 2. **Technical Review Gate check (BLOCKING — do this before writing any code)**
 
-   If the project uses the Technical Review Gate (i.e. `openspec/changes/<name>/review-summary.md` exists, or the project documents the gate in `workflow/OpenSpec-AI-研发流程.md`), you MUST verify human sign-off before implementing anything:
+   Full rules live in the sibling skill `opsx-technical-review`, file `shared/apply-gate-check.md` — i.e. `../opsx-technical-review/shared/apply-gate-check.md` relative to this SKILL.md (all skills sit flat under one skills root). **Do not hardcode an absolute path** — the skills root differs per agent (`~/.claude/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `~/.cursor/skills/`, a project-level `.claude/skills/`, …). If the relative path does not resolve, Glob for `**/opsx-technical-review/shared/apply-gate-check.md`. **Read that file and follow it exactly.** In short: no `review-summary.md` / blank sign-off placeholder / verdict `BLOCKED` → STOP, write no implementation code. Never sign on the user's behalf, edit the sign-off line, or talk the user into skipping this.
 
-   ```bash
-   cat "openspec/changes/<name>/review-summary.md" | grep -m1 'Technical Review Approved:'
-   ```
-
-   - **No `review-summary.md`** → the gate never ran. STOP. Tell the user to run `/opsx:review <name>` first. Do not implement. (Exception: the change is documented as gate-exempt — see the L0 tier in the workflow doc — in which case the exemption itself must be recorded and signed in `review-summary.md`.)
-   - **Sign-off line is a blank placeholder** (empty, `____`, `<签名>`) → the gate ran but no human approved it. STOP. Ask the user to review `review/*.md` and sign. Do not implement.
-   - **Gate verdict is `BLOCKED`** → STOP even if a signature is present; unresolved Blockers must be closed in `design.md` and the gate re-run.
-   - **Signed and `READY_FOR_HUMAN_APPROVAL`** → proceed.
-
-   You must not sign on the user's behalf, edit the sign-off line, or talk the user into skipping this. A `PreToolUse` hook enforces the same rule for `openspec apply` run via Bash, but it cannot see skill/slash-command invocations — this step is the only check on that path, so do not skip it.
-
-   Additionally, carry any **「有条件通过」conditions** from `review-summary.md` into implementation: each condition should map to a task in `tasks.md` and be satisfied before that task is checked off.
+   The `PreToolUse` hook cannot see skill/slash-command invocations — this step is the only check on that path, so do not skip it.
 
 3. **Check status to understand the schema**
    ```bash

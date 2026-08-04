@@ -25,6 +25,50 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
                                             OpenSpec Apply ──> 代码实现 ──> 测试+审查
 ```
 
+## 资产结构
+
+```
+opsx-technical-review/
+├── SKILL.md                          # 本文件：门禁编排流程
+├── shared/                           # 共用规则的唯一事实源，roles / 命令 / workflow 一律引用不复制
+│   ├── finding-format.md             #   finding 七字段 + 三条硬规则 + verdict + 输出骨架
+│   ├── closed-loop-verification.md   #   重走门禁时如何验证上轮 Blocker 真的闭环
+│   ├── gate-policy.md                #   裁决判定 / 重走范围 / 牵连关系 / 驳回与 risk accepted
+│   └── apply-gate-check.md           #   apply 前的人工签字校验（apply skill 与 command 共用）
+├── roles/                            # 五个角色：只保留角色定位 + 审查清单 + 本维度差异
+│   ├── architecture.md  concurrency.md  performance.md  database.md  security.md
+├── hooks/check-review-approval.sh    # PreToolUse 门禁 hook（拦截未签字的 openspec apply）
+├── agents/openai.yaml                # skill 接口描述
+└── technical-review-gate.workflow.js # Pi Workflow：并行 fan-out 五角色 + 结构化汇总
+```
+
+## 路径约定：`<SKILL_DIR>`
+
+本 skill 内部与外部的所有引用都写成**相对 skill 目录**的形式（如 `shared/finding-format.md`、`roles/database.md`）。**不要写死绝对路径** —— skills 根目录随 agent 而不同：
+
+| Agent | skills 根目录 |
+|-------|-------------|
+| Claude Code | `~/.claude/skills/` |
+| Codex CLI | `~/.codex/skills/` |
+| opencode | `~/.config/opencode/skills/`（也会读 `~/.claude/skills/`） |
+| Cursor | `~/.cursor/skills/` |
+| Gemini CLI | `~/.gemini/skills/` |
+| 项目级安装 | `<项目>/.claude/skills/` 等 |
+| 直接在本仓使用 | `<仓库>/skills/` |
+
+`<SKILL_DIR>` = 本 skill 实际所在目录，即「本 SKILL.md 所在的目录」。**主 agent 在启动子 agent 前必须先解析出它的绝对路径**，因为子 agent 拿到的是纯文本 prompt，没有「当前 skill 目录」这个上下文。
+
+解析顺序（取第一个命中的）：
+
+```bash
+for root in "${CLAUDE_PROJECT_DIR:-.}/.claude/skills" ~/.claude/skills ~/.codex/skills \
+            ~/.config/opencode/skills ~/.cursor/skills ~/.gemini/skills ./skills; do
+  [ -f "$root/opsx-technical-review/SKILL.md" ] && echo "$root/opsx-technical-review" && break
+done
+```
+
+都没命中时，用 Glob 搜 `**/opsx-technical-review/SKILL.md` 取其所在目录。**项目级优先于全局** —— 项目内如果放了定制版，应当用项目内那份。
+
 ## 铁律（Guardrails）
 
 - **本阶段不写业务代码**。所有评审 Agent 只识别问题、给建议，产出评审文档。
@@ -33,17 +77,9 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 
 ### 门禁的真实强制力（别高估）
 
-门禁由三道防线组成，强度递减 —— 它拦得住「忘了」，拦不住「铁了心要绕」：
+门禁由三道防线组成，强度递减 —— 它拦得住「忘了」，拦不住「铁了心要绕」。**三道全绕过的方式始终存在**：直接让 Agent 用 Edit/Write 改代码，不经过任何 apply 入口。所以门禁定位是**流程纪律工具，不是安全边界**。
 
-| 防线 | 覆盖 | 拦不住什么 |
-|------|------|-----------|
-| `hooks/check-review-approval.sh`（PreToolUse/Bash） | Bash 执行 `openspec apply` / `opsx apply` | `/opsx:apply` 斜杠命令、skill 调用（不产生 Bash 命令，hook 永不触发） |
-| apply skill / command 的 Step 2 前置校验 | `/opsx:apply` 与 `openspec-apply-change` 两条调用路径 | 提示词级约束，模型可能被用户指令覆盖 |
-| 人工签字 + code review | 最终把关 | 签字人不看就签 |
-
-**三道全绕过的方式始终存在**：直接让 Agent 用 Edit/Write 改代码，不经过任何 apply 入口。所以门禁定位是**流程纪律工具，不是安全边界**；它保证「正常路径上不会漏评审」，不保证「无法绕过」。
-
-hook 需在 `~/.claude/settings.json` 的 `PreToolUse` 中注册后才生效，未注册时第一道防线为零 —— 注册方法见 `workflow/OpenSpec-AI-研发流程.md`「门禁启用与部署」。
+三道防线的覆盖范围、各自拦不住什么、hook 注册与验证方法，见 `workflow/OpenSpec-AI-研发流程.md`「门禁的真实强制力」与「门禁启用与部署」。**hook 未在 `~/.claude/settings.json` 注册时第一道防线为零。**
 
 ## 前置校验
 
@@ -53,13 +89,14 @@ hook 需在 `~/.claude/settings.json` 的 `PreToolUse` 中注册后才生效，�
    openspec status --change "<name>" --json
    ```
 3. 确认 `proposal.md` 与 `design.md` 均存在且非空；`design.md` 含「推荐方案」。否则中止并提示补齐（体现「方案未确定，不开始编码」）。
-4. 在 `changeRoot` 下创建 `review/` 目录。
+4. 判定评审范围：参照 `workflow/OpenSpec-AI-研发流程.md` 的「门禁适用范围分级」向用户确认跑哪些维度。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动五角色。
+5. 在 `changeRoot` 下创建 `review/` 目录。
 
 ## 执行步骤
 
-### Step 1 — 并行调度五个专项评审 Agent
+### Step 1 — 并行调度专项评审 Agent
 
-对以下每个角色，用 **Agent 工具**启动一个子 agent（可并行，一条消息多个 tool use）。每个子 agent 的 prompt = 对应角色提示词文件内容 + 变更的 `proposal.md`/`design.md` 全文 + 「把结论写入 review/<role>.md」。
+对每个纳入范围的角色，用 **Agent 工具**启动一个子 agent（可并行，一条消息多个 tool use）。
 
 | 角色 | 角色提示词 | 输出 |
 |------|-----------|------|
@@ -69,60 +106,56 @@ hook 需在 `~/.claude/settings.json` 的 `PreToolUse` 中注册后才生效，�
 | 数据库评审 | `roles/database.md` | `review/database.md` |
 | 安全评审 | `roles/security.md` | `review/security.md` |
 
-> 若当前环境支持 Pi Workflow，可改用 `~/.claude/skills/opsx-technical-review/technical-review-gate.workflow.js` 一次性并行 fan-out（见该脚本）。二者产出一致。
+每个子 agent 的 prompt 需包含：
+
+1. **`<SKILL_DIR>` 的绝对路径**（按上面「路径约定」解析），并说明「下文所有 `<SKILL_DIR>/...` 路径都替换为该值」。子 agent 是纯文本上下文，不给它这个值，它就找不到 `shared/` 下的规则文件；
+2. 对应 `<SKILL_DIR>/roles/<role>.md` 全文 —— 其中已声明必读的共用规则文件，子 agent 自行读取；
+3. 变更的 `proposal.md` / `design.md` 全文；
+4. **若 `design.md` 末尾存在「## 评审意见闭环记录」区块**（说明这是重走门禁）：把该区块一并放进 prompt，并要求子 agent 先按 `<SKILL_DIR>/shared/closed-loop-verification.md` 做上轮闭环验证、再做本轮审查。子 agent 是全新上下文，没有上轮记忆 —— 不给该区块，它要么重复报同一问题，要么完全漏掉验证；
+5. 「把结论写入 `review/<role>.md`」。
+
+finding 字段、三条硬规则（白话 / 可复现触发场景 / 不修的后果）与维度结论取值，统一见 `shared/finding-format.md`，此处不重复。
+
+> 若当前环境支持 Pi Workflow，可改用 `technical-review-gate.workflow.js` 一次性并行 fan-out（`args = { change, roles, skillDir }`；`skillDir` 省略时脚本会让子 agent 自行探测，显式传入更省一次探测）。二者产出一致。
 >
-> 注：本 skill 已全局化到 `~/.claude/skills/opsx-technical-review/`（跨项目复用），角色提示词、workflow、门禁 hook 均位于该全局目录，不再依赖任何单个项目的 `.agents/` 目录。
-
-每条 finding 统一字段：`ID | 严重级别(Blocker/Major/Minor) | 位置 | 风险根因 | 建议修复`。
-每份评审末尾给出该维度结论：`通过 / 有条件通过 / 打回`。
-
-**重走门禁时的闭环验证（关键）**：若 `design.md` 末尾存在「## 评审意见闭环记录」区块，**必须把该区块一并放进每个子 agent 的 prompt**，并要求它先验证上轮闭环、再做本轮审查。子 agent 是全新上下文，没有上轮记忆 —— 不给该区块，它要么重复报同一问题，要么完全漏掉验证。指令要点：
-
-- 对闭环记录中「维度」属于该角色的每一行，按「落在 design 的哪一节」去 `design.md` 核实改动是否真的落地且真正解决了原始问题。
-- 已真正闭环 → 不重复报告，在 `review/<role>.md` 的「上轮闭环验证」小节记为「已闭环」。
-- 声称已改但查无对应内容、或改动不足以解决原始问题 → **沿用原 finding ID** 重新报告，severity 保持 Blocker，说明「上轮声称已闭环但实际未闭环」。
-- 标注 risk accepted / 驳回 → 尊重决策，不再作为 Blocker 重复报告；若认为决策依据已不成立，可降级为 Major 并说明理由。
-- 本轮新问题用新 ID，避免与历史 ID 冲突。
+> 注：`shared/`、`roles/`、workflow、门禁 hook 全部位于 `<SKILL_DIR>` 内，随 skill 一起安装，不依赖任何单个项目的目录结构。
 
 ### Step 2 — 汇总为 review-summary.md
 
-读取 `review/*.md`，汇总写入 `review-summary.md`：
+读取 `review/*.md`（含本轮重跑与沿用上轮的维度），汇总写入 `review-summary.md`：
 
-- **门禁裁决**：任一维度出现未闭环 Blocker → 门禁状态 `BLOCKED`；否则 `READY_FOR_HUMAN_APPROVAL`。
-- **已确认风险**：按维度 + 严重级别汇总（Blocker/Major/Minor 计数）。
-- **修改建议**：合并各维度建议，去重，标注需在 `design.md`/`tasks.md` 落实的项。
-- **最终设计调整**：需要回改 design 的点（若有）。
-- **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环。**「声称已闭环但实际未闭环」一律按未闭环 Blocker 计入裁决。**
-- **人工确认区**：留一行待人工填写的批准标记。
+1. **摘要（给非设计者看）**：三句话说清「发现了什么 / 能不能开工 / 卡在哪」，不用专有名词。
+2. **门禁裁决**：判定规则见 `shared/gate-policy.md`。
+3. **各维度结论一览表**：维度 | 结论 | Blocker 数 | Major 数 | Minor 数 | 本轮重跑/沿用上轮。
+4. **已确认风险**：按维度 + 严重级别汇总。
+5. **修改建议**：合并各维度建议，去重，标注需在 `design.md` / `tasks.md` 落实的项。
+6. **「有条件通过」的条件清单**：`条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态`。**映射不到 tasks 的条件视同 Blocker。**
+7. **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环。后者一律按未闭环 Blocker 计入裁决。
+8. **术语表**：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。
+9. **人工确认区**：留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply。
 
-裁决为 `BLOCKED` 时，须明确告知用户：回改 `design.md` 后必须在其末尾「## 评审意见闭环记录」区块登记每条 Blocker，格式 `finding ID | 维度 | 原始问题 | 处理方式 | 落在 design 的哪一节 | 轮次`。下一轮评审 Agent 依赖该区块验证闭环。
+裁决为 `BLOCKED` 时的告知内容与闭环记录格式，见 `shared/gate-policy.md`。
 
 ### Step 3 — 停在人工确认门禁
 
 输出汇总后**停止**。提示人工：
 - 审阅 `review-summary.md` 与 `review/*.md`；
-- 认可后在 `review-summary.md` 的人工确认区写下 `Technical Review Approved`（可加签名/日期）；
+- 认可后在人工确认区写下 `Technical Review Approved`（可加签名/日期）；
 - 之后才可运行 `/opsx:apply` 进入实现。
 
 若门禁为 `BLOCKED`，建议先回 `design.md` 闭环 Blocker，再重跑门禁。
 
 ## 重走门禁（迭代回路）
 
-铁律：**门禁输入是 `design.md`（+ `proposal.md`）。输入变了且变在评审 5 维度上 → 重走；没变 → 不重走。** 详见 `workflow/OpenSpec-AI-研发流程.md` 的「迭代回路操作手册」。
+判定规则、牵连关系表、驳回与 risk accepted 留痕格式，全部见 `shared/gate-policy.md`。执行层面：
 
-- **全量重走**：改动牵动跨维度地基（模块归属、计数一致性、表模型）时，5 维度全跑。
-  - Workflow：`{ "change": "<name>" }`（roles 缺省）
-  - 交互式：主 agent 重启 5 个评审子 agent。
-- **增量重走**：改动只碰单一维度（纯安全转义、纯索引调整）时，只重跑受影响维度，其余沿用上轮 `review/<role>.md`。
-  - Workflow：`{ "change": "<name>", "roles": ["security"] }` 或 `["architecture","concurrency"]`
-  - 交互式：主 agent 只对指定维度重启子 agent，其余读取上轮 review 文件参与汇总。
-  - **裁决仍对全部 5 维度求值**：沿用维度若仍有未闭环 Blocker，门禁仍 `BLOCKED`。
-- **不认可评审结论**（误报/知情接受）：不改 design 就不重走，在 `review/<role>.md` 与 `review-summary.md` 留痕（驳回理由 / risk accepted），仅更新裁决计数。
-- **判断口诀**：宁可多跑一个维度，不可漏跑被牵连的维度。
+- **全量重走**：Workflow `{ "change": "<name>" }`；交互式则重启全部纳入维度的子 agent。
+- **增量重走**：Workflow `{ "change": "<name>", "roles": ["security"] }`；交互式只对指定维度重启子 agent，其余读取上轮 `review/<role>.md` 参与汇总。
+- **裁决始终对全部纳入维度求值**：沿用维度若仍有未闭环 Blocker，门禁仍 `BLOCKED`。
 
 ## 与整体流程的关系
 
-- 上游：`/opsx:explore`（需求澄清+方案探索）产出 proposal.md / design.md。
-- 本门禁：`/opsx:review`（本 skill）产出 review/*.md + review-summary.md，停在人工确认。
-- 下游：人工批准后 `/opsx:apply` 编码 → Phase 6 验证（编译/单测/集测/静态扫描 + AI Code Review，详见 `workflow/OpenSpec-AI-研发流程.md`）→ `openspec archive`。
+- 上游：`/opsx:explore`（需求澄清 + 方案探索）产出 proposal.md / design.md；`/opsx:overview` 可生成变更总览便于评审前对齐。
+- 本门禁：`/opsx:review`（本 skill）产出 `review/*.md` + `review-summary.md`，停在人工确认。
+- 下游：人工批准后 `/opsx:apply` 编码 → `/opsx:quality` 实现层代码质量评审 → `/opsx:verify` 三维校验 → `openspec archive`。完整流程见 `workflow/OpenSpec-AI-研发流程.md`。
 - 角色分工：OpenSpec = 流程与设计文档中心；本门禁 = AI 评审编排；Coding Agent = 代码执行者。

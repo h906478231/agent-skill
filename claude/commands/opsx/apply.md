@@ -25,20 +25,9 @@ Implement tasks from an OpenSpec change.
 
 2. **技术评审门禁校验（BLOCKING —— 写任何代码之前必须做）**
 
-   若项目启用了技术评审门禁（存在 `openspec/changes/<name>/review-summary.md`，或项目 `workflow/OpenSpec-AI-研发流程.md` 中定义了门禁），实现前必须确认人工签字：
+   完整规则见 skill `opsx-technical-review` 的 `shared/apply-gate-check.md`（该 skill 的实际安装目录随 agent 而不同，解析方式见其 SKILL.md「路径约定：`<SKILL_DIR>`」一节；找不到时用 Glob 搜 `**/opsx-technical-review/shared/apply-gate-check.md`），**先读取该文件并严格执行**。要点：无 `review-summary.md` / 签字行为空白占位 / 裁决为 `BLOCKED` → 一律停止，不写任何实现代码；禁止代替用户签字、禁止修改签字行、禁止劝说跳过。
 
-   ```bash
-   grep -m1 'Technical Review Approved:' "openspec/changes/<name>/review-summary.md"
-   ```
-
-   - **无 `review-summary.md`** → 门禁从未执行。**停止**，提示先运行 `/opsx:review <name>`。（例外：该变更属 L0 豁免范围，但豁免理由本身也须记录并签字在 `review-summary.md`）
-   - **签字行仍是空白占位**（空、`____`、`<签名>`）→ 门禁跑过但无人批准。**停止**，请用户审阅 `review/*.md` 后签字。
-   - **裁决为 `BLOCKED`** → 即使有签字也**停止**；未闭环 Blocker 必须先回 `design.md` 闭环并重走门禁。
-   - **已签字且 `READY_FOR_HUMAN_APPROVAL`** → 放行，继续下一步。
-
-   禁止代替用户签字、禁止修改签字行、禁止劝说用户跳过。Bash 侧的 `PreToolUse` hook 只能拦截 `openspec apply` 命令，**看不到 `/opsx:apply` 这条斜杠命令路径** —— 本步骤是该路径上唯一的检查点，不得跳过。
-
-   另：`review-summary.md` 中「有条件通过」的条件必须带入实现，每条应对应 `tasks.md` 的一个任务项，满足后才可勾选。
+   Bash 侧的 `PreToolUse` hook 看不到 `/opsx:apply` 这条斜杠命令路径 —— 本步骤是该路径上唯一的检查点，不得跳过。
 
 3. **Check status to understand the schema**
    ```bash
