@@ -35,8 +35,11 @@ Enter explore mode. Think deeply. Visualize freely. Follow the conversation wher
 
 Depending on what the user brings, you might:
 
-**Explore the problem space**
+**Explore the problem space (Phase 1: 需求澄清 - 应用第一性原理)**
 - Ask clarifying questions that emerge from what they said
+- **区分表面需求与底层问题**：追问"为什么"，识别用户真正要解决的本质问题
+- **识别基本约束**：物理约束（网络延迟、IOPS）、业务约束（监管、SLA）、资源约束（时间、预算）
+- **验证必要性**：不做会怎样？做了能带来什么？有没有更简单的替代方案？
 - Challenge assumptions
 - Reframe the problem
 - Find analogies
@@ -47,11 +50,16 @@ Depending on what the user brings, you might:
 - Identify patterns already in use
 - Surface hidden complexity
 
-**Compare options**
-- Brainstorm multiple approaches
-- Build comparison tables
+**Compare options (Phase 2: 方案探索 - 交叉验证)**
+- Brainstorm multiple approaches（至少 2 个有实质差异的候选方案）
+- **Build comparison tables（四维对比矩阵）**：
+  - 成本（开发成本 + 资源成本）
+  - 性能（延迟/吞吐/资源消耗）
+  - 复杂度（开发/测试/运维）
+  - 风险（技术风险/业务风险/扩展性）
 - Sketch tradeoffs
-- Recommend a path (if asked)
+- **Recommend a path with reasoning**：必须回答"为什么不选其他方案"
+- **回溯验证**：推荐方案是否解决了第一性原理分析中识别的底层问题
 
 **Visualize**
 ```
@@ -116,19 +124,23 @@ If the user mentions a change or you detect one is relevant:
 
 3. **Offer to capture when decisions are made**
 
-    | Insight Type               | Where to Capture               |
-    |----------------------------|--------------------------------|
-    | New requirement discovered | `specs/<capability>/spec.md` |
-    | Requirement changed        | `specs/<capability>/spec.md` |
-    | Design decision made       | `design.md`                  |
-    | Scope changed              | `proposal.md`                |
-    | New work identified        | `tasks.md`                   |
-    | Assumption invalidated     | Relevant artifact              |
+    | Insight Type               | Where to Capture               | 质量检查点 |
+    |----------------------------|--------------------------------|-----------|
+    | New requirement discovered | `specs/<capability>/spec.md` | - |
+    | Requirement changed        | `specs/<capability>/spec.md` | - |
+    | **Phase 1 需求澄清完成** | `proposal.md` | **必须包含「第一性原理分析」区块**（表面需求 vs 底层问题 / 基本约束 / 必要性验证）；不通过不得进入 Phase 2 |
+    | **Phase 2 方案探索完成** | `design.md` | **必须包含「候选方案交叉验证矩阵」**（至少 2 个候选方案 × 四维对比 + 推荐理由）；未通过交叉验证不得进入 Phase 3 门禁 |
+    | Design decision made       | `design.md`                  | - |
+    | Scope changed              | `proposal.md`                | - |
+    | New work identified        | `tasks.md`                   | - |
+    | Assumption invalidated     | Relevant artifact              | - |
 
    Example offers:
    - "That's a design decision. Capture it in design.md?"
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
+   - **"我们已经识别了底层问题和基本约束。要把第一性原理分析写入 proposal.md 吗？"**
+   - **"我们有了几个候选方案。要做四维对比并写入 design.md 吗？"**
 
 4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 
@@ -288,3 +300,25 @@ But this summary is optional. Sometimes the thinking IS the value.
 - **Do visualize** - A good diagram is worth many paragraphs
 - **Do explore the codebase** - Ground discussions in reality
 - **Do question assumptions** - Including the user's and your own
+
+---
+
+## 质量保障原则（参考 workflow/OpenSpec-AI-研发流程.md）
+
+**Phase 1 第一性原理检查点**：
+- [ ] 是否区分了表面需求与底层问题？
+- [ ] 是否识别了至少 1 个物理/业务/资源约束？
+- [ ] 是否考虑过非技术方案或更简单的替代方案？
+- [ ] 是否能量化"不做会怎样"和"做了能带来什么"？
+
+**Phase 2 交叉验证检查点**：
+- [ ] 是否有至少 2 个有实质差异的候选方案？
+- [ ] 是否从成本/性能/复杂度/风险四维对比？
+- [ ] 是否回答了"为什么不选其他方案"？
+- [ ] 推荐方案是否回溯验证了 Phase 1 的底层问题？
+
+**不通过检查点的处理**：
+- Phase 1 未通过 → 继续澄清需求，补充第一性原理分析
+- Phase 2 未通过 → 补充候选方案或完善对比矩阵
+
+完整的质量保障体系见 `workflow/OpenSpec-AI-研发流程.md`。

@@ -1,6 +1,6 @@
 ---
 name: opsx-technical-review
-description: OpenSpec 技术评审门禁（Technical Review Gate）。在 OpenSpec Explore 阶段、技术方案已确定（design.md 完成）但尚未进入代码实现（openspec apply）之前，调度架构/并发/性能/数据库/安全五个专项评审 Agent 对方案做多角色评审，汇总为 review-summary.md，并停在人工确认门禁。核心原则：需求未明确不分析性能，方案未确定不开始编码。用于任何 OpenSpec 变更在编码前的质量门禁。
+description: OpenSpec 技术评审门禁（Technical Review Gate，交叉验证 II）。在 OpenSpec Explore 阶段、技术方案已确定（design.md 完成）但尚未进入代码实现（openspec apply）之前，调度架构/并发/性能/数据库/安全五个专项评审 Agent 对同一方案做五维度交叉验证，汇总为 review-summary.md，并停在人工确认门禁。核心原则：需求未明确不分析性能，方案未确定不开始编码。用于任何 OpenSpec 变更在编码前的质量门禁。
 ---
 
 # OpenSpec 技术评审门禁（Technical Review Gate）
@@ -8,6 +8,8 @@ description: OpenSpec 技术评审门禁（Technical Review Gate）。在 OpenSp
 ## 定位
 
 这是插在 OpenSpec `explore/propose` 与 `apply` 之间的**质量门禁**。方案已在 `design.md` 中确定，但**还没有进入代码实现**。本门禁调度五个专项评审 Agent，对方案做架构/并发/性能/数据库/安全多角色评审，汇总风险与修改建议，交人工确认后才允许进入 `openspec apply`。
+
+**核心机制：交叉验证 II - 五角色多维度交叉验证同一方案**。架构/并发/性能/数据库/安全五个专业视角独立审查，互相发现盲区。
 
 ```
 OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案确认(design.md)
@@ -96,6 +98,8 @@ done
 
 ### Step 1 — 并行调度专项评审 Agent
 
+**交叉验证前提：每个子 agent 只读 `proposal.md` + `design.md`，不看其他维度的 `review/<role>.md`，避免锚定偏差。**
+
 对每个纳入范围的角色，用 **Agent 工具**启动一个子 agent（可并行，一条消息多个 tool use）。
 
 | 角色 | 角色提示词 | 输出 |
@@ -129,10 +133,11 @@ finding 字段、三条硬规则（白话 / 可复现触发场景 / 不修的后
 3. **各维度结论一览表**：维度 | 结论 | Blocker 数 | Major 数 | Minor 数 | 本轮重跑/沿用上轮。
 4. **已确认风险**：按维度 + 严重级别汇总。
 5. **修改建议**：合并各维度建议，去重，标注需在 `design.md` / `tasks.md` 落实的项。
-6. **「有条件通过」的条件清单**：`条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态`。**映射不到 tasks 的条件视同 Blocker。**
-7. **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环。后者一律按未闭环 Blocker 计入裁决。
-8. **术语表**：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。
-9. **人工确认区**：留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply。
+6. **跨维度冲突清单（交叉验证核心产出）**：不同维度的建议互相矛盾时列出（如性能建议与安全建议冲突）。**冲突项必须在 `design.md` 中闭环，不能让矛盾的建议同时进入 `tasks.md`。**
+7. **「有条件通过」的条件清单**：`条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态`。**映射不到 tasks 的条件视同 Blocker。**
+8. **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环。后者一律按未闭环 Blocker 计入裁决。
+9. **术语表**：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。
+10. **人工确认区**：留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply。
 
 裁决为 `BLOCKED` 时的告知内容与闭环记录格式，见 `shared/gate-policy.md`。
 
@@ -155,7 +160,24 @@ finding 字段、三条硬规则（白话 / 可复现触发场景 / 不修的后
 
 ## 与整体流程的关系
 
-- 上游：`/opsx:explore`（需求澄清 + 方案探索）产出 proposal.md / design.md；`/opsx:overview` 可生成变更总览便于评审前对齐。
+- 上游：`/opsx:explore`（需求澄清 + 方案探索）产出 proposal.md（含第一性原理分析）/ design.md（含候选方案交叉验证矩阵）；`/opsx:overview` 可生成变更总览便于评审前对齐。
+- **交叉验证链条**：
+  - Phase 1 第一性原理 → 确保解决正确的问题
+  - Phase 2 候选方案交叉验证 → 确保方案选择有依据
+  - **Phase 3 五维度交叉验证（当前阶段）** → 确保方案无盲区、发现跨维度冲突
 - 本门禁：`/opsx:review`（本 skill）产出 `review/*.md` + `review-summary.md`，停在人工确认。
-- 下游：人工批准后 `/opsx:apply` 编码 → `/opsx:quality` 实现层代码质量评审 → `/opsx:verify` 三维校验 → `openspec archive`。完整流程见 `workflow/OpenSpec-AI-研发流程.md`。
+- 下游：人工批准后 `/opsx:apply` 编码 → `/opsx:quality` 实现层代码质量评审 → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）三维校验 → `openspec archive`。完整流程见 `workflow/OpenSpec-AI-研发流程.md`。
 - 角色分工：OpenSpec = 流程与设计文档中心；本门禁 = AI 评审编排；Coding Agent = 代码执行者。
+
+## 交叉验证机制说明
+
+**五角色独立评审**：每个子 agent 只读 `proposal.md` + `design.md`，不看其他维度的 `review/<role>.md`，避免锚定偏差。
+
+**典型交叉验证场景**：
+- 幂等设计：并发维度认为"有唯一索引就够了" → 数据库维度发现"索引缺少 tenant_id 前导，跨租户会冲突"
+- 缓存一致性：性能维度建议"缓存永不过期" → 架构维度发现"无过期机制导致脏数据无法更新"
+- SQL 注入：安全维度发现"拼接 SQL" → 数据库维度进一步指出"预编译之外还需输入长度校验"
+
+**汇总阶段责任**：
+- 检测跨维度冲突（如：性能建议与安全建议矛盾）
+- 标记冲突项必须在 design.md 中闭环，不能让矛盾的建议同时进入 tasks.md
