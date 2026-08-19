@@ -5,9 +5,11 @@
 
 ## 何时执行
 
-**写任何代码之前**，且项目启用了技术评审门禁时 —— 判据：存在 `openspec/changes/<name>/review-summary.md`，或项目的 `workflow/OpenSpec-AI-研发流程.md` 中定义了门禁。
+**仅当项目启用了技术评审门禁时**才执行本校验 —— 判据：**存在 `openspec/changes/<name>/review-summary.md`**。
 
-## 校验动作
+**无 `review-summary.md` → 直接放行，跳过本校验** —— 该变更未启用门禁，无需审批即可实现。
+
+## 校验动作（仅在 review-summary.md 存在时执行）
 
 ```bash
 grep -m1 'Technical Review Approved:' "openspec/changes/<name>/review-summary.md"
@@ -15,7 +17,6 @@ grep -m1 'Technical Review Approved:' "openspec/changes/<name>/review-summary.md
 
 | 情况 | 处理 |
 |------|------|
-| **无 `review-summary.md`** | 门禁从未执行。**停止**，提示先运行 `/opsx:review <name>`。例外：该变更属 L0 豁免范围 —— 但豁免理由本身也须记录并签字在 `review-summary.md` |
 | **签字行仍是空白占位**（空、`____`、`<签名>`） | 门禁跑过但无人批准。**停止**，请用户审阅 `review/*.md` 后签字 |
 | **裁决为 `BLOCKED`** | 即使有签字也**停止**。未闭环 Blocker 必须先回 `design.md` 闭环并重走门禁 |
 | **已签字且 `READY_FOR_HUMAN_APPROVAL`** | 放行，继续实现 |

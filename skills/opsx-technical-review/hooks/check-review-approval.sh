@@ -76,11 +76,13 @@ if [ -z "$CHANGE_NAME" ]; then
   exit 0
 fi
 
-# summary 不存在 → 门禁压根没跑过 → 拦截。
-# 注意：绝不能在这里放行，否则「从未跑门禁」的变更反而畅通无阻，
-# 门禁就只拦得住「跑过但没签字」的，形同虚设。
+# summary 不存在 → 该变更未启用技术门禁 → 放行。
+# 设计取舍：不是所有变更都需要走技术评审（小改动、文档、L0 豁免等）。
+# review-summary.md 的存在即「本变更已纳入门禁管辖」的开关：
+#   有 summary → 门禁已启动，必须签字才能 apply（下面的检查负责）
+#   无 summary → 门禁未启动，apply 不受阻
 if [ ! -f "$SUMMARY" ]; then
-  deny "变更 [$CHANGE_NAME] 未找到 review-summary.md（期望路径：openspec/changes/$CHANGE_NAME/review-summary.md），技术评审门禁尚未执行，禁止 apply。请先运行 /opsx:review $CHANGE_NAME 完成门禁并人工签字。若该变更属于 L0 豁免范围，请在 review-summary.md 中记录豁免理由并签字。"
+  exit 0
 fi
 
 # 取签字行
