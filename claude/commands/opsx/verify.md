@@ -1,12 +1,14 @@
 ---
 name: "OPSX: Verify"
-description: Verify implementation matches change artifacts before archiving
+description: Verify implementation matches change artifacts before archiving (交叉验证 III - 实现与设计交叉核对)
 allowed-tools: Bash(openspec:*)
 category: Workflow
-tags: [workflow, verify, experimental]
+tags: [workflow, verify, experimental, cross-validation]
 ---
 
 Verify that an implementation matches the change artifacts (specs, tasks, design).
+
+**核心机制：交叉验证 III - 实现与设计交叉核对**。确保代码实现与设计意图一致，并回溯验证是否解决了第一性原理分析中识别的底层问题。
 
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`). Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
 
@@ -143,6 +145,34 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - If only warnings: "No critical issues. Y warning(s) to consider. Ready for archive (with noted improvements)."
    - If all clear: "All checks passed. Ready for archive."
 
+9. **交叉验证 III：人工核对清单（超出自动校验范围）**
+
+   以下项目需要人工核对，`/opsx:verify` 不自动检查：
+
+   **回溯第一性原理（Phase 1）**:
+   - [ ] 实现是否解决了 `proposal.md` 中识别的**底层问题**（而非仅表面需求）？
+   - [ ] 基本约束是否得到遵守（物理/业务/资源约束）？
+   - [ ] 如果当初识别了"更简单的替代方案"，为何最终选择开发而非采用替代方案？
+
+   **方案选择一致性（Phase 2）**:
+   - [ ] 实现是否与 `design.md` 的推荐方案一致？
+   - [ ] 如果偏离，偏离的理由是否记录在 `design.md` 更新中？
+   - [ ] 候选方案对比时提出的风险点是否在实现中得到规避？
+
+   **评审条件闭环（Phase 3）**:
+   - [ ] 运行 `/opsx:overview` 刷新条件矩阵，核对 `review-summary.md` 的「有条件通过」条件是否完成
+   - [ ] ⚠️ 标记的未落地项是否已在本次实现中闭环？
+
+   **可测试性与运维成本**:
+   - [ ] 关键路径是否有测试覆盖（单元测试/集成测试）？
+   - [ ] 新增的组件/服务是否有运维文档（部署/监控/故障排查）？
+   - [ ] 是否引入了新的运维成本（新的中间件/定时任务/资源消耗）？
+
+   **人工核对建议**：
+   - 在完成自动校验后，逐项核对以上清单
+   - 不通过的项视同 BLOCKER，需补充实现或更新文档
+   - 完成人工核对后再执行 `/opsx:archive`
+
 **Verification Heuristics**
 
 - **Completeness**: Focus on objective checklist items (checkboxes, requirements list)
@@ -166,3 +196,15 @@ Use clear markdown with:
 - Code references in format: `file.ts:123`
 - Specific, actionable recommendations
 - No vague suggestions like "consider reviewing"
+- **交叉验证 III 人工核对清单**（在自动校验报告之后）
+
+**完整的交叉验证链条**
+
+| 阶段 | 验证类型 | 防止的问题 | 执行位置 |
+|------|---------|-----------|---------|
+| Phase 1 | 第一性原理分析 | 解决错误的问题 | `/opsx:explore` |
+| Phase 2 | 候选方案交叉验证 | 方案选择无依据 | `/opsx:explore` |
+| Phase 3 | 五维度交叉验证 | 方案存在盲区 | `/opsx:review` |
+| Phase 6 | 实现与设计交叉验证（当前阶段） | 实现偏离设计意图 | `/opsx:verify` + 人工核对 |
+
+参考完整质量保障体系：`workflow/OpenSpec-AI-研发流程.md`
