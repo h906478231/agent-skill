@@ -1,0 +1,35 @@
+{
+  "name": "agent-skills",
+  "version": "1.0.0",
+  "description": "跨 coding agent 复用的 Agent Skills 仓库。基于开放的 SKILL.md 标准，同一份资产可在 Claude Code、Codex CLI、opencode、Cursor 等 70+ agent 中使用。",
+  "keywords": [
+    "agent-skills",
+    "claude-code",
+    "cursor",
+    "codex",
+    "opencode",
+    "ddd",
+    "domain-driven-design",
+    "openspec",
+    "ai-coding",
+    "skill",
+    "skills"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/h906478231/agent-skill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/h906478231/agent-skill/issues"
+  },
+  "homepage": "https://github.com/h906478231/agent-skill#readme",
+  "license": "Apache-2.0",
+  "author": "tigger",
+  "scripts": {
+    "pack": "bash scripts/pack-skill.sh",
+    "verify": "bash scripts/verify-references.sh"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
