@@ -30,7 +30,7 @@ description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec 
 
 ## 适用范围分级
 
-沿用 `workflow/OpenSpec-AI-研发流程.md` 的分级：
+沿用 [门禁分级标准](../../shared/workflow/gate-levels.md)：
 
 | 层级 | 是否跑 |
 |------|-------|

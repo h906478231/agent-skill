@@ -81,7 +81,7 @@ done
 
 门禁由三道防线组成，强度递减 —— 它拦得住「忘了」，拦不住「铁了心要绕」。**三道全绕过的方式始终存在**：直接让 Agent 用 Edit/Write 改代码，不经过任何 apply 入口。所以门禁定位是**流程纪律工具，不是安全边界**。
 
-三道防线的覆盖范围、各自拦不住什么、hook 注册与验证方法，见 `workflow/OpenSpec-AI-研发流程.md`「门禁的真实强制力」与「门禁启用与部署」。**hook 未在 `~/.claude/settings.json` 注册时第一道防线为零。**
+**hook 未在 `~/.claude/settings.json` 注册时第一道防线为零。** 详见本 skill 的 `hooks/` 目录与注册说明。
 
 ## 前置校验
 
@@ -91,7 +91,7 @@ done
    openspec status --change "<name>" --json
    ```
 3. 确认 `proposal.md` 与 `design.md` 均存在且非空；`design.md` 含「推荐方案」。否则中止并提示补齐（体现「方案未确定，不开始编码」）。
-4. 判定评审范围：参照 `workflow/OpenSpec-AI-研发流程.md` 的「门禁适用范围分级」向用户确认跑哪些维度。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动五角色。
+4. 判定评审范围：参照 [门禁分级标准](../../shared/workflow/gate-levels.md) 向用户确认跑哪些维度。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动五角色。
 5. 在 `changeRoot` 下创建 `review/` 目录。
 
 ## 执行步骤
@@ -166,7 +166,7 @@ finding 字段、三条硬规则（白话 / 可复现触发场景 / 不修的后
   - Phase 2 候选方案交叉验证 → 确保方案选择有依据
   - **Phase 3 五维度交叉验证（当前阶段）** → 确保方案无盲区、发现跨维度冲突
 - 本门禁：`/opsx:review`（本 skill）产出 `review/*.md` + `review-summary.md`，停在人工确认。
-- 下游：人工批准后 `/opsx:apply` 编码 → `/opsx:quality` 实现层代码质量评审 → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）三维校验 → `openspec archive`。完整流程见 `workflow/OpenSpec-AI-研发流程.md`。
+- 下游：人工批准后 `/opsx:apply` 编码 → `/opsx:quality` 实现层代码质量评审 → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）三维校验 → `openspec archive`。完整流程见 [研发流程 Phases 定义](../../shared/workflow/phases.md)。
 - 角色分工：OpenSpec = 流程与设计文档中心；本门禁 = AI 评审编排；Coding Agent = 代码执行者。
 
 ## 交叉验证机制说明

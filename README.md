@@ -11,23 +11,42 @@ claude/          Claude Code 专用资产（command / subagent），其他 agent
 
 `skills/` 是 `npx skills` 扫描的目录；`claude/` 不会被扫描，需手动链接或复制。
 
-## 安装
+## 快速开始
 
-### 自己使用（符号链接，改完即时生效）
+[![skill.sh](https://img.shields.io/badge/skill.sh-agent--skills-blue?logo=github)](https://github.com/h906478231/agent-skill)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
+
+### 一键安装（推荐）
+
+安装所有 33 个 skills 到支持的 AI 编码工具：
+
+```bash
+npx skills add h906478231/agent-skill -g -a '*'
+```
+
+### 安装到特定 agent
+
+```bash
+# Claude Code
+npx skills add h906478231/agent-skill -g -a claude-code
+
+# Cursor
+npx skills add h906478231/agent-skill -g -a cursor
+
+# Codex CLI
+npx skills add h906478231/agent-skill -g -a codex
+
+# opencode
+npx skills add h906478231/agent-skill -g -a opencode
+```
+
+### 自己开发使用（符号链接，改完即时生效）
 
 ```bash
 npx skills add ./ -g -a claude-code -a codex -a opencode
 ```
 
 符号链接是默认模式，三个 agent 共享同一份源文件，编辑 `skills/` 后无需重装。
-
-### 分发给他人（推送到 GitHub 后）
-
-```bash
-npx skills add <owner>/agent-skills -g -a '*'
-```
-
-`-a '*'` 表示安装到本机检测到的全部 agent。若目标环境不支持符号链接，追加 `--copy` 改为独立复制。
 
 ### 只装其中几个
 

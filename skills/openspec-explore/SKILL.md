@@ -303,7 +303,12 @@ But this summary is optional. Sometimes the thinking IS the value.
 
 ---
 
-## 质量保障原则（参考 workflow/OpenSpec-AI-研发流程.md）
+## 质量保障原则
+
+详见 shared 模块：
+- [Phase 1 第一性原理分析](shared/first-principles.md) - 表面需求 vs 底层问题 / 基本约束 / 必要性验证
+- [Phase 2 候选方案交叉验证](shared/cross-validation.md) - 至少 2 个候选方案 × 四维对比矩阵
+- [质量保障体系总览](../../shared/workflow/quality-framework.md) - 完整检查点与处理流程
 
 **Phase 1 第一性原理检查点**：
 - [ ] 是否区分了表面需求与底层问题？
@@ -320,5 +325,3 @@ But this summary is optional. Sometimes the thinking IS the value.
 **不通过检查点的处理**：
 - Phase 1 未通过 → 继续澄清需求，补充第一性原理分析
 - Phase 2 未通过 → 补充候选方案或完善对比矩阵
-
-完整的质量保障体系见 `workflow/OpenSpec-AI-研发流程.md`。
