@@ -2,12 +2,6 @@
 
 跨 coding agent 复用的 Agent Skills 仓库。基于开放的 `SKILL.md` 标准，同一份资产可在 Claude Code、Codex CLI、opencode、Cursor 等 70+ agent 中使用。
 
-## 📖 新人必读
-
-**第一次使用 OpenSpec 工作流？** 先看这个 👉 [**5分钟上手指南**](docs/quickstart-guide.md)
-
-一个完整的例子，从需求到上线，看完就会用。
-
 ## 目录结构
 
 ```
@@ -120,11 +114,6 @@ npx skills remove --skill ddd-aggregate
 规则的事实源划分：**面向人的策略**（分级 / 签字责任 / 强制力边界 / git 生命周期）只写在该流程文档；**面向 agent 的执行规则**（finding 字段 / 闭环验证 / 裁决判定 / apply 签字校验）只写在 `skills/opsx-technical-review/shared/`。其余文件一律引用，不复制 —— 改规则时只改事实源那一处。
 
 门禁 hook 需在 `~/.claude/settings.json` 注册后才生效，注册方法见该文档「门禁启用与部署」。
-
-### 🛠️ 工作流增强工具
-
-- **分级自动判定工具**：[`scripts/classify-change.js`](scripts/classify-change.js) - 根据 proposal.md 和 design.md 自动判定变更等级（L0/L1/L2/L3），使用指南见 [`docs/classify-change-guide.md`](docs/classify-change-guide.md)
-- **改进路线图**：[`docs/improvement-roadmap.md`](docs/improvement-roadmap.md) - 工作流优化建议和实施计划
 
 ## claude/ 专用资产
 
