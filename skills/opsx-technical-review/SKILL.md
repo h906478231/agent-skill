@@ -91,8 +91,12 @@ done
    openspec status --change "<name>" --json
    ```
 3. 确认 `proposal.md` 与 `design.md` 均存在且非空；`design.md` 含「推荐方案」。否则中止并提示补齐（体现「方案未确定，不开始编码」）。
-4. 判定评审范围：参照 [门禁分级标准](../../shared/workflow/gate-levels.md) 向用户确认跑哪些维度。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动五角色。
-5. 在 `changeRoot` 下创建 `review/` 目录。
+4. **识别用户选择的方案类型**：
+   - 读取 `design.md` 的"推荐方案"或"Decisions"部分
+   - 判断是否为 **MVP 方案**（标志：明确说明"优先复用现有能力"/"最小化实现"/"快速验证"）
+   - 如果是 MVP，告知用户：**技术评审将使用 MVP 标准，只检查阻断性问题**
+5. 判定评审范围：参照 [门禁分级标准](../../shared/workflow/gate-levels.md) 向用户确认跑哪些维度。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动五角色。
+6. 在 `changeRoot` 下创建 `review/` 目录。
 
 ## 执行步骤
 
@@ -114,9 +118,10 @@ done
 
 1. **`<SKILL_DIR>` 的绝对路径**（按上面「路径约定」解析），并说明「下文所有 `<SKILL_DIR>/...` 路径都替换为该值」。子 agent 是纯文本上下文，不给它这个值，它就找不到 `shared/` 下的规则文件；
 2. 对应 `<SKILL_DIR>/roles/<role>.md` 全文 —— 其中已声明必读的共用规则文件，子 agent 自行读取；
-3. 变更的 `proposal.md` / `design.md` 全文；
-4. **若 `design.md` 末尾存在「## 评审意见闭环记录」区块**（说明这是重走门禁）：把该区块一并放进 prompt，并要求子 agent 先按 `<SKILL_DIR>/shared/closed-loop-verification.md` 做上轮闭环验证、再做本轮审查。子 agent 是全新上下文，没有上轮记忆 —— 不给该区块，它要么重复报同一问题，要么完全漏掉验证；
-5. 「把结论写入 `review/<role>.md`」。
+3. **如果识别为 MVP 方案**：在 prompt 开头明确说明 `本次评审使用 MVP 标准。必须先阅读 <SKILL_DIR>/shared/mvp-review-standard.md 理解 MVP 评审原则，只报告阻断性问题，不报告 MVP 已接受的权衡。`
+4. 变更的 `proposal.md` / `design.md` 全文；
+5. **若 `design.md` 末尾存在「## 评审意见闭环记录」区块**（说明这是重走门禁）：把该区块一并放进 prompt，并要求子 agent 先按 `<SKILL_DIR>/shared/closed-loop-verification.md` 做上轮闭环验证、再做本轮审查。子 agent 是全新上下文，没有上轮记忆 —— 不给该区块，它要么重复报同一问题，要么完全漏掉验证；
+6. 「把结论写入 `review/<role>.md`」。
 
 finding 字段、三条硬规则（白话 / 可复现触发场景 / 不修的后果）与维度结论取值，统一见 `shared/finding-format.md`，此处不重复。
 

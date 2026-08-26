@@ -16,6 +16,12 @@ claude/          Claude Code 专用资产（command / subagent），其他 agent
 [![skill.sh](https://img.shields.io/badge/skill.sh-agent--skills-blue?logo=github)](https://github.com/h906478231/agent-skill)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
+### 前置要求
+
+- ✅ Git（已添加到系统 PATH）
+- ✅ Node.js >= 16
+- ✅ 网络可访问 GitHub
+
 ### 一键安装（推荐）
 
 安装所有 33 个 skills 到支持的 AI 编码工具：
@@ -23,6 +29,8 @@ claude/          Claude Code 专用资产（command / subagent），其他 agent
 ```bash
 npx skills add h906478231/agent-skill -g -a '*'
 ```
+
+> 💡 如遇问题，请查看 [故障排除指南](docs/skill-sh-troubleshooting.md)
 
 ### 安装到特定 agent
 
