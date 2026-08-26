@@ -148,7 +148,7 @@ opsx-technical-review/
 ├── hooks/check-review-approval.sh    # PreToolUse 门禁 hook（拦截未签字的 apply）
 └── technical-review-gate.workflow.js # Pi Workflow：并行 fan-out 五角色 + 结构化汇总
 
-opsx-finding-explain/                # 按需生成详细解析文档（2026-08 新增）
+openspec-finding-explain/                # 按需生成详细解析文档（2026-08 新增）
 └── SKILL.md                          # 为复杂 finding 生成完整的业务场景、代码示例、实施指南
 ```
 
@@ -196,7 +196,7 @@ ID | 严重级别 | 影响业务功能 | 位置 | 涉及代码模块 | 一句话
 
 ### 按需生成详细解析文档
 
-**新增 skill：opsx-finding-explain**（2026-08）
+**新增 skill：openspec-finding-explain**（2026-08）
 
 对于复杂的 finding，可以按需生成详细解析文档：
 

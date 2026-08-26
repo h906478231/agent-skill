@@ -1,9 +1,9 @@
 ---
-name: opsx-finding-explain
+name: openspec-finding-explain
 description: 为技术评审的 finding 生成详细的业务场景解析文档。输入 finding ID 或整个 review-summary.md，输出包含业务场景、代码示例、算法细节、实施步骤的详细说明文档（finding-details.md）。用于实施阶段需要深入理解技术方案时，或向团队成员解释复杂的技术问题时。支持单个 finding 展开或批量展开。
 ---
 
-# Finding 详细解析生成器（opsx-finding-explain）
+# Finding 详细解析生成器（openspec-finding-explain）
 
 ## 定位
 
@@ -345,7 +345,7 @@ async submitMaterial(
 ---
 
 **生成时间**：2026-08-22  
-**生成工具**：opsx-finding-explain  
+**生成工具**：openspec-finding-explain  
 **目标读者**：开发工程师  
 ```
 
