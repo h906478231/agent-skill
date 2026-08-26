@@ -1,5 +1,5 @@
 ---
-name: opsx-discussion-sync
+name: openspec-discussion-sync
 description: 子 agent 讨论结论回流主 agent 的契约与落盘规则。规定子 agent 必须返回结论/依据/建议落点/未决问题/弃案五段，主 agent 必须把每条建议落点落到 artifact 或记为未采纳，并追加 discussion-log.md。用于探索、建模、方案对比等任何调起子 agent 的场景，防止讨论结论只在对话里出现一次就丢失。
 ---
 

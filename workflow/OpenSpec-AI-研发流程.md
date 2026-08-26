@@ -67,20 +67,20 @@ OpenSpec Archive → specs 沉淀能力；评审与讨论产物随变更进 chan
 
 ## 各阶段职责与产物
 
-| 阶段 | 入口 | 做什么 | 产物 | 是否改代码 |
-|------|------|--------|------|-----------|
-| Phase 1 需求澄清 | `/opsx:explore` | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
-| Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证** | `design.md`（含方案交叉验证矩阵） | 否 |
-| （贯穿 1–2）讨论回流 | skill `opsx-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
-| 变更总览 | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵 | `overview.md`（派生视图，勿手改） | 否 |
-| 分级判定 | 人工（参照下表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `review-summary.md` | 否 |
-| Phase 3 技术评审门禁 | `/opsx:review` | 专项 Agent 并行评审已确定方案；**五角色多维度交叉验证** | `review/*.md` | 否 |
-| Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
-| 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
-| Phase 5 代码实现 | `/opsx:apply` | 按已评审通过的设计实现，不重新设计 | 代码 + `tasks.md` 勾选 | 是 |
-| Phase 5.5 代码质量评审 | `/opsx:quality` | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
-| Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
-| 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
+| 阶段 | 入口                               | 做什么 | 产物 | 是否改代码 |
+|------|----------------------------------|--------|------|-----------|
+| Phase 1 需求澄清 | `/opsx:explore`                  | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
+| Phase 2 方案探索 | `/opsx:explore`                  | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证** | `design.md`（含方案交叉验证矩阵） | 否 |
+| （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
+| 变更总览 | `/opsx:overview`                 | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵 | `overview.md`（派生视图，勿手改） | 否 |
+| 分级判定 | 人工（参照下表）                         | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `review-summary.md` | 否 |
+| Phase 3 技术评审门禁 | `/opsx:review`                   | 专项 Agent 并行评审已确定方案；**五角色多维度交叉验证** | `review/*.md` | 否 |
+| Phase 4 评审确认 | 同上（汇总）                           | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
+| 人工门禁 | 人工                               | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
+| Phase 5 代码实现 | `/opsx:apply`                    | 按已评审通过的设计实现，不重新设计 | 代码 + `tasks.md` 勾选 | 是 |
+| Phase 5.5 代码质量评审 | `/opsx:quality`                  | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
+| Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
+| 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 
 ## 门禁适用范围分级
 
@@ -634,7 +634,7 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 #      ※ 必含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证）
 #   → openspec/changes/add-contact-batch-import/design.md（推荐方案B：异步MQ分片消费）
 #      ※ 必含「候选方案交叉验证矩阵」（至少2个候选方案 × 四维对比）
-#   → discussion-log.md（子 agent 讨论结论回流，见 skill opsx-discussion-sync）
+#   → discussion-log.md（子 agent 讨论结论回流，见 skill openspec-discussion-sync）
 
 # 生成变更总览：一页看懂流程、字段变更与规则条件是否遗漏
 /opsx:overview add-contact-batch-import
@@ -707,7 +707,7 @@ Phase 1 必须完成「第一性原理分析」，区分表面需求与底层问
 新版 finding 强制带「一句话白话 / 触发场景 / 不修的后果」三列，`review-summary.md` 另有摘要与术语表。**写不出具体触发场景的 Blocker 会被自动降级为 Major** —— 若仍看到看不懂的 Blocker，那本身就是评审质量问题，可以要求重写而不是硬猜。
 
 **Q：子 agent 讨论完的结论怎么不丢？**
-按 skill `opsx-discussion-sync`：子 agent 返回固定五段（结论/依据/建议落点/未决问题/弃案），主 agent 必须把每条建议落点落到 artifact 或记为「未采纳 + 理由」，并追加 `discussion-log.md`。结束本轮前有防丢自检。
+按 skill `openspec-discussion-sync`：子 agent 返回固定五段（结论/依据/建议落点/未决问题/弃案），主 agent 必须把每条建议落点落到 artifact 或记为「未采纳 + 理由」，并追加 `discussion-log.md`。结束本轮前有防丢自检。
 
 ## 与项目既有约定的衔接
 
