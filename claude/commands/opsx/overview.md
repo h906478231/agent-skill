@@ -12,7 +12,7 @@ tags: [workflow, overview, traceability]
 
 ## 执行
 
-加载 skill **`opsx-change-overview`**，按其中的前置校验与五块产出结构执行，不要在本文件里另行定义规则。
+加载 skill **`openspec-change-overview`**，按其中的前置校验与五块产出结构执行，不要在本文件里另行定义规则。
 
 关键约束（详见 skill）：
 

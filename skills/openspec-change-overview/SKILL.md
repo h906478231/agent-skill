@@ -1,5 +1,5 @@
 ---
-name: opsx-change-overview
+name: openspec-change-overview
 description: 为一个 OpenSpec 变更生成单页总览 overview.md，把分散在 proposal/design/specs/tasks/review 中的信息汇成文档地图、端到端运行流程、字段变更台账、规则条件可追溯矩阵与未决问题。用于回答「规则条件有没有遗漏」「整体运行流程与过程中的字段怎么变」两类问题；在 design 定稿后、门禁出结论后、verify 之前各刷新一次。
 ---
 
