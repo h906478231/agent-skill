@@ -26,7 +26,7 @@ const locateHint = skillDir
   : [
       `先定位本 skill 的安装目录（下称 SKILL_DIR）：依次探测 $CLAUDE_PROJECT_DIR/.claude/skills、~/.claude/skills、`,
       `~/.codex/skills、~/.config/opencode/skills、~/.cursor/skills、~/.gemini/skills、./skills，`,
-      `取第一个存在 opsx-technical-review/SKILL.md 的目录；都不命中则用 Glob 搜 **/opsx-technical-review/SKILL.md。`,
+      `取第一个存在 openspec-technical-review/SKILL.md 的目录；都不命中则用 Glob 搜 **/openspec-technical-review/SKILL.md。`,
       `项目级优先于全局。下文所有 <SKILL_DIR> 均替换为该路径。`,
     ].join('')
 

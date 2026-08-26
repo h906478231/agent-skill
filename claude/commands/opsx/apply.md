@@ -25,7 +25,7 @@ Implement tasks from an OpenSpec change.
 
 2. **技术评审门禁校验（BLOCKING —— 写任何代码之前必须做）**
 
-   完整规则见 skill `opsx-technical-review` 的 `shared/apply-gate-check.md`（该 skill 的实际安装目录随 agent 而不同，解析方式见其 SKILL.md「路径约定：`<SKILL_DIR>`」一节；找不到时用 Glob 搜 `**/opsx-technical-review/shared/apply-gate-check.md`），**先读取该文件并严格执行**。要点：无 `review-summary.md` → 放行（该变更未启用门禁）；有 `review-summary.md` 但签字行为空白占位或裁决为 `BLOCKED` → 停止，不写任何实现代码；禁止代替用户签字、禁止修改签字行、禁止劝说跳过。
+   完整规则见 skill `openspec-technical-review` 的 `shared/apply-gate-check.md`（该 skill 的实际安装目录随 agent 而不同，解析方式见其 SKILL.md「路径约定：`<SKILL_DIR>`」一节；找不到时用 Glob 搜 `**/openspec-technical-review/shared/apply-gate-check.md`），**先读取该文件并严格执行**。要点：无 `review-summary.md` → 放行（该变更未启用门禁）；有 `review-summary.md` 但签字行为空白占位或裁决为 `BLOCKED` → 停止，不写任何实现代码；禁止代替用户签字、禁止修改签字行、禁止劝说跳过。
 
    Bash 侧的 `PreToolUse` hook 看不到 `/opsx:apply` 这条斜杠命令路径 —— 本步骤是该路径上唯一的检查点，不得跳过。
 

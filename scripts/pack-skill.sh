@@ -19,7 +19,7 @@ usage() {
 
 示例:
   $0 openspec-explore
-  $0 opsx-technical-review -o /tmp/packages
+  $0 openspec-technical-review -o /tmp/packages
 
 EOF
 }

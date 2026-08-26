@@ -123,7 +123,7 @@ main() {
   check_skill "openspec-explore"
   check_skill "openspec-code-quality"
   check_skill "openspec-change-overview"
-  check_skill "opsx-technical-review"
+  check_skill "openspec-technical-review"
 
   # 输出总结
   echo "╔══════════════════════════════════════════════════════════════════════════════╗"

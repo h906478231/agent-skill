@@ -50,9 +50,9 @@ description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec 
 
 ## finding 格式
 
-**完全沿用** 兄弟 skill `opsx-technical-review` 的 `shared/finding-format.md`：七字段（`ID | 严重级别 | 位置 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复`）、三条硬规则、`通过 / 有条件通过 / 打回` 三值结论。
+**完全沿用** 兄弟 skill `openspec-technical-review` 的 `shared/finding-format.md`：七字段（`ID | 严重级别 | 位置 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复`）、三条硬规则、`通过 / 有条件通过 / 打回` 三值结论。
 
-> **路径解析**：所有 skill 平铺在同一个 skills 根目录下，因此相对本 SKILL.md 的路径恒为 `../opsx-technical-review/shared/finding-format.md`。**不要写死绝对路径** —— skills 根目录随 agent 而不同（Claude Code `~/.claude/skills/`、Codex `~/.codex/skills/`、opencode `~/.config/opencode/skills/`、Cursor `~/.cursor/skills/`、项目级 `.claude/skills/`、直接使用本仓时的 `skills/`）。相对路径读不到时，用 Glob 搜 `**/opsx-technical-review/shared/finding-format.md`。
+> **路径解析**：所有 skill 平铺在同一个 skills 根目录下，因此相对本 SKILL.md 的路径恒为 `../openspec-technical-review/shared/finding-format.md`。**不要写死绝对路径** —— skills 根目录随 agent 而不同（Claude Code `~/.claude/skills/`、Codex `~/.codex/skills/`、opencode `~/.config/opencode/skills/`、Cursor `~/.cursor/skills/`、项目级 `.claude/skills/`、直接使用本仓时的 `skills/`）。相对路径读不到时，用 Glob 搜 `**/openspec-technical-review/shared/finding-format.md`。
 
 本维度参数：
 
@@ -101,7 +101,7 @@ description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec 
 
 ## 裁决与闭环
 
-- 判定规则沿用兄弟 skill 的 `../opsx-technical-review/shared/gate-policy.md`（路径解析同上，不写死绝对路径）。
+- 判定规则沿用兄弟 skill 的 `../openspec-technical-review/shared/gate-policy.md`（路径解析同上，不写死绝对路径）。
 - **存在未闭环 Blocker 时不得 `openspec archive`**。
 - 「有条件通过」的每个条件必须映射到 `tasks.md` 的一个勾选项，**映射不到视同 Blocker**。
 - 修复后重跑本命令，对上轮 Blocker 逐条核实：**要指到具体行确认改动已落地**，只看提交说明不算闭环。

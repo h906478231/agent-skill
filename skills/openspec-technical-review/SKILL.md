@@ -1,5 +1,5 @@
 ---
-name: opsx-technical-review
+name: openspec-technical-review
 description: OpenSpec 技术评审门禁（Technical Review Gate，交叉验证 II）。在 OpenSpec Explore 阶段、技术方案已确定（design.md 完成）但尚未进入代码实现（openspec apply）之前，调度架构/并发/性能/数据库/安全五个专项评审 Agent 对同一方案做五维度交叉验证，汇总为 review-summary.md，并停在人工确认门禁。核心原则：需求未明确不分析性能，方案未确定不开始编码。用于任何 OpenSpec 变更在编码前的质量门禁。
 ---
 
@@ -30,7 +30,7 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 ## 资产结构
 
 ```
-opsx-technical-review/
+openspec-technical-review/
 ├── SKILL.md                          # 本文件：门禁编排流程
 ├── shared/                           # 共用规则的唯一事实源，roles / 命令 / workflow 一律引用不复制
 │   ├── finding-format.md             #   finding 七字段 + 三条硬规则 + verdict + 输出骨架
@@ -65,11 +65,11 @@ opsx-technical-review/
 ```bash
 for root in "${CLAUDE_PROJECT_DIR:-.}/.claude/skills" ~/.claude/skills ~/.codex/skills \
             ~/.config/opencode/skills ~/.cursor/skills ~/.gemini/skills ./skills; do
-  [ -f "$root/opsx-technical-review/SKILL.md" ] && echo "$root/opsx-technical-review" && break
+  [ -f "$root/openspec-technical-review/SKILL.md" ] && echo "$root/openspec-technical-review" && break
 done
 ```
 
-都没命中时，用 Glob 搜 `**/opsx-technical-review/SKILL.md` 取其所在目录。**项目级优先于全局** —— 项目内如果放了定制版，应当用项目内那份。
+都没命中时，用 Glob 搜 `**/openspec-technical-review/SKILL.md` 取其所在目录。**项目级优先于全局** —— 项目内如果放了定制版，应当用项目内那份。
 
 ## 铁律（Guardrails）
 

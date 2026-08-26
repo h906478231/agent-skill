@@ -132,10 +132,10 @@ Coding Agent    = 代码执行者（Claude / Codex / GPT），只实现已评审
 
 ## 技术评审门禁（Phase 3–4）详解
 
-门禁资产位于 skill `opsx-technical-review`（本仓源码在 `skills/opsx-technical-review/`；安装后落在**你所用 agent 的 skills 根目录**下 —— Claude Code 为 `~/.claude/skills/`，Codex 为 `~/.codex/skills/`，项目级安装为 `<项目>/.claude/skills/`，详见 README「各 agent 全局安装目录」。文档与提示词中一律用相对路径或 `<SKILL_DIR>` 占位，不写死绝对路径）：
+门禁资产位于 skill `openspec-technical-review`（本仓源码在 `skills/openspec-technical-review/`；安装后落在**你所用 agent 的 skills 根目录**下 —— Claude Code 为 `~/.claude/skills/`，Codex 为 `~/.codex/skills/`，项目级安装为 `<项目>/.claude/skills/`，详见 README「各 agent 全局安装目录」。文档与提示词中一律用相对路径或 `<SKILL_DIR>` 占位，不写死绝对路径）：
 
 ```
-opsx-technical-review/
+openspec-technical-review/
 ├── SKILL.md                          # 门禁编排说明（前置校验/并行调度/汇总/人工门禁）
 ├── shared/                           # agent 执行规则的唯一事实源，roles/命令/workflow 一律引用不复制
 │   ├── finding-format.md             #   finding 九字段（v2.0）+ 五条硬规则 + verdict + 输出骨架
@@ -157,7 +157,7 @@ openspec-finding-explain/                # 按需生成详细解析文档（2026
 | 内容类型 | 唯一事实源 | 例子 |
 |---------|-----------|------|
 | 面向**人**的策略 | **本文档** | 分级规则、签字资格与责任、门禁强制力边界、产物 git 生命周期 |
-| 面向 **agent** 的执行规则 | `skills/opsx-technical-review/shared/` | finding 字段、闭环验证步骤、裁决判定、驳回留痕格式 |
+| 面向 **agent** 的执行规则 | `skills/openspec-technical-review/shared/` | finding 字段、闭环验证步骤、裁决判定、驳回留痕格式 |
 
 其余文件（roles、`/opsx:*` 命令、workflow.js）一律**引用**，不复制。
 
@@ -172,7 +172,7 @@ openspec-finding-explain/                # 按需生成详细解析文档（2026
 - 全部 `通过 / 有条件通过` 且无未闭环 Blocker → `READY_FOR_HUMAN_APPROVAL`：交人工确认。
 - **人工确认是硬门禁**：人工在 `review-summary.md` 写入 `Technical Review Approved` 前，禁止 `/opsx:apply`。
 
-完整判定表与边界情形（声称已闭环但实际未闭环、条件映射不到 tasks 等）见 `skills/opsx-technical-review/shared/gate-policy.md`。
+完整判定表与边界情形（声称已闭环但实际未闭环、条件映射不到 tasks 等）见 `skills/openspec-technical-review/shared/gate-policy.md`。
 
 ### finding 统一字段（v2.0）
 
@@ -271,7 +271,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 前提：**不改 `design.md` 就不重走门禁**，输入没变重跑只会得到同样结论。
 
-留痕的确切格式与示例见 `skills/opsx-technical-review/shared/gate-policy.md` 第 4 节。
+留痕的确切格式与示例见 `skills/openspec-technical-review/shared/gate-policy.md` 第 4 节。
 
 ### 签字人的资格与责任
 
@@ -348,13 +348,13 @@ hook **必须注册后才生效**。未注册时第一道防线为零 —— 这
 **先确认要注册哪个路径**。skills 根目录随 agent 而不同（Claude Code `~/.claude/skills/`、Codex `~/.codex/skills/`、项目级 `<项目>/.claude/skills/` 等，见 README），且其中的同名目录很可能是符号链接，指向别处的独立副本（如 `~/.cc-switch/skills/`、其他 skill 管理器的仓库）。**那些副本未必包含本仓的门禁修复** —— 指过去等于启用了一个看似生效、实则放行的旧版 hook，比不注册更危险。先查清楚（把路径换成你实际的 skills 根目录）：
 
 ```bash
-ls -ld ~/.claude/skills/opsx-technical-review
+ls -ld ~/.claude/skills/openspec-technical-review
 ```
 
 若输出以 `l` 开头（符号链接）且箭头指向非本仓路径，**改为直接指向本仓源文件**，或先把本仓内容同步过去。用下面这条命令得到确切路径（在本仓根目录执行）：
 
 ```bash
-realpath skills/opsx-technical-review/hooks/check-review-approval.sh
+realpath skills/openspec-technical-review/hooks/check-review-approval.sh
 ```
 
 在 `~/.claude/settings.json` 中注册（把 `<上一步的输出>` 替换为实际绝对路径，此处不能用 `~` 以外的相对路径）：
@@ -403,7 +403,7 @@ jq --version
 
 判断口诀：**宁可多跑一个维度，不可漏跑被牵连的维度。**
 
-完整的场景判定表与**牵连关系速查表**（改了表结构要连带重跑哪些维度等）见 `skills/opsx-technical-review/shared/gate-policy.md` 第 2、3 节 —— 那是唯一事实源，本文不复制一份以免两处失配。
+完整的场景判定表与**牵连关系速查表**（改了表结构要连带重跑哪些维度等）见 `skills/openspec-technical-review/shared/gate-policy.md` 第 2、3 节 —— 那是唯一事实源，本文不复制一份以免两处失配。
 
 操作命令：
 

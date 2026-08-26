@@ -19,7 +19,7 @@ tags: [workflow, review, gate, experimental, cross-validation]
 
 ## 执行
 
-加载 skill **`opsx-technical-review`**，按其中的「前置校验 → Step 1 并行调度 → Step 2 汇总 → Step 3 停在人工确认」执行，不要在本文件里另行定义规则。
+加载 skill **`openspec-technical-review`**，按其中的「前置校验 → Step 1 并行调度 → Step 2 汇总 → Step 3 停在人工确认」执行，不要在本文件里另行定义规则。
 
 该 skill 及其 `shared/` 目录是以下内容的唯一事实源，本命令不复制：
 

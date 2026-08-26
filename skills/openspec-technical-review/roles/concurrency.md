@@ -9,7 +9,7 @@
 
 ## 必读的共用规则
 
-> `<SKILL_DIR>` = 本 skill 的安装目录，由主 agent 在 prompt 中给出实际绝对路径（各 agent 的 skills 根目录不同，此处不写死）。若 prompt 未给出，按仓库 README 的安装目录表逐个探测，或用 Glob 搜 `**/opsx-technical-review/SKILL.md`。
+> `<SKILL_DIR>` = 本 skill 的安装目录，由主 agent 在 prompt 中给出实际绝对路径（各 agent 的 skills 根目录不同，此处不写死）。若 prompt 未给出，按仓库 README 的安装目录表逐个探测，或用 Glob 搜 `**/openspec-technical-review/SKILL.md`。
 
 - **finding 字段与维度结论**：`<SKILL_DIR>/shared/finding-format.md`
 - **上轮闭环验证**（仅当 `design.md` 末尾存在「## 评审意见闭环记录」区块时）：`<SKILL_DIR>/shared/closed-loop-verification.md`

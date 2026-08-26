@@ -19,7 +19,7 @@ tags: [workflow, review, quality]
 关键约束（详见 skill）：
 
 - 输入是 `git diff`，不是设计文档；diff 为空则中止并提示先完成 `/opsx:apply`。
-- finding 格式沿用 skill `opsx-technical-review` 的 `shared/finding-format.md` 七字段（该 skill 的实际安装目录见其 SKILL.md「路径约定：`<SKILL_DIR>`」一节，**不要写死绝对路径**），ID 前缀 `CQ-`，「位置」必须精确到 `文件:行号`。
+- finding 格式沿用 skill `openspec-technical-review` 的 `shared/finding-format.md` 七字段（该 skill 的实际安装目录见其 SKILL.md「路径约定：`<SKILL_DIR>`」一节，**不要写死绝对路径**），ID 前缀 `CQ-`，「位置」必须精确到 `文件:行号`。
 - 「应复用而未复用」一项**必须实际搜索仓库确认**，不得凭印象下结论。
 - L0 变更豁免，L1 及以上都跑。
 - **存在未闭环 Blocker 不得 `openspec archive`**；「有条件通过」的条件映射不到 tasks 视同 Blocker。
@@ -32,5 +32,5 @@ tags: [workflow, review, quality]
 
 - 上游：`/opsx:apply`
 - 下游：`/opsx:verify` → `openspec archive`
-- 设计层门禁：`/opsx:review`（skill `opsx-technical-review`）
+- 设计层门禁：`/opsx:review`（skill `openspec-technical-review`）
 - 完整流程：`workflow/OpenSpec-AI-研发流程.md`
