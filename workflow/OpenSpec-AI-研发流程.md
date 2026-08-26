@@ -42,14 +42,19 @@ OpenSpec Explore
 └────────────────────────────┬─────────────────────────────────┘
       ▼                                                        │
 评审汇总（Phase 4）→ review-summary.md（门禁裁决 + 修改建议）      │
+      │  含业务影响地图、代码改动范围（v2.0）                     │
       │                                                        │
       ├─ BLOCKED ─→ 回改 design.md（留闭环记录）─→ 重走门禁 ⟲     │
+      │                                                        │
+      ├─【可选】/opsx:explain --finding <ID>                    │
+      │         → review/finding-details/<ID>.md（详细解析）     │
       │                                                        │
       ▼ READY_FOR_HUMAN_APPROVAL                               │
 【人工确认评审结果】← 硬门禁：人工写入 "Technical Review Approved"  │
       ▼                                                        │
       ◄────────────────────────────────────────────────────────┘
 OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/测试）
+      │  参考 review-summary.md 的"涉及代码模块"和"建议修复"      │
       ▼
 代码质量评审（Phase 5.5）→ /opsx:quality → review/code-quality.md
       │  查 diff 的重复率/可读性/死代码/复杂度/设计偏离；未闭环 Blocker 不得归档
@@ -133,7 +138,7 @@ Coding Agent    = 代码执行者（Claude / Codex / GPT），只实现已评审
 opsx-technical-review/
 ├── SKILL.md                          # 门禁编排说明（前置校验/并行调度/汇总/人工门禁）
 ├── shared/                           # agent 执行规则的唯一事实源，roles/命令/workflow 一律引用不复制
-│   ├── finding-format.md             #   finding 七字段 + 三条硬规则 + verdict + 输出骨架
+│   ├── finding-format.md             #   finding 九字段（v2.0）+ 五条硬规则 + verdict + 输出骨架
 │   ├── closed-loop-verification.md   #   重走门禁时如何验证上轮 Blocker 真的闭环
 │   ├── gate-policy.md                #   裁决判定 / 重走范围 / 牵连关系 / 驳回与 risk accepted
 │   └── apply-gate-check.md           #   apply 前的人工签字校验
@@ -142,6 +147,9 @@ opsx-technical-review/
 ├── agents/openai.yaml                # skill 接口描述
 ├── hooks/check-review-approval.sh    # PreToolUse 门禁 hook（拦截未签字的 apply）
 └── technical-review-gate.workflow.js # Pi Workflow：并行 fan-out 五角色 + 结构化汇总
+
+opsx-finding-explain/                # 按需生成详细解析文档（2026-08 新增）
+└── SKILL.md                          # 为复杂 finding 生成完整的业务场景、代码示例、实施指南
 ```
 
 **事实源划分**（改文档前先看这条，避免又写出两份互相矛盾的规则）：
@@ -166,23 +174,55 @@ opsx-technical-review/
 
 完整判定表与边界情形（声称已闭环但实际未闭环、条件映射不到 tasks 等）见 `skills/opsx-technical-review/shared/gate-policy.md`。
 
-### finding 统一字段
+### finding 统一字段（v2.0）
+
+**从 7 字段升级到 9 字段**（2026-08 改进），新增业务影响和代码模块映射：
 
 ```
-ID | 严重级别(Blocker/Major/Minor) | 位置 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复
+ID | 严重级别 | 影响业务功能 | 位置 | 涉及代码模块 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复
 ```
 
-后三个字段是为了解决「Blocker 术语太多，没参与设计的人看不懂到底会出什么事」：
+- **影响业务功能**：用户视角的功能名称（如"素材上传"、"消息收藏"）
+- **涉及代码模块**：需要修改的具体代码位置，精确到类/方法/表
 
-| 字段 | 要求 | 反例 |
-|------|------|------|
-| **一句话白话** | 不得出现未解释的专有名词 | 「幂等键缺失导致 CAS 失效」 |
-| **触发场景** | 什么输入/时序/数据量/故障 → 什么可观测现象 | 「并发高时可能有问题」 |
-| **不修的后果** | 影响面（哪些用户/数据/接口）+ 严重度 | 「可能有风险」 |
+**五条硬规则**：
+1. 「影响业务功能」必须用用户视角的功能名称
+2. 「涉及代码模块」必须精确到类/方法/表
+3. 「一句话白话」不得出现未解释的专有名词
+4. 「触发场景」必须可复现，写不出来的 Blocker 一律降级为 Major
+5. 「不修的后果」不写空话
 
-**写不出具体触发场景的 Blocker 一律降级为 Major** —— 这条同时治两个病：术语堆砌看不懂，以及 AI 误报把门禁卡死。
+字段定义与输出骨架的事实源在 `shared/finding-format.md`，本节只作说明。`review-summary.md` 另需给出**摘要（给非设计者的三句话）**、**业务影响地图**、**代码改动范围**、**术语表**，让签字人读得懂自己签的是什么。
 
-字段定义与输出骨架的事实源在 `shared/finding-format.md`，本节只作说明。`review-summary.md` 另需给出**摘要（给非设计者的三句话）**与**术语表**，让签字人读得懂自己签的是什么。
+### 按需生成详细解析文档
+
+**新增 skill：opsx-finding-explain**（2026-08）
+
+对于复杂的 finding，可以按需生成详细解析文档：
+
+```bash
+# 单个 finding
+/opsx:explain --finding CONC-02
+
+# 所有 Blocker
+/opsx:explain --all-blockers
+
+# 面向非技术人员
+/opsx:explain --finding SEC-01 --audience non-tech
+```
+
+**产出**：`review/finding-details/<ID>.md`，包含完整业务场景、代码示例、实施步骤、FAQ。
+
+**使用场景**：
+- 开发看到 finding 后不太理解 → 生成详细文档深入学习
+- 技术分享会，需要讲解复杂问题 → 批量生成所有 Blocker
+- 向产品经理解释为什么严重 → 生成易懂的非技术版本
+
+**两层产出设计**：
+- **第一层**：finding 表格（9 字段）- 评审阶段快速判断
+- **第二层**：详细解析文档 - 实施阶段深入理解，按需生成避免信息过载
+
+详细说明见 `docs/technical-review-improvement-summary.md`
 
 ### 「有条件通过」的条件必须落地
 
