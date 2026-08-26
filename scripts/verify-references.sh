@@ -121,7 +121,7 @@ main() {
 
   # 检查各个 skill
   check_skill "openspec-explore"
-  check_skill "opsx-code-quality"
+  check_skill "openspec-code-quality"
   check_skill "openspec-change-overview"
   check_skill "opsx-technical-review"
 

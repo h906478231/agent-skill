@@ -14,7 +14,7 @@ tags: [workflow, review, quality]
 
 ## 执行
 
-加载 skill **`opsx-code-quality`**，按其中的前置校验、五项审查清单与输出结构执行，不要在本文件里另行定义规则。
+加载 skill **`openspec-code-quality`**，按其中的前置校验、五项审查清单与输出结构执行，不要在本文件里另行定义规则。
 
 关键约束（详见 skill）：
 

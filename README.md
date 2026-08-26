@@ -108,7 +108,7 @@ npx skills remove --skill ddd-aggregate
 |----------------------------|---|---|
 | `opsx-technical-review`    | 编码前五维度技术评审门禁（含 `shared/` 规则事实源、roles、hook、workflow） | `/opsx:review` |
 | `openspec-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵 | `/opsx:overview` |
-| `opsx-code-quality`        | 实现层代码质量评审：对 diff 查重复率 / 可读性 / 死代码 / 复杂度 / 设计偏离 | `/opsx:quality` |
+| `openspec-code-quality`    | 实现层代码质量评审：对 diff 查重复率 / 可读性 / 死代码 / 复杂度 / 设计偏离 | `/opsx:quality` |
 | `opsx-discussion-sync`     | 子 agent 讨论结论回流契约与落盘规则 | 无（由主 agent 加载） |
 
 ### 其他

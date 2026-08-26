@@ -1,5 +1,5 @@
 ---
-name: opsx-code-quality
+name: openspec-code-quality
 description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec apply 编码完成之后、verify 校验之前，对本次变更的 git diff 做重复率、可读性、死代码、复杂度热点与设计偏离五项审查，产出 review/code-quality.md。只报告不改代码，修复走 tasks 勾选。填补五个设计层评审维度不覆盖实现代码的空档。
 ---
 
