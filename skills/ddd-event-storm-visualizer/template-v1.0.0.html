@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{DOMAIN_NAME}} - DDD 事件风暴流程图</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f7fa;
+            overflow: hidden;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            cursor: grab;
+        }
+
+        #container.dragging {
+            cursor: grabbing;
+        }
+
+        #canvas {
+            position: absolute;
+            transform-origin: 0 0;
+            transition: transform 0.1s ease-out;
+        }
+
+        #mermaid-diagram {
+            display: inline-block;
+        }
+
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        #controls button {
+            display: block;
+            width: 40px;
+            height: 40px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.2s;
+        }
+
+        #controls button:hover {
+            background: #f0f0f0;
+            border-color: #999;
+        }
+
+        #zoom-level {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 12px;
+            color: #666;
+        }
+
+        #detail-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 350px;
+            max-height: 80vh;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: none;
+            overflow-y: auto;
+        }
+
+        #detail-panel.visible {
+            display: block;
+        }
+
+        #detail-header {
+            padding: 20px;
+            border-bottom: 2px solid #f0f0f0;
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10;
+        }
+
+        #detail-header h2 {
+            font-size: 18px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        #detail-header .subtitle {
+            font-size: 13px;
+            color: #666;
+        }
+
+        #detail-content {
+            padding: 20px;
+        }
+
+        #detail-content h3 {
+            font-size: 14px;
+            color: #666;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #detail-content p, #detail-content ul {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        #detail-content ul {
+            padding-left: 20px;
+        }
+
+        #detail-content li {
+            margin-bottom: 5px;
+        }
+
+        #close-detail {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 30px;
+            height: 30px;
+            border: none;
+            background: #f5f5f5;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 30px;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        #close-detail:hover {
+            background: #e0e0e0;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-right: 5px;
+        }
+
+        .badge-command {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-event {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .badge-aggregate {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .badge-policy {
+            background: #e2d9f3;
+            color: #5a3f7f;
+        }
+
+        #legend {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            margin-right: 8px;
+        }
+
+        /* Mermaid 节点样式覆盖 */
+        .node rect,
+        .node circle,
+        .node ellipse,
+        .node polygon {
+            stroke-width: 2px !important;
+        }
+
+        .node.highlighted rect,
+        .node.highlighted circle,
+        .node.highlighted ellipse,
+        .node.highlighted polygon {
+            stroke-width: 4px !important;
+            filter: drop-shadow(0 0 8px rgba(0,0,0,0.3));
+        }
+
+        .node.dimmed {
+            opacity: 0.2;
+        }
+
+        .edgePath.highlighted path {
+            stroke-width: 3px !important;
+            stroke: #333 !important;
+        }
+
+        .edgePath.dimmed {
+            opacity: 0.1;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="canvas">
+            <div id="mermaid-diagram"></div>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button id="zoom-in" title="放大">+</button>
+        <div id="zoom-level">100%</div>
+        <button id="zoom-out" title="缩小">−</button>
+        <button id="reset" title="重置" style="margin-top: 15px;">⟲</button>
+    </div>
+
+    <div id="legend">
+        <div class="legend-item">
+            <div class="legend-color" style="background: #FFD700;"></div>
+            <span>Command (命令)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #FF6B6B;"></div>
+            <span>Event (事件)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #4A90E2;"></div>
+            <span>Aggregate (聚合)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #9B59B6;"></div>
+            <span>Policy (策略)</span>
+        </div>
+    </div>
+
+    <div id="detail-panel">
+        <button id="close-detail">×</button>
+        <div id="detail-header"></div>
+        <div id="detail-content"></div>
+    </div>
+
+    <script>
+        // ============================================================
+        // 数据模型 - 由生成器替换
+        // ============================================================
+        const data = {{MODEL_DATA}};
+
+        // ============================================================
+        // Mermaid 图表生成
+        // ============================================================
+        function generateMermaidDiagram() {
+            let diagram = 'graph LR\n';
+
+            // 定义样式
+            diagram += '    classDef commandStyle fill:#FFD700,stroke:#333,stroke-width:2px,color:#000\n';
+            diagram += '    classDef eventStyle fill:#FF6B6B,stroke:#333,stroke-width:2px,color:#fff\n';
+            diagram += '    classDef aggregateStyle fill:#4A90E2,stroke:#333,stroke-width:2px,color:#fff\n';
+            diagram += '    classDef policyStyle fill:#9B59B6,stroke:#333,stroke-width:2px,color:#fff\n';
+
+            // 添加聚合节点
+            for (const [id, agg] of Object.entries(data.aggregates)) {
+                diagram += `    ${id}["${agg.name}<br/>${id}"]\n`;
+            }
+
+            // 添加命令节点和连接
+            for (const [id, cmd] of Object.entries(data.commands)) {
+                diagram += `    ${id}["${cmd.name}<br/>${id}"]\n`;
+                diagram += `    ${id} --> ${cmd.aggregate}\n`;
+            }
+
+            // 添加事件节点和连接
+            for (const [id, evt] of Object.entries(data.events)) {
+                diagram += `    ${id}["${evt.name}<br/>${id}"]\n`;
+            }
+
+            // 连接聚合到事件
+            for (const [cmdId, cmd] of Object.entries(data.commands)) {
+                for (const evtId of cmd.events) {
+                    diagram += `    ${cmd.aggregate} --> ${evtId}\n`;
+                }
+            }
+
+            // 添加策略节点和连接
+            for (const [id, policy] of Object.entries(data.policies)) {
+                diagram += `    ${id}["${policy.name}<br/>${id}"]\n`;
+                for (const evtId of policy.listenEvents) {
+                    diagram += `    ${evtId} --> ${id}\n`;
+                }
+                for (const cmdId of policy.triggerCommands) {
+                    diagram += `    ${id} --> ${cmdId}\n`;
+                }
+            }
+
+            // 应用样式
+            const commandIds = Object.keys(data.commands).join(',');
+            const eventIds = Object.keys(data.events).join(',');
+            const aggregateIds = Object.keys(data.aggregates).join(',');
+            const policyIds = Object.keys(data.policies).join(',');
+
+            diagram += `    class ${commandIds} commandStyle\n`;
+            diagram += `    class ${eventIds} eventStyle\n`;
+            diagram += `    class ${aggregateIds} aggregateStyle\n`;
+            diagram += `    class ${policyIds} policyStyle\n`;
+
+            return diagram;
+        }
+
+        // 初始化 Mermaid
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'default',
+            flowchart: {
+                useMaxWidth: false,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+
+        // 渲染图表
+        async function renderDiagram() {
+            const diagramCode = generateMermaidDiagram();
+            const { svg } = await mermaid.render('mermaid-svg', diagramCode);
+            document.getElementById('mermaid-diagram').innerHTML = svg;
+
+            // 添加点击事件
+            attachNodeClickEvents();
+        }
+
+        // ============================================================
+        // 缩放和拖拽
+        // ============================================================
+        let scale = 1;
+        let translateX = 100;
+        let translateY = 100;
+        let isDragging = false;
+        let startX, startY;
+
+        const container = document.getElementById('container');
+        const canvas = document.getElementById('canvas');
+
+        function updateTransform() {
+            canvas.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+            document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+        }
+
+        document.getElementById('zoom-in').addEventListener('click', () => {
+            scale = Math.min(scale * 1.2, 3);
+            updateTransform();
+        });
+
+        document.getElementById('zoom-out').addEventListener('click', () => {
+            scale = Math.max(scale / 1.2, 0.3);
+            updateTransform();
+        });
+
+        document.getElementById('reset').addEventListener('click', () => {
+            scale = 1;
+            translateX = 100;
+            translateY = 100;
+            updateTransform();
+            clearHighlight();
+        });
+
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            scale = Math.max(0.3, Math.min(3, scale * delta));
+            updateTransform();
+        });
+
+        container.addEventListener('mousedown', (e) => {
+            // 排除控制面板、详情面板和图例
+            if (e.target.closest('#controls') || e.target.closest('#detail-panel') || e.target.closest('#legend')) {
+                return;
+            }
+
+            isDragging = true;
+            startX = e.clientX - translateX;
+            startY = e.clientY - translateY;
+            container.classList.add('dragging');
+            e.preventDefault(); // 防止文本选择
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                translateX = e.clientX - startX;
+                translateY = e.clientY - startY;
+                updateTransform();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            container.classList.remove('dragging');
+        });
+
+        // ============================================================
+        // 节点点击和高亮（基于节点类型的分层高亮）
+        // ============================================================
+        let currentHighlighted = null;
+
+        function attachNodeClickEvents() {
+            const nodes = document.querySelectorAll('.node');
+            nodes.forEach(node => {
+                node.style.cursor = 'pointer';
+                node.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const nodeId = node.id.replace('flowchart-', '').replace(/-[0-9]+$/, '');
+                    handleNodeClick(nodeId);
+                });
+            });
+        }
+
+        function handleNodeClick(nodeId) {
+            clearHighlight();
+
+            // 确定节点类型
+            let nodeType, nodeData;
+            if (data.commands[nodeId]) {
+                nodeType = 'command';
+                nodeData = data.commands[nodeId];
+            } else if (data.events[nodeId]) {
+                nodeType = 'event';
+                nodeData = data.events[nodeId];
+            } else if (data.aggregates[nodeId]) {
+                nodeType = 'aggregate';
+                nodeData = data.aggregates[nodeId];
+            } else if (data.policies[nodeId]) {
+                nodeType = 'policy';
+                nodeData = data.policies[nodeId];
+            }
+
+            if (!nodeData) return;
+
+            // 高亮逻辑：基于节点类型动态计算
+            const toHighlight = new Set([nodeId]);
+
+            if (nodeType === 'command') {
+                // 命令 → 1层：聚合 + 事件
+                toHighlight.add(nodeData.aggregate);
+                nodeData.events.forEach(e => toHighlight.add(e));
+            } else if (nodeType === 'event') {
+                // 事件 → 2层：产生它的命令和聚合 + 监听它的策略 + 策略触发的命令
+                for (const [cmdId, cmd] of Object.entries(data.commands)) {
+                    if (cmd.events.includes(nodeId)) {
+                        toHighlight.add(cmdId);
+                        toHighlight.add(cmd.aggregate);
+                    }
+                }
+                for (const [policyId, policy] of Object.entries(data.policies)) {
+                    if (policy.listenEvents.includes(nodeId)) {
+                        toHighlight.add(policyId);
+                        // 2层：添加策略触发的命令
+                        policy.triggerCommands.forEach(c => toHighlight.add(c));
+                    }
+                }
+            } else if (nodeType === 'policy') {
+                // 策略 → 2层：监听的事件 + 触发的命令 + 命令的聚合
+                nodeData.listenEvents.forEach(e => toHighlight.add(e));
+                nodeData.triggerCommands.forEach(c => {
+                    toHighlight.add(c);
+                    // 2层：添加命令的聚合
+                    if (data.commands[c]) {
+                        toHighlight.add(data.commands[c].aggregate);
+                    }
+                });
+            } else if (nodeType === 'aggregate') {
+                // 聚合 → 1层：操作它的命令 + 它产生的事件
+                for (const [cmdId, cmd] of Object.entries(data.commands)) {
+                    if (cmd.aggregate === nodeId) {
+                        toHighlight.add(cmdId);
+                        cmd.events.forEach(e => toHighlight.add(e));
+                    }
+                }
+            }
+
+            // 应用高亮
+            applyHighlight(toHighlight);
+
+            // 显示详情
+            showDetailPanel(nodeId, nodeType, nodeData);
+
+            currentHighlighted = nodeId;
+        }
+
+        function applyHighlight(toHighlight) {
+            const nodes = document.querySelectorAll('.node');
+            const edges = document.querySelectorAll('.edgePath');
+
+            nodes.forEach(node => {
+                const nodeId = node.id.replace('flowchart-', '').replace(/-[0-9]+$/, '');
+                if (toHighlight.has(nodeId)) {
+                    node.classList.add('highlighted');
+                    node.classList.remove('dimmed');
+                } else {
+                    node.classList.add('dimmed');
+                    node.classList.remove('highlighted');
+                }
+            });
+
+            edges.forEach(edge => {
+                const edgeClasses = edge.classList;
+                let shouldHighlight = false;
+
+                // 检查边是否连接高亮的节点
+                for (const cls of edgeClasses) {
+                    if (cls.startsWith('LS-') || cls.startsWith('LE-')) {
+                        const nodeId = cls.replace(/^L[SE]-/, '').replace(/-[0-9]+$/, '');
+                        if (!toHighlight.has(nodeId)) {
+                            shouldHighlight = false;
+                            break;
+                        } else {
+                            shouldHighlight = true;
+                        }
+                    }
+                }
+
+                if (shouldHighlight) {
+                    edge.classList.add('highlighted');
+                    edge.classList.remove('dimmed');
+                } else {
+                    edge.classList.add('dimmed');
+                    edge.classList.remove('highlighted');
+                }
+            });
+        }
+
+        function clearHighlight() {
+            const nodes = document.querySelectorAll('.node');
+            const edges = document.querySelectorAll('.edgePath');
+
+            nodes.forEach(node => {
+                node.classList.remove('highlighted', 'dimmed');
+            });
+
+            edges.forEach(edge => {
+                edge.classList.remove('highlighted', 'dimmed');
+            });
+
+            hideDetailPanel();
+            currentHighlighted = null;
+        }
+
+        // ============================================================
+        // 详情面板
+        // ============================================================
+        function showDetailPanel(nodeId, nodeType, nodeData) {
+            const panel = document.getElementById('detail-panel');
+            const header = document.getElementById('detail-header');
+            const content = document.getElementById('detail-content');
+
+            let badgeClass, typeText;
+            if (nodeType === 'command') {
+                badgeClass = 'badge-command';
+                typeText = 'Command';
+            } else if (nodeType === 'event') {
+                badgeClass = 'badge-event';
+                typeText = 'Event';
+            } else if (nodeType === 'aggregate') {
+                badgeClass = 'badge-aggregate';
+                typeText = 'Aggregate';
+            } else if (nodeType === 'policy') {
+                badgeClass = 'badge-policy';
+                typeText = 'Policy';
+            }
+
+            let headerHTML = `
+                <h2>${nodeData.name || nodeData.id}</h2>
+                <div class="subtitle">
+                    <span class="badge ${badgeClass}">${typeText}</span>
+                    <span>${nodeData.className || nodeData.id}</span>
+                </div>
+            `;
+
+            let contentHTML = '';
+
+            if (nodeType === 'command') {
+                contentHTML = `
+                    <h3>触发者</h3>
+                    <p>${nodeData.trigger || nodeData.actor || '-'}</p>
+                    <h3>输入数据</h3>
+                    <p>${nodeData.input || (nodeData.inputs ? nodeData.inputs.join(', ') : '-')}</p>
+                    <h3>前置条件</h3>
+                    <p>${nodeData.precondition || (nodeData.preconditions ? nodeData.preconditions.join('; ') : '-')}</p>
+                    <h3>操作聚合</h3>
+                    <p>${nodeData.aggregate}</p>
+                    <h3>产生事件</h3>
+                    <ul>
+                        ${nodeData.events.map(e => `<li>${e}: ${data.events[e].name}</li>`).join('')}
+                    </ul>
+                `;
+            } else if (nodeType === 'event') {
+                contentHTML = `
+                    <h3>业务含义</h3>
+                    <p>${nodeData.meaning}</p>
+                    <h3>所属聚合</h3>
+                    <p>${nodeData.aggregate}</p>
+                    <h3>由以下命令产生</h3>
+                    <ul>
+                        ${Object.entries(data.commands)
+                            .filter(([_, cmd]) => cmd.events.includes(nodeId))
+                            .map(([id, cmd]) => `<li>${id}: ${cmd.name}</li>`)
+                            .join('') || '<li>无</li>'}
+                    </ul>
+                    <h3>被以下策略监听</h3>
+                    <ul>
+                        ${Object.entries(data.policies)
+                            .filter(([_, policy]) => policy.listenEvents.includes(nodeId))
+                            .map(([id, policy]) => `<li>${id}: ${policy.name}</li>`)
+                            .join('') || '<li>无</li>'}
+                    </ul>
+                `;
+            } else if (nodeType === 'aggregate') {
+                const relatedCommands = Object.entries(data.commands)
+                    .filter(([_, cmd]) => cmd.aggregate === nodeId);
+                const relatedEvents = [...new Set(relatedCommands.flatMap(([_, cmd]) => cmd.events))];
+
+                contentHTML = `
+                    <h3>描述</h3>
+                    <p>${nodeData.description || '-'}</p>
+                    ${nodeData.entities ? `
+                    <h3>内部实体</h3>
+                    <ul>
+                        ${nodeData.entities.map(e => `<li>${e}</li>`).join('') || '<li>无</li>'}
+                    </ul>` : ''}
+                    ${nodeData.valueObjects ? `
+                    <h3>值对象</h3>
+                    <ul>
+                        ${nodeData.valueObjects.map(v => `<li>${v}</li>`).join('') || '<li>无</li>'}
+                    </ul>` : ''}
+                    <h3>相关命令</h3>
+                    <ul>
+                        ${relatedCommands.map(([id, cmd]) => `<li>${id}: ${cmd.name}</li>`).join('')}
+                    </ul>
+                    <h3>产生事件</h3>
+                    <ul>
+                        ${relatedEvents.map(e => `<li>${e}: ${data.events[e].name}</li>`).join('')}
+                    </ul>
+                `;
+            } else if (nodeType === 'policy') {
+                contentHTML = `
+                    <h3>业务规则</h3>
+                    <p>${nodeData.rule}</p>
+                    <h3>监听事件</h3>
+                    <ul>
+                        ${nodeData.listenEvents.length > 0
+                            ? nodeData.listenEvents.map(e => `<li>${e}: ${data.events[e].name}</li>`).join('')
+                            : '<li>定时触发</li>'}
+                    </ul>
+                    <h3>触发命令</h3>
+                    <ul>
+                        ${nodeData.triggerCommands.length > 0
+                            ? nodeData.triggerCommands.map(c => `<li>${c}: ${data.commands[c].name}</li>`).join('')
+                            : '<li>无</li>'}
+                    </ul>
+                `;
+            }
+
+            header.innerHTML = headerHTML;
+            content.innerHTML = contentHTML;
+            panel.classList.add('visible');
+        }
+
+        function hideDetailPanel() {
+            document.getElementById('detail-panel').classList.remove('visible');
+        }
+
+        document.getElementById('close-detail').addEventListener('click', () => {
+            clearHighlight();
+        });
+
+        // 点击空白处清除高亮
+        container.addEventListener('click', (e) => {
+            if (e.target === container || e.target === canvas) {
+                clearHighlight();
+            }
+        });
+
+        // ============================================================
+        // 初始化
+        // ============================================================
+        renderDiagram().then(() => {
+            updateTransform();
+        });
+    </script>
+</body>
+</html>
