@@ -186,12 +186,19 @@ ${modelDataJson}
 - \`triggerCommand: "C1"\` → \`triggerCommands: ["C1"]\`
 - \`events: "E1"\` → \`events: ["E1"]\`
 
+**重要：无论数据是否有错，都必须在 correctedData 字段返回完整的修正后数据（或原数据）。**
+
 输出格式：
 \`\`\`json
 {
     "valid": true,
     "errors": [],
-    "correctedData": { ... }
+    "correctedData": {
+        "commands": { ... },
+        "events": { ... },
+        "aggregates": { ... },
+        "policies": { ... }
+    }
 }
 \`\`\`
 
@@ -220,24 +227,38 @@ log('正在生成交互式流程图（使用标准模板 v1.0.0）...');
 const htmlContent = await agent(
     `你是一个 HTML 生成专家。请使用标准模板生成交互式事件风暴流程图。
 
-**必须使用的标准模板**：
-文件路径：skills/ddd-event-storm-visualizer/template-v1.0.0.html
+**任务**：
+1. 按优先级顺序查找模板文件：
+   - 优先：~/.claude/skills/ddd-event-storm-visualizer/template-v1.0.0.html（系统全局）
+   - 备选：.claude/skills/ddd-event-storm-visualizer/template-v1.0.0.html（项目本地）
+   - 备选：templates/ddd-event-storm-visualizer/template-v1.0.0.html（项目模板目录）
+2. 从验证结果中提取 correctedData
+3. 替换模板中的占位符并生成完整 HTML
 
-**建模数据**：
+**验证结果**：
 ${validationResult}
 
-**生成步骤**：
-1. 读取标准模板文件 \`skills/ddd-event-storm-visualizer/template-v1.0.0.html\`
-2. 替换占位符：
-   - \`{{DOMAIN_NAME}}\` → "${scope}"
-   - \`{{MODEL_DATA}}\` → 从 validationResult 中提取的 correctedData（如果 valid 为 true）
-3. 输出完整的 HTML
+**替换规则**：
+1. \`{{DOMAIN_NAME}}\` → "${scope}"
+2. \`{{MODEL_DATA}}\` → correctedData 对象（必须是有效的 JSON 对象，不是字符串）
 
-**关键要求**：
-- 必须使用标准模板，不要自己编写 HTML
-- 不要修改模板的样式和交互逻辑
-- 只替换占位符中的数据
-- 确保 MODEL_DATA 是有效的 JSON 对象
+**示例替换**：
+\`{{MODEL_DATA}}\` 应该替换为：
+\`\`\`javascript
+{
+    "commands": { "C1": {...}, "C2": {...} },
+    "events": { "E1": {...}, "E2": {...} },
+    "aggregates": { "Agg1": {...} },
+    "policies": { "P1": {...} }
+}
+\`\`\`
+
+**重要**：
+- 按优先级顺序尝试读取模板文件，使用第一个存在的文件
+- 只替换占位符，不要修改模板的 HTML/CSS/JavaScript 结构
+- {{MODEL_DATA}} 替换为纯 JSON 对象，不要加引号包裹
+- 确保生成的 HTML 是完整可运行的
+- 如果所有路径都不存在，返回错误信息
 
 请直接输出完整的 HTML 代码，不要有任何额外说明。
 `,
@@ -255,49 +276,23 @@ if (!htmlContent) {
 log('✅ 流程图生成完成');
 
 // ============================================
-// 阶段 5: 保存文件
+// 保存文件
 // ============================================
-log(`💾 正在保存文件到: ${outputPath}`);
-
-// 使用 Write 工具保存 HTML 文件
-const absoluteOutputPath = outputPath;
-
-// 直接保存 HTML 内容
-// 注意：在 workflow 中无法直接调用 Write 工具，需要返回内容让调用方保存
-// 或者通过 agent 来执行文件写入
-
-const saveResult = await agent(
-    `请将以下 HTML 内容保存到文件：${absoluteOutputPath}
-
-HTML 内容：
-${htmlContent}
-
-请使用 Write 工具直接保存文件，文件路径使用绝对路径。
-保存成功后返回：{"success": true, "path": "${absoluteOutputPath}"}
-`,
-    {
-        label: '保存文件',
-        phase: '可视化'
-    }
-);
-
-log(`✅ 文件已保存: ${absoluteOutputPath}`);
+log(`💾 HTML 内容已生成，建议保存到: ${outputPath}`);
 
 return {
     success: true,
-    outputPath: absoluteOutputPath,
+    outputPath: outputPath,
     htmlContent: htmlContent,
     summary: {
         scope: scope,
         codePath: codePath,
         docPath: docPath,
-        outputPath: absoluteOutputPath,
         phases: [
             '✅ 阶段 1: 业务分析完成',
             '✅ 阶段 2: DDD 建模完成',
             '✅ 阶段 3: 数据校验完成',
-            '✅ 阶段 4: 流程图生成完成（使用标准模板 v1.0.0）',
-            `✅ 阶段 5: 文件已保存到 ${absoluteOutputPath}`
+            '✅ 阶段 4: 流程图生成完成（使用标准模板 v1.0.0）'
         ]
     }
 };
