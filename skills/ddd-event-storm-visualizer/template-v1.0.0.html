@@ -478,15 +478,15 @@
 
             if (!nodeData) return;
 
-            // 高亮逻辑：基于节点类型动态计算
+            // 高亮逻辑：只高亮直接邻居，不递归追踪
             const toHighlight = new Set([nodeId]);
 
             if (nodeType === 'command') {
-                // 命令 → 1层：聚合 + 事件
+                // 命令 → 高亮：自己 + 操作的聚合 + 产生的事件（不继续追踪事件的下游）
                 toHighlight.add(nodeData.aggregate);
                 nodeData.events.forEach(e => toHighlight.add(e));
             } else if (nodeType === 'event') {
-                // 事件 → 2层：产生它的命令和聚合 + 监听它的策略 + 策略触发的命令
+                // 事件 → 高亮：自己 + 产生它的命令和聚合 + 监听它的策略（不继续追踪策略触发的命令）
                 for (const [cmdId, cmd] of Object.entries(data.commands)) {
                     if (cmd.events.includes(nodeId)) {
                         toHighlight.add(cmdId);
@@ -496,22 +496,16 @@
                 for (const [policyId, policy] of Object.entries(data.policies)) {
                     if (policy.listenEvents.includes(nodeId)) {
                         toHighlight.add(policyId);
-                        // 2层：添加策略触发的命令
-                        policy.triggerCommands.forEach(c => toHighlight.add(c));
+                        // 不继续追踪策略触发的命令
                     }
                 }
             } else if (nodeType === 'policy') {
-                // 策略 → 2层：监听的事件 + 触发的命令 + 命令的聚合
+                // 策略 → 高亮：自己 + 监听的事件 + 触发的命令（不继续追踪）
                 nodeData.listenEvents.forEach(e => toHighlight.add(e));
-                nodeData.triggerCommands.forEach(c => {
-                    toHighlight.add(c);
-                    // 2层：添加命令的聚合
-                    if (data.commands[c]) {
-                        toHighlight.add(data.commands[c].aggregate);
-                    }
-                });
+                nodeData.triggerCommands.forEach(c => toHighlight.add(c));
+                // 不继续追踪命令的聚合
             } else if (nodeType === 'aggregate') {
-                // 聚合 → 1层：操作它的命令 + 它产生的事件
+                // 聚合 → 高亮：自己 + 操作它的所有命令 + 它产生的所有事件（不继续追踪）
                 for (const [cmdId, cmd] of Object.entries(data.commands)) {
                     if (cmd.aggregate === nodeId) {
                         toHighlight.add(cmdId);

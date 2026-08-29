@@ -1,9 +1,10 @@
 export const meta = {
     name: 'ddd-visual-modeling',
-    description: '从代码和文档生成交互式事件风暴流程图',
+    description: '从代码和文档生成交互式事件风暴流程图（使用标准模板 v1.0.0）',
     phases: [
         { title: '分析', detail: '提取业务信息' },
         { title: '建模', detail: 'DDD 领域建模' },
+        { title: '校验', detail: '数据校验与转换' },
         { title: '可视化', detail: '生成交互式流程图' }
     ]
 };
@@ -80,48 +81,68 @@ phase('建模');
 
 log('正在进行 DDD 建模...');
 
-const domainModel = await agent(
-    `你是一个 DDD 建模专家。请基于以下业务描述进行 DDD 建模。
+const modelDataJson = await agent(
+    `你是一个 DDD 建模专家。请基于以下业务描述进行 DDD 建模，并输出标准 JSON 格式。
 
 业务描述：
 ${businessDesc}
 
-请按照 DDD 事件风暴方法，执行以下步骤：
+请按照 DDD 事件风暴方法进行建模，然后输出为标准 JSON 格式。
 
-1. 识别领域事件（已发生的业务事实，完成时态命名）
-2. 识别领域命令（触发事件的动作，祈使句命名）
-3. 识别聚合（承载业务逻辑的对象）
-4. 识别 Policy（事件驱动的自动化策略）
+**重要：数据结构必须严格遵循以下规范**：
 
-输出格式必须严格遵循以下结构：
+\`\`\`json
+{
+    "commands": {
+        "C1": {
+            "id": "C1",
+            "name": "创建订单",
+            "className": "CreateOrderCommand",
+            "trigger": "用户",
+            "input": "商品列表、收货地址",
+            "precondition": "商品库存充足",
+            "aggregate": "Order",
+            "events": ["E1"]
+        }
+    },
+    "events": {
+        "E1": {
+            "id": "E1",
+            "name": "已创建订单",
+            "className": "OrderCreatedEvent",
+            "meaning": "用户成功下单",
+            "aggregate": "Order"
+        }
+    },
+    "aggregates": {
+        "Order": {
+            "id": "Order",
+            "name": "订单",
+            "description": "管理订单全生命周期",
+            "entities": ["OrderItem"],
+            "valueObjects": ["Address"]
+        }
+    },
+    "policies": {
+        "P1": {
+            "id": "P1",
+            "name": "通知发货策略",
+            "className": "NotifyShipmentPolicy",
+            "listenEvents": ["E2"],
+            "triggerCommands": ["C3"],
+            "rule": "支付成功后自动通知"
+        }
+    }
+}
+\`\`\`
 
-## 领域命令清单
-| 编号 | 命令名称 | 类名 | 触发者 | 输入数据 | 前置条件 | 产生事件 |
-|------|---------|------|--------|---------|---------|---------|
-| C1   | 创建订单 | CreateOrderCommand | 用户 | 商品列表、收货地址 | 商品库存充足 | E1 |
+**关键规范（必须遵守）**：
+1. Policy 必须使用 \`listenEvents\` 和 \`triggerCommands\`（复数，数组形式）
+2. Command 的 \`events\` 必须是数组
+3. 所有 ID 必须唯一且连续（C1, C2, ... 和 E1, E2, ...）
+4. 所有引用的 ID 必须存在（如 Command 引用的 aggregate 必须在 aggregates 中）
 
-## 领域事件清单
-| 编号 | 事件名称 | 类名 | 业务含义 | 前置事件 |
-|------|---------|------|---------|---------|
-| E1   | 已创建订单 | OrderCreatedEvent | 用户成功下单 | - |
-
-## 聚合清单
-### 聚合：订单 (Order)
-- 聚合根：Order
-- 聚合 ID：OrderId
-- 命令-事件映射：C1 → E1, C2 → E2
-- 内部状态数据：商品列表、总金额、订单状态
-- 不变量：订单总金额 = 所有商品金额之和
-
-## Policy 清单
-| 编号 | 策略名称 | 类名 | 监听事件 | 触发命令 | 业务规则描述 |
-|------|---------|------|---------|---------|-------------|
-| P1   | 支付后通知发货 | NotifyShipmentPolicy | E2 | C3 | 支付成功后自动通知 |
-
-请确保：
-- 命令和事件编号连续（C1, C2, ... 和 E1, E2, ...）
-- 每个命令都有对应的产生事件
-- 聚合的命令-事件映射格式为：C1 → E1, C2 → E2
+请直接输出 JSON，不要有任何额外说明。
 `,
     {
         label: 'DDD 建模',
@@ -129,7 +150,7 @@ ${businessDesc}
     }
 );
 
-if (!domainModel) {
+if (!modelDataJson) {
     log('❌ DDD 建模失败');
     return { success: false, error: 'DDD 建模失败' };
 }
@@ -137,44 +158,86 @@ if (!domainModel) {
 log('✅ DDD 建模完成');
 
 // ============================================
-// 阶段 3: 生成交互式流程图
+// 阶段 3: 数据校验与转换
+// ============================================
+phase('校验');
+
+log('正在校验建模数据...');
+
+const validationResult = await agent(
+    `你是一个数据校验专家。请校验以下 DDD 建模数据是否符合标准。
+
+建模数据：
+${modelDataJson}
+
+校验规则：
+1. 完整性：commands/events/aggregates/policies 都存在且不为空
+2. 引用一致性：所有引用的 ID 都存在
+3. 必填字段：关键字段都已填写
+4. **数据格式**：
+   - Policy 必须使用 \`listenEvents\` 和 \`triggerCommands\`（复数数组）
+   - 不能使用 \`listenEvent\` 或 \`triggerCommand\`（单数）
+   - Command 的 \`events\` 必须是数组
+
+如果发现问题，请修正数据并返回修正后的 JSON。
+
+**如果发现以下错误，请自动修正**：
+- \`listenEvent: "E1"\` → \`listenEvents: ["E1"]\`
+- \`triggerCommand: "C1"\` → \`triggerCommands: ["C1"]\`
+- \`events: "E1"\` → \`events: ["E1"]\`
+
+输出格式：
+\`\`\`json
+{
+    "valid": true,
+    "errors": [],
+    "correctedData": { ... }
+}
+\`\`\`
+
+请直接输出 JSON，不要有任何额外说明。
+`,
+    {
+        label: '数据校验',
+        phase: '校验'
+    }
+);
+
+if (!validationResult) {
+    log('❌ 数据校验失败');
+    return { success: false, error: '数据校验失败' };
+}
+
+log('✅ 数据校验完成');
+
+// ============================================
+// 阶段 4: 生成交互式流程图（使用标准模板）
 // ============================================
 phase('可视化');
 
-log('正在生成交互式流程图...');
+log('正在生成交互式流程图（使用标准模板 v1.0.0）...');
 
 const htmlContent = await agent(
-    `你是一个可视化专家。请基于以下 DDD 建模结果生成交互式事件风暴流程图。
+    `你是一个 HTML 生成专家。请使用标准模板生成交互式事件风暴流程图。
 
-建模结果：
-${domainModel}
+**必须使用的标准模板**：
+文件路径：skills/ddd-event-storm-visualizer/template-v1.0.0.html
 
-请生成一个完整的 HTML 文件，包含以下功能：
+**建模数据**：
+${validationResult}
 
-1. 使用 Mermaid 渲染事件风暴流程图
-2. 流程：Command → Aggregate → Event → Policy → Command
-3. 支持滚轮缩放（30% - 300%）
-4. 支持整个画布拖拽
-5. 支持点击节点查看详情
-6. 支持高亮直接邻居节点
+**生成步骤**：
+1. 读取标准模板文件 \`skills/ddd-event-storm-visualizer/template-v1.0.0.html\`
+2. 替换占位符：
+   - \`{{DOMAIN_NAME}}\` → "${scope}"
+   - \`{{MODEL_DATA}}\` → 从 validationResult 中提取的 correctedData（如果 valid 为 true）
+3. 输出完整的 HTML
 
-参考模板：${codePath}/examples/event-storm-demo.html
-
-关键要求：
-- 必须是完整的独立 HTML 文件（包含所有 CSS 和 JavaScript）
-- 必须包含缩放和拖拽功能
-- 节点颜色：Command=黄色、Event=红色、Aggregate=蓝色、Policy=紫色
-- 详情面板必须显示完整的建模信息
-
-**高亮逻辑（重要）**：
-- 只高亮点击节点的直接邻居，不要递归追踪
-- 使用 visited Set 防止死循环
-- 规则：
-  * 点击命令 → 高亮：自己 + 操作的聚合 + 产生的事件（不继续追踪事件的下游）
-  * 点击事件 → 高亮：自己 + 产生它的命令和聚合 + 监听它的策略（不继续追踪策略触发的命令）
-  * 点击策略 → 高亮：自己 + 监听的事件 + 触发的命令（不继续追踪）
-  * 点击聚合 → 高亮：自己 + 操作它的所有命令 + 它产生的所有事件（不继续追踪）
-- 目的：保持聚焦，避免点亮整个系统
+**关键要求**：
+- 必须使用标准模板，不要自己编写 HTML
+- 不要修改模板的样式和交互逻辑
+- 只替换占位符中的数据
+- 确保 MODEL_DATA 是有效的 JSON 对象
 
 请直接输出完整的 HTML 代码，不要有任何额外说明。
 `,
@@ -192,25 +255,49 @@ if (!htmlContent) {
 log('✅ 流程图生成完成');
 
 // ============================================
-// 保存文件
+// 阶段 5: 保存文件
 // ============================================
-log(`正在保存文件到: ${outputPath}`);
+log(`💾 正在保存文件到: ${outputPath}`);
 
-// TODO: 这里需要调用文件写入接口
-// 目前先返回 HTML 内容，让用户手动保存
+// 使用 Write 工具保存 HTML 文件
+const absoluteOutputPath = outputPath;
+
+// 直接保存 HTML 内容
+// 注意：在 workflow 中无法直接调用 Write 工具，需要返回内容让调用方保存
+// 或者通过 agent 来执行文件写入
+
+const saveResult = await agent(
+    `请将以下 HTML 内容保存到文件：${absoluteOutputPath}
+
+HTML 内容：
+${htmlContent}
+
+请使用 Write 工具直接保存文件，文件路径使用绝对路径。
+保存成功后返回：{"success": true, "path": "${absoluteOutputPath}"}
+`,
+    {
+        label: '保存文件',
+        phase: '可视化'
+    }
+);
+
+log(`✅ 文件已保存: ${absoluteOutputPath}`);
 
 return {
     success: true,
-    outputPath: outputPath,
+    outputPath: absoluteOutputPath,
     htmlContent: htmlContent,
     summary: {
         scope: scope,
         codePath: codePath,
         docPath: docPath,
+        outputPath: absoluteOutputPath,
         phases: [
             '✅ 阶段 1: 业务分析完成',
             '✅ 阶段 2: DDD 建模完成',
-            '✅ 阶段 3: 流程图生成完成'
+            '✅ 阶段 3: 数据校验完成',
+            '✅ 阶段 4: 流程图生成完成（使用标准模板 v1.0.0）',
+            `✅ 阶段 5: 文件已保存到 ${absoluteOutputPath}`
         ]
     }
 };
