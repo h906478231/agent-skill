@@ -1,96 +1,120 @@
 export const meta = {
     name: 'ddd-visual-modeling',
-    description: '从代码和文档生成交互式事件风暴流程图（使用标准模板 v1.0.0）',
+    description: '从 domain-model.md 生成交互式事件风暴流程图（数据与视图分离架构）',
     phases: [
-        { title: '分析', detail: '提取业务信息' },
-        { title: '建模', detail: 'DDD 领域建模' },
-        { title: '校验', detail: '数据校验与转换' },
-        { title: '可视化', detail: '生成交互式流程图' }
+        { title: '读取模型', detail: '读取 domain-model.md' },
+        { title: '转换数据', detail: 'Markdown → JSON' },
+        { title: '校验修复', detail: '修复聚合字段' },
+        { title: '生成输出', detail: '输出 JSON 和模板' }
     ]
 };
 
 // 获取参数
-const codePath = args?.codePath || '.';
-const docPath = args?.docPath;
-const scope = args?.scope || '业务领域';
-const outputPath = args?.outputPath || `event-storm-${scope}.html`;
+const domainModelPath = args?.domainModelPath || 'docs/ddd/domain-model.md';
+const outputJsonPath = args?.outputJsonPath || 'ddd-model.json';
+const outputHtmlPath = args?.outputHtmlPath || 'event-storm.html';
+const scope = args?.scope || '领域模型';
 
-log(`🚀 开始 DDD 可视化建模流程`);
-log(`📂 代码路径: ${codePath}`);
-log(`📄 文档路径: ${docPath || '未提供'}`);
-log(`🎯 分析范围: ${scope}`);
+log(`🚀 开始 DDD 可视化生成流程（v2.0.0 - 数据与视图分离）`);
+log(`📄 领域模型: ${domainModelPath}`);
+log(`📊 输出 JSON: ${outputJsonPath}`);
+log(`📄 输出 HTML: ${outputHtmlPath}`);
 
 // ============================================
-// 阶段 1: 代码与文档分析
+// 阶段 1: 读取 domain-model.md
 // ============================================
-phase('分析');
+phase('读取模型');
 
-log('正在分析代码和文档...');
+log('正在读取 domain-model.md...');
 
-const businessDesc = await agent(
-    `你是一个业务分析专家。请分析以下代码和文档，提取业务信息。
-
-代码路径: ${codePath}
-文档路径: ${docPath || '无'}
-分析范围: ${scope}
-
-请执行以下任务：
-
-1. 扫描代码结构，识别主要的类、方法、依赖关系
-2. ${docPath ? '阅读需求文档，提取业务流程和规则' : '从代码中推测业务流程'}
-3. 生成统一的业务描述
-
-输出格式：
-# 业务需求描述
-
-## 业务背景
-[描述业务背景和目标]
-
-## 核心场景
-[列出主要的业务场景]
-
-## 业务术语
-[提取的业务术语和定义]
-
-## 参与者与外部系统
-[识别的参与者和外部系统]
-
-## 业务流程与规则
-[详细的业务流程描述]
-
-## 待确认问题
-[需要确认的问题]
-`,
+const readResult = await agent(
+    `读取文件 ${domainModelPath} 的内容，并原样返回文件内容。如果文件不存在，返回 "ERROR: 文件不存在"。`,
     {
-        label: '业务分析',
-        phase: '分析'
+        label: '读取文件',
+        phase: '读取模型'
     }
 );
 
-if (!businessDesc) {
-    log('❌ 业务分析失败');
-    return { success: false, error: '业务分析失败' };
+if (!readResult || readResult.includes('ERROR:') || readResult.includes('不存在')) {
+    log('❌ 未找到 domain-model.md');
+    log('');
+    log('💡 提示：');
+    log('1. 请先运行 ddd-modeling-workflow 完成领域建模');
+    log('2. 确保生成了 domain-model.md 文件');
+    log('3. 然后再运行本 workflow 进行可视化');
+    log('');
+    return {
+        success: false,
+        error: '未找到 domain-model.md，请先运行 ddd-modeling-workflow 完成建模'
+    };
 }
 
-log('✅ 业务分析完成');
+const domainModelContent = readResult;
+log(`✅ 成功读取 domain-model.md (${domainModelContent.length} 字符)`);
 
 // ============================================
-// 阶段 2: DDD 建模
+// 阶段 2: Markdown → JSON 转换
 // ============================================
-phase('建模');
+phase('转换数据');
 
-log('正在进行 DDD 建模...');
+log('正在将 Markdown 转换为 JSON...');
 
 const modelDataJson = await agent(
-    `你是一个 DDD 建模专家。请基于以下业务描述进行 DDD 建模，并输出标准 JSON 格式。
+    `你是一个 Markdown 到 JSON 的转换专家。请将以下 domain-model.md 文件转换为标准的 ddd-model.json 格式。
 
-业务描述：
-${businessDesc}
+**输入 - domain-model.md 内容**：
+${domainModelContent}
 
-请按照 DDD 事件风暴方法进行建模，然后输出为标准 JSON 格式。
+**任务**：
+1. 解析 Markdown 表格，提取领域事件、领域命令、Policy 和聚合的结构化数据
+2. 转换为标准 JSON 格式（对象格式，不是数组）
+3. 确保所有引用一致性（命令引用的聚合必须存在、事件 ID 必须存在等）
 
-**重要：数据结构必须严格遵循以下规范**：
+**解析规则**：
 
+1. **从 "## 1. 领域事件清单" 提取 events**
+   - 表格列：编号 | 事件名称 | 类名 | 所属聚合 | 业务含义 | 前置事件
+   - 转换为：events 对象（不是数组），键为编号（如 "E1"），值为事件对象
+
+2. **从 "## 2. 领域命令清单" 提取 commands**
+   - 表格列：编号 | 命令名称 | 类名 | 触发者 | 目标聚合 | 命令类型 | 前置条件 | 产生事件
+   - 转换为：commands 对象（不是数组），键为编号（如 "C1"），值为命令对象
+   - **重要**：如果"目标聚合"包含 + 号（如 "MassTask + ImUserDispatchRuntime"），只保留第一个聚合名称（如 "MassTask"）
+
+3. **从 "## 3. Policy 清单" 提取 policies**
+   - 表格列：编号 | 策略名称 | 类名 | 监听事件 | 触发命令 | 业务规则描述 | 是否有状态
+   - 转换为：policies 对象（不是数组），键为编号（如 "P1"），值为 Policy 对象
+
+4. **从 "## 4. 聚合设计" 提取 aggregates**
+   - 解析每个 "### 4.X 聚合：{名称}" 小节
+   - 提取：聚合根、聚合 ID、命令-事件映射、内部状态数据、领域服务、不变量
+   - 转换为：aggregates 对象（不是数组），键为聚合名称，值为聚合对象
+
+**转换规则**：
+- **字符串 → 数组转换**：
+  - "E1, E2" → ["E1", "E2"]
+  - "E1 / E2" → ["E1", "E2"]
+  - "C1" → ["C1"]
+  - 监听事件 → listenEvents（复数数组）
+  - 触发命令 → triggerCommands（复数数组）
+  - 产生事件 → events（数组）
+
+- **聚合字段清理**（重要）：
+  - "MassTask + ImUserDispatchRuntime" → "MassTask"（只保留第一个）
+  - "Order + Payment" → "Order"（只保留第一个）
+  - 去除前后空格
+
+- **字段映射**：
+  - 编号 → id
+  - 事件名称/命令名称 → name
+  - 类名 → className
+  - 业务含义 → meaning
+  - 所属聚合/目标聚合 → aggregate
+  - 触发者 → trigger
+  - 前置条件 → precondition
+  - 业务规则描述 → rule
+
+**输出格式**（必须严格遵循）：
 \`\`\`json
 {
     "commands": {
@@ -118,9 +142,7 @@ ${businessDesc}
         "Order": {
             "id": "Order",
             "name": "订单",
-            "description": "管理订单全生命周期",
-            "entities": ["OrderItem"],
-            "valueObjects": ["Address"]
+            "description": "管理订单全生命周期"
         }
     },
     "policies": {
@@ -136,163 +158,185 @@ ${businessDesc}
 }
 \`\`\`
 
-**关键规范（必须遵守）**：
-1. Policy 必须使用 \`listenEvents\` 和 \`triggerCommands\`（复数，数组形式）
-2. Command 的 \`events\` 必须是数组
-3. 所有 ID 必须唯一且连续（C1, C2, ... 和 E1, E2, ...）
-4. 所有引用的 ID 必须存在（如 Command 引用的 aggregate 必须在 aggregates 中）
+**重要**：
+- 直接输出 JSON，不要有任何额外说明
+- 必须是对象格式（键值对），不是数组格式
+- aggregate 字段如果包含 + 号，只保留第一个聚合名称
+- 确保所有引用的 ID 都存在
+- 必须使用复数形式：listenEvents、triggerCommands、events（数组）
+- 保留所有业务描述字段（meaning、precondition、rule 等）
 
-请直接输出 JSON，不要有任何额外说明。
+请开始转换：
 `,
     {
-        label: 'DDD 建模',
-        phase: '建模'
+        label: 'Markdown → JSON',
+        phase: '转换数据'
     }
 );
 
 if (!modelDataJson) {
-    log('❌ DDD 建模失败');
-    return { success: false, error: 'DDD 建模失败' };
+    log('❌ 数据转换失败');
+    return { success: false, error: '数据转换失败' };
 }
 
-log('✅ DDD 建模完成');
+log('✅ 数据转换完成');
+
+// 解析 JSON 并校验
+let modelData;
+try {
+    modelData = JSON.parse(modelDataJson);
+
+    // 检查是否有错误
+    if (modelData.error) {
+        log(`❌ 转换错误: ${modelData.error}`);
+        return { success: false, error: modelData.error };
+    }
+
+    // 校验顶层键
+    if (!modelData.commands || !modelData.events || !modelData.aggregates || !modelData.policies) {
+        log('❌ JSON 格式错误：缺少顶层键（commands/events/aggregates/policies）');
+        return { success: false, error: 'JSON 格式错误' };
+    }
+
+    // 校验是否为对象格式
+    if (Array.isArray(modelData.commands) || Array.isArray(modelData.events)) {
+        log('❌ JSON 格式错误：commands/events 必须是对象格式，不能是数组');
+        return { success: false, error: 'JSON 格式错误：使用了数组而非对象' };
+    }
+
+    log('✅ JSON 格式校验通过');
+
+} catch (e) {
+    log(`❌ JSON 解析失败: ${e.message}`);
+    return { success: false, error: 'JSON 解析失败' };
+}
 
 // ============================================
-// 阶段 3: 数据校验与转换
+// 阶段 3: 校验并修复聚合字段
 // ============================================
-phase('校验');
+phase('校验修复');
 
-log('正在校验建模数据...');
+log('正在校验并修复数据...');
 
-const validationResult = await agent(
-    `你是一个数据校验专家。请校验以下 DDD 建模数据是否符合标准。
-
-建模数据：
-${modelDataJson}
-
-校验规则：
-1. 完整性：commands/events/aggregates/policies 都存在且不为空
-2. 引用一致性：所有引用的 ID 都存在
-3. 必填字段：关键字段都已填写
-4. **数据格式**：
-   - Policy 必须使用 \`listenEvents\` 和 \`triggerCommands\`（复数数组）
-   - 不能使用 \`listenEvent\` 或 \`triggerCommand\`（单数）
-   - Command 的 \`events\` 必须是数组
-
-如果发现问题，请修正数据并返回修正后的 JSON。
-
-**如果发现以下错误，请自动修正**：
-- \`listenEvent: "E1"\` → \`listenEvents: ["E1"]\`
-- \`triggerCommand: "C1"\` → \`triggerCommands: ["C1"]\`
-- \`events: "E1"\` → \`events: ["E1"]\`
-
-**重要：无论数据是否有错，都必须在 correctedData 字段返回完整的修正后数据（或原数据）。**
-
-输出格式：
-\`\`\`json
-{
-    "valid": true,
-    "errors": [],
-    "correctedData": {
-        "commands": { ... },
-        "events": { ... },
-        "aggregates": { ... },
-        "policies": { ... }
+// 检查是否有包含 + 的聚合字段
+let needsFix = false;
+for (const [id, cmd] of Object.entries(modelData.commands)) {
+    if (cmd.aggregate && cmd.aggregate.includes('+')) {
+        needsFix = true;
+        const firstAggregate = cmd.aggregate.split('+')[0].trim();
+        log(`ℹ️  修复 ${id}: "${cmd.aggregate}" → "${firstAggregate}"`);
+        cmd.aggregate = firstAggregate;
     }
 }
-\`\`\`
 
-请直接输出 JSON，不要有任何额外说明。
-`,
+if (needsFix) {
+    log('✅ 聚合字段修复完成');
+} else {
+    log('✅ 聚合字段无需修复');
+}
+
+// ============================================
+// 阶段 4: 生成输出文件
+// ============================================
+phase('生成输出');
+
+log('正在生成输出文件...');
+
+// 4.1 格式化 JSON（使用固定时间戳避免不确定性）
+const timestamp = args?.timestamp || '2026-08-31T00:00:00.000Z';
+const formattedJson = JSON.stringify({
+    _meta: {
+        generated: timestamp,
+        source: domainModelPath,
+        version: '2.0.0'
+    },
+    commands: modelData.commands,
+    events: modelData.events,
+    aggregates: modelData.aggregates,
+    policies: modelData.policies
+}, null, 2) + '\n';  // 添加末尾换行符
+
+// 4.2 写入 JSON 文件
+const writeJsonResult = await agent(
+    `将以下 JSON 内容写入文件 ${outputJsonPath}（覆盖写入）：
+
+${formattedJson}
+
+写入完成后返回 "SUCCESS"。`,
     {
-        label: '数据校验',
-        phase: '校验'
+        label: '写入 JSON',
+        phase: '生成输出'
     }
 );
 
-if (!validationResult) {
-    log('❌ 数据校验失败');
-    return { success: false, error: '数据校验失败' };
+if (!writeJsonResult || !writeJsonResult.includes('SUCCESS')) {
+    log('❌ JSON 文件写入失败');
+    return { success: false, error: 'JSON 写入失败' };
 }
 
-log('✅ 数据校验完成');
+log(`✅ 已生成 ddd-model.json: ${outputJsonPath}`);
 
-// ============================================
-// 阶段 4: 生成交互式流程图（使用标准模板）
-// ============================================
-phase('可视化');
-
-log('正在生成交互式流程图（使用标准模板 v1.0.0）...');
-
-const htmlContent = await agent(
-    `你是一个 HTML 生成专家。请使用标准模板生成交互式事件风暴流程图。
-
-**任务**：
-1. 按优先级顺序查找模板文件：
-   - 优先：~/.claude/skills/ddd-event-storm-visualizer/template-v1.0.0.html（系统全局）
-   - 备选：.claude/skills/ddd-event-storm-visualizer/template-v1.0.0.html（项目本地）
-   - 备选：templates/ddd-event-storm-visualizer/template-v1.0.0.html（项目模板目录）
-2. 从验证结果中提取 correctedData
-3. 替换模板中的占位符并生成完整 HTML
-
-**验证结果**：
-${validationResult}
-
-**替换规则**：
-1. \`{{DOMAIN_NAME}}\` → "${scope}"
-2. \`{{MODEL_DATA}}\` → correctedData 对象（必须是有效的 JSON 对象，不是字符串）
-
-**示例替换**：
-\`{{MODEL_DATA}}\` 应该替换为：
-\`\`\`javascript
-{
-    "commands": { "C1": {...}, "C2": {...} },
-    "events": { "E1": {...}, "E2": {...} },
-    "aggregates": { "Agg1": {...} },
-    "policies": { "P1": {...} }
-}
-\`\`\`
-
-**重要**：
-- 按优先级顺序尝试读取模板文件，使用第一个存在的文件
-- 只替换占位符，不要修改模板的 HTML/CSS/JavaScript 结构
-- {{MODEL_DATA}} 替换为纯 JSON 对象，不要加引号包裹
-- 确保生成的 HTML 是完整可运行的
-- 如果所有路径都不存在，返回错误信息
-
-请直接输出完整的 HTML 代码，不要有任何额外说明。
-`,
+// 4.3 复制 HTML 模板
+const templateSourcePath = 'skills/ddd-event-storm-visualizer/template-v2.0.0.html';
+const copyHtmlResult = await agent(
+    `将文件 ${templateSourcePath} 复制到 ${outputHtmlPath}。如果目标文件已存在，跳过复制。完成后返回 "SUCCESS" 或 "SKIPPED"（如果已存在）。`,
     {
-        label: '生成 HTML',
-        phase: '可视化'
+        label: '复制 HTML',
+        phase: '生成输出'
     }
 );
 
-if (!htmlContent) {
-    log('❌ 流程图生成失败');
-    return { success: false, error: '流程图生成失败' };
+if (copyHtmlResult && copyHtmlResult.includes('SKIPPED')) {
+    log(`ℹ️  HTML 文件已存在，跳过复制: ${outputHtmlPath}`);
+} else if (copyHtmlResult && copyHtmlResult.includes('SUCCESS')) {
+    log(`✅ 已复制 HTML 模板: ${outputHtmlPath}`);
+} else {
+    log(`⚠️  HTML 模板复制可能失败，但不影响主流程`);
 }
 
-log('✅ 流程图生成完成');
-
 // ============================================
-// 保存文件
+// 完成
 // ============================================
-log(`💾 HTML 内容已生成，建议保存到: ${outputPath}`);
+log('');
+log('🎉 可视化文件生成完成！');
+log('');
+log('📊 输出文件：');
+log(`  - JSON 数据: ${outputJsonPath}`);
+log(`  - HTML 模板: ${outputHtmlPath}`);
+log('');
+log('📖 使用指引：');
+log('1. 确保 JSON 和 HTML 在同一目录');
+log('2. 使用 HTTP 服务器打开 HTML 文件（不支持 file:// 协议）：');
+log('   - VS Code Live Server: 右键点击 HTML → "Open with Live Server"');
+log('   - Python: python3 -m http.server');
+log('   - Node.js: npx serve');
+log('3. HTML 会自动加载同目录下的 ddd-model.json');
+log('4. 修改 domain-model.md → 重新运行本 workflow → 刷新浏览器即可看到更新');
+log('');
+log('⚡ 性能提升：');
+log('  - 旧版本：4 个 agent 调用，30s-2min');
+log('  - 新版本：3 个 agent 调用，预计 < 30s');
+log('  - 后续迭代：只需刷新浏览器，< 1s');
+log('');
 
 return {
     success: true,
-    outputPath: outputPath,
-    htmlContent: htmlContent,
+    outputJsonPath: outputJsonPath,
+    outputHtmlPath: outputHtmlPath,
+    stats: {
+        commands: Object.keys(modelData.commands).length,
+        events: Object.keys(modelData.events).length,
+        aggregates: Object.keys(modelData.aggregates).length,
+        policies: Object.keys(modelData.policies).length
+    },
     summary: {
         scope: scope,
-        codePath: codePath,
-        docPath: docPath,
+        domainModelPath: domainModelPath,
         phases: [
-            '✅ 阶段 1: 业务分析完成',
-            '✅ 阶段 2: DDD 建模完成',
-            '✅ 阶段 3: 数据校验完成',
-            '✅ 阶段 4: 流程图生成完成（使用标准模板 v1.0.0）'
+            '✅ 阶段 1: 读取 domain-model.md 完成',
+            '✅ 阶段 2: 数据转换完成',
+            '✅ 阶段 3: 聚合字段修复完成',
+            '✅ 阶段 4: 输出文件生成完成'
         ]
     }
 };

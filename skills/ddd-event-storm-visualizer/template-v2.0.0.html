@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DDD 事件风暴流程图 v2.0</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f7fa;
+            overflow: hidden;
+        }
+
+        /* Loading 状态 */
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 2000;
+        }
+
+        #loading.hidden {
+            display: none;
+        }
+
+        #loading .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #loading p {
+            font-size: 16px;
+            color: #666;
+        }
+
+        /* 错误提示 */
+        #error-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            max-width: 600px;
+            z-index: 2000;
+            display: none;
+        }
+
+        #error-panel.visible {
+            display: block;
+        }
+
+        #error-panel h2 {
+            color: #e74c3c;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        #error-panel .error-message {
+            background: #fee;
+            border-left: 4px solid #e74c3c;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            color: #c0392b;
+            font-family: monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        #error-panel .error-help {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+
+        #error-panel .error-help h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        #error-panel .error-help ol {
+            padding-left: 20px;
+        }
+
+        #error-panel .error-help li {
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+
+        #error-panel .error-help code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            cursor: grab;
+        }
+
+        #container.dragging {
+            cursor: grabbing;
+        }
+
+        #canvas {
+            position: absolute;
+            transform-origin: 0 0;
+            transition: transform 0.1s ease-out;
+        }
+
+        #mermaid-diagram {
+            display: inline-block;
+        }
+
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        #controls button {
+            display: block;
+            width: 40px;
+            height: 40px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.2s;
+        }
+
+        #controls button:hover {
+            background: #f0f0f0;
+            border-color: #999;
+        }
+
+        #zoom-level {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 12px;
+            color: #666;
+        }
+
+        #detail-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 350px;
+            max-height: 80vh;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: none;
+            overflow-y: auto;
+        }
+
+        #detail-panel.visible {
+            display: block;
+        }
+
+        #detail-header {
+            padding: 20px;
+            border-bottom: 2px solid #f0f0f0;
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10;
+        }
+
+        #detail-header h2 {
+            font-size: 18px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        #detail-header .subtitle {
+            font-size: 13px;
+            color: #666;
+        }
+
+        #detail-content {
+            padding: 20px;
+        }
+
+        #detail-content h3 {
+            font-size: 14px;
+            color: #666;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #detail-content p, #detail-content ul {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        #detail-content ul {
+            padding-left: 20px;
+        }
+
+        #detail-content li {
+            margin-bottom: 5px;
+        }
+
+        #close-detail {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 30px;
+            height: 30px;
+            border: none;
+            background: #f5f5f5;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 30px;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        #close-detail:hover {
+            background: #e0e0e0;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-right: 5px;
+        }
+
+        .badge-command {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-event {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .badge-aggregate {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .badge-policy {
+            background: #e2d9f3;
+            color: #5a3f7f;
+        }
+
+        #legend {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        #legend h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+
+        .legend-text {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .node.highlighted rect, .node.highlighted circle {
+            stroke: #3498db !important;
+            stroke-width: 3px !important;
+            filter: drop-shadow(0 0 8px rgba(52, 152, 219, 0.6));
+        }
+
+        .node.dimmed {
+            opacity: 0.3;
+        }
+
+        .edgePath.highlighted path {
+            stroke: #3498db !important;
+            stroke-width: 3px !important;
+        }
+
+        .edgePath.dimmed {
+            opacity: 0.2;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading 状态 -->
+    <div id="loading">
+        <div class="spinner"></div>
+        <p>正在加载数据...</p>
+    </div>
+
+    <!-- 错误提示面板 -->
+    <div id="error-panel">
+        <h2>⚠️ 加载失败</h2>
+        <div class="error-message" id="error-message"></div>
+        <div class="error-help">
+            <h3>💡 使用指引</h3>
+            <ol>
+                <li>确保 <code>ddd-model.json</code> 文件与此 HTML 在同一目录</li>
+                <li>必须使用 HTTP 服务器打开（不支持 file:// 协议）：
+                    <ul>
+                        <li>VS Code Live Server: 右键点击 → "Open with Live Server"</li>
+                        <li>Python: <code>python -m http.server</code></li>
+                        <li>Node.js: <code>npx serve</code></li>
+                    </ul>
+                </li>
+                <li>检查浏览器控制台（F12）查看详细错误信息</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- 主容器 -->
+    <div id="container">
+        <div id="canvas">
+            <div id="mermaid-diagram"></div>
+        </div>
+    </div>
+
+    <!-- 控制按钮 -->
+    <div id="controls">
+        <button id="zoom-in" title="放大">+</button>
+        <div id="zoom-level">100%</div>
+        <button id="zoom-out" title="缩小">-</button>
+        <button id="reset-view" title="重置视图">⟲</button>
+    </div>
+
+    <!-- 详情面板 -->
+    <div id="detail-panel">
+        <button id="close-detail">×</button>
+        <div id="detail-header"></div>
+        <div id="detail-content"></div>
+    </div>
+
+    <!-- 图例 -->
+    <div id="legend">
+        <h3>图例</h3>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #fff3cd;"></div>
+            <span class="legend-text">命令 (Command)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #f8d7da;"></div>
+            <span class="legend-text">事件 (Event)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #d1ecf1;"></div>
+            <span class="legend-text">聚合 (Aggregate)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #e2d9f3;"></div>
+            <span class="legend-text">策略 (Policy)</span>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // 数据加载逻辑
+        // ============================================================
+        let data = null;
+
+        // 检测 file:// 协议
+        if (window.location.protocol === 'file:') {
+            showError('检测到 file:// 协议，无法加载 JSON 数据。\n\n请使用 HTTP 服务器打开此页面。');
+            hideLoading();
+        } else {
+            // 获取 JSON 路径（支持 URL 参数）
+            const params = new URLSearchParams(window.location.search);
+            const dataPath = params.get('data') || './ddd-model.json';
+
+            // 加载 JSON
+            fetch(dataPath + '?t=' + Date.now())  // 添加缓存破坏参数
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`无法加载 ${dataPath}\n\nHTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(jsonData => {
+                    // 校验 JSON 格式
+                    if (!jsonData.commands || !jsonData.events || !jsonData.aggregates || !jsonData.policies) {
+                        throw new Error('JSON 格式错误：缺少必需的顶层键\n\n需要：commands, events, aggregates, policies');
+                    }
+
+                    data = jsonData;
+                    hideLoading();
+                    
+                    // 初始化渲染
+                    renderDiagram().then(() => {
+                        updateTransform();
+                    });
+                })
+                .catch(err => {
+                    console.error('数据加载失败:', err);
+                    showError(err.message);
+                    hideLoading();
+                });
+        }
+
+        function showError(message) {
+            document.getElementById('error-message').textContent = message;
+            document.getElementById('error-panel').classList.add('visible');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+        }
+
+        // ============================================================
+        // Mermaid 配置
+        // ============================================================
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#fff3cd',
+                primaryTextColor: '#856404',
+                primaryBorderColor: '#ffc107',
+                lineColor: '#6c757d',
+                secondaryColor: '#f8d7da',
+                tertiaryColor: '#d1ecf1',
+                noteBkgColor: '#e2d9f3',
+                noteTextColor: '#5a3f7f',
+                noteBorderColor: '#9c27b0'
+            },
+            flowchart: {
+                htmlLabels: true,
+                curve: 'basis',
+                padding: 15
+            }
+        });
+
+        // ============================================================
+        // 渲染逻辑
+        // ============================================================
+        async function renderDiagram() {
+            if (!data) return;
+
+            let mermaidCode = 'graph LR\n';
+
+            // 样式定义
+            mermaidCode += '    classDef commandStyle fill:#fff3cd,stroke:#ffc107,stroke-width:2px,color:#856404\n';
+            mermaidCode += '    classDef eventStyle fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24\n';
+            mermaidCode += '    classDef aggregateStyle fill:#d1ecf1,stroke:#17a2b8,stroke-width:2px,color:#0c5460\n';
+            mermaidCode += '    classDef policyStyle fill:#e2d9f3,stroke:#9c27b0,stroke-width:2px,color:#5a3f7f\n\n';
+
+            // 命令节点
+            Object.entries(data.commands).forEach(([id, cmd]) => {
+                const label = `${cmd.name}<br/><small>${id}</small>`;
+                mermaidCode += `    ${id}["${label}"]:::commandStyle\n`;
+            });
+
+            // 事件节点
+            Object.entries(data.events).forEach(([id, evt]) => {
+                const label = `${evt.name}<br/><small>${id}</small>`;
+                mermaidCode += `    ${id}(["${label}"]):::eventStyle\n`;
+            });
+
+            // 聚合节点
+            Object.entries(data.aggregates).forEach(([id, agg]) => {
+                const label = `${agg.name}<br/><small>${id}</small>`;
+                mermaidCode += `    ${id}[("${label}")]:::aggregateStyle\n`;
+            });
+
+            // Policy 节点
+            Object.entries(data.policies).forEach(([id, policy]) => {
+                const label = `${policy.name}<br/><small>${id}</small>`;
+                mermaidCode += `    ${id}{{"${label}"}}:::policyStyle\n`;
+            });
+
+            mermaidCode += '\n';
+
+            // 命令 -> 事件
+            Object.entries(data.commands).forEach(([cmdId, cmd]) => {
+                cmd.events.forEach(eventId => {
+                    mermaidCode += `    ${cmdId} -->|产生| ${eventId}\n`;
+                });
+            });
+
+            // 命令 -> 聚合
+            Object.entries(data.commands).forEach(([cmdId, cmd]) => {
+                if (cmd.aggregate) {
+                    mermaidCode += `    ${cmdId} -.->|操作| ${cmd.aggregate}\n`;
+                }
+            });
+
+            // 事件 -> Policy -> 命令
+            Object.entries(data.policies).forEach(([policyId, policy]) => {
+                policy.listenEvents.forEach(eventId => {
+                    mermaidCode += `    ${eventId} -->|触发| ${policyId}\n`;
+                });
+                policy.triggerCommands.forEach(cmdId => {
+                    mermaidCode += `    ${policyId} -->|执行| ${cmdId}\n`;
+                });
+            });
+
+            const { svg } = await mermaid.render('mermaid-svg', mermaidCode);
+            document.getElementById('mermaid-diagram').innerHTML = svg;
+
+            // 绑定点击事件
+            bindNodeClickEvents();
+        }
+
+        function bindNodeClickEvents() {
+            const nodes = document.querySelectorAll('.node');
+            nodes.forEach(node => {
+                node.style.cursor = 'pointer';
+                node.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const nodeId = node.id.replace('flowchart-', '').replace(/-[0-9]+$/, '');
+                    handleNodeClick(nodeId);
+                });
+            });
+        }
+
+        function handleNodeClick(nodeId) {
+            let nodeType = null;
+            let nodeData = null;
+
+            if (data.commands[nodeId]) {
+                nodeType = 'command';
+                nodeData = data.commands[nodeId];
+            } else if (data.events[nodeId]) {
+                nodeType = 'event';
+                nodeData = data.events[nodeId];
+            } else if (data.aggregates[nodeId]) {
+                nodeType = 'aggregate';
+                nodeData = data.aggregates[nodeId];
+            } else if (data.policies[nodeId]) {
+                nodeType = 'policy';
+                nodeData = data.policies[nodeId];
+            }
+
+            if (nodeData) {
+                highlightNode(nodeId, nodeType);
+                showDetailPanel(nodeId, nodeType, nodeData);
+            }
+        }
+
+        // ============================================================
+        // 缩放和拖拽
+        // ============================================================
+        let scale = 1.0;
+        let translateX = 0;
+        let translateY = 0;
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        const container = document.getElementById('container');
+        const canvas = document.getElementById('canvas');
+
+        document.getElementById('zoom-in').addEventListener('click', () => {
+            scale = Math.min(scale + 0.1, 3);
+            updateTransform();
+        });
+
+        document.getElementById('zoom-out').addEventListener('click', () => {
+            scale = Math.max(scale - 0.1, 0.3);
+            updateTransform();
+        });
+
+        document.getElementById('reset-view').addEventListener('click', () => {
+            scale = 1.0;
+            translateX = 0;
+            translateY = 0;
+            updateTransform();
+        });
+
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.05 : 0.05;
+            scale = Math.max(0.3, Math.min(3, scale + delta));
+            updateTransform();
+        });
+
+        container.addEventListener('mousedown', (e) => {
+            if (e.target === container || e.target === canvas || e.target.closest('#mermaid-diagram')) {
+                isDragging = true;
+                startX = e.clientX - translateX;
+                startY = e.clientY - translateY;
+                container.classList.add('dragging');
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                translateX = e.clientX - startX;
+                translateY = e.clientY - startY;
+                updateTransform();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                container.classList.remove('dragging');
+            }
+        });
+
+        function updateTransform() {
+            canvas.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+            document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+        }
+
+        // ============================================================
+        // 高亮逻辑
+        // ============================================================
+        let currentHighlighted = null;
+
+        function highlightNode(nodeId, nodeType) {
+            if (currentHighlighted === nodeId) {
+                clearHighlight();
+                return;
+            }
+
+            currentHighlighted = nodeId;
+
+            const toHighlight = new Set([nodeId]);
+
+            if (nodeType === 'command') {
+                const cmd = data.commands[nodeId];
+                cmd.events.forEach(e => toHighlight.add(e));
+                if (cmd.aggregate) toHighlight.add(cmd.aggregate);
+            } else if (nodeType === 'event') {
+                Object.entries(data.commands).forEach(([id, cmd]) => {
+                    if (cmd.events.includes(nodeId)) toHighlight.add(id);
+                });
+                Object.entries(data.policies).forEach(([id, policy]) => {
+                    if (policy.listenEvents.includes(nodeId)) toHighlight.add(id);
+                });
+            } else if (nodeType === 'aggregate') {
+                Object.entries(data.commands).forEach(([id, cmd]) => {
+                    if (cmd.aggregate === nodeId) {
+                        toHighlight.add(id);
+                        cmd.events.forEach(e => toHighlight.add(e));
+                    }
+                });
+            } else if (nodeType === 'policy') {
+                const policy = data.policies[nodeId];
+                policy.listenEvents.forEach(e => toHighlight.add(e));
+                policy.triggerCommands.forEach(c => toHighlight.add(c));
+            }
+
+            const nodes = document.querySelectorAll('.node');
+            const edges = document.querySelectorAll('.edgePath');
+
+            nodes.forEach(node => {
+                const nId = node.id.replace('flowchart-', '').replace(/-[0-9]+$/, '');
+                if (toHighlight.has(nId)) {
+                    node.classList.add('highlighted');
+                    node.classList.remove('dimmed');
+                } else {
+                    node.classList.add('dimmed');
+                    node.classList.remove('highlighted');
+                }
+            });
+
+            edges.forEach(edge => {
+                const edgeClasses = edge.classList;
+                let shouldHighlight = false;
+
+                for (const cls of edgeClasses) {
+                    if (cls.startsWith('LS-') || cls.startsWith('LE-')) {
+                        const nId = cls.replace(/^L[SE]-/, '').replace(/-[0-9]+$/, '');
+                        if (!toHighlight.has(nId)) {
+                            shouldHighlight = false;
+                            break;
+                        } else {
+                            shouldHighlight = true;
+                        }
+                    }
+                }
+
+                if (shouldHighlight) {
+                    edge.classList.add('highlighted');
+                    edge.classList.remove('dimmed');
+                } else {
+                    edge.classList.add('dimmed');
+                    edge.classList.remove('highlighted');
+                }
+            });
+        }
+
+        function clearHighlight() {
+            const nodes = document.querySelectorAll('.node');
+            const edges = document.querySelectorAll('.edgePath');
+
+            nodes.forEach(node => {
+                node.classList.remove('highlighted', 'dimmed');
+            });
+
+            edges.forEach(edge => {
+                edge.classList.remove('highlighted', 'dimmed');
+            });
+
+            hideDetailPanel();
+            currentHighlighted = null;
+        }
+
+        // ============================================================
+        // 详情面板
+        // ============================================================
+        function showDetailPanel(nodeId, nodeType, nodeData) {
+            const panel = document.getElementById('detail-panel');
+            const header = document.getElementById('detail-header');
+            const content = document.getElementById('detail-content');
+
+            let badgeClass, typeText;
+            if (nodeType === 'command') {
+                badgeClass = 'badge-command';
+                typeText = 'Command';
+            } else if (nodeType === 'event') {
+                badgeClass = 'badge-event';
+                typeText = 'Event';
+            } else if (nodeType === 'aggregate') {
+                badgeClass = 'badge-aggregate';
+                typeText = 'Aggregate';
+            } else if (nodeType === 'policy') {
+                badgeClass = 'badge-policy';
+                typeText = 'Policy';
+            }
+
+            let headerHTML = `
+                <h2>${nodeData.name || nodeData.id}</h2>
+                <div class="subtitle">
+                    <span class="badge ${badgeClass}">${typeText}</span>
+                    <span>${nodeData.className || nodeData.id}</span>
+                </div>
+            `;
+
+            let contentHTML = '';
+
+            if (nodeType === 'command') {
+                contentHTML = `
+                    <h3>触发者</h3>
+                    <p>${nodeData.trigger || nodeData.actor || '-'}</p>
+                    <h3>输入数据</h3>
+                    <p>${nodeData.input || (nodeData.inputs ? nodeData.inputs.join(', ') : '-')}</p>
+                    <h3>前置条件</h3>
+                    <p>${nodeData.precondition || (nodeData.preconditions ? nodeData.preconditions.join('; ') : '-')}</p>
+                    <h3>操作聚合</h3>
+                    <p>${nodeData.aggregate}</p>
+                    <h3>产生事件</h3>
+                    <ul>
+                        ${nodeData.events.map(e => `<li>${e}: ${data.events[e].name}</li>`).join('')}
+                    </ul>
+                `;
+            } else if (nodeType === 'event') {
+                contentHTML = `
+                    <h3>业务含义</h3>
+                    <p>${nodeData.meaning}</p>
+                    <h3>所属聚合</h3>
+                    <p>${nodeData.aggregate}</p>
+                    <h3>由以下命令产生</h3>
+                    <ul>
+                        ${Object.entries(data.commands)
+                            .filter(([_, cmd]) => cmd.events.includes(nodeId))
+                            .map(([id, cmd]) => `<li>${id}: ${cmd.name}</li>`)
+                            .join('') || '<li>无</li>'}
+                    </ul>
+                    <h3>被以下策略监听</h3>
+                    <ul>
+                        ${Object.entries(data.policies)
+                            .filter(([_, policy]) => policy.listenEvents.includes(nodeId))
+                            .map(([id, policy]) => `<li>${id}: ${policy.name}</li>`)
+                            .join('') || '<li>无</li>'}
+                    </ul>
+                `;
+            } else if (nodeType === 'aggregate') {
+                const relatedCommands = Object.entries(data.commands)
+                    .filter(([_, cmd]) => cmd.aggregate === nodeId);
+                const relatedEvents = [...new Set(relatedCommands.flatMap(([_, cmd]) => cmd.events))];
+
+                contentHTML = `
+                    <h3>描述</h3>
+                    <p>${nodeData.description || '-'}</p>
+                    ${nodeData.entities ? `
+                    <h3>内部实体</h3>
+                    <ul>
+                        ${nodeData.entities.map(e => `<li>${e}</li>`).join('') || '<li>无</li>'}
+                    </ul>` : ''}
+                    ${nodeData.valueObjects ? `
+                    <h3>值对象</h3>
+                    <ul>
+                        ${nodeData.valueObjects.map(v => `<li>${v}</li>`).join('') || '<li>无</li>'}
+                    </ul>` : ''}
+                    <h3>相关命令</h3>
+                    <ul>
+                        ${relatedCommands.map(([id, cmd]) => `<li>${id}: ${cmd.name}</li>`).join('')}
+                    </ul>
+                    <h3>产生事件</h3>
+                    <ul>
+                        ${relatedEvents.map(e => `<li>${e}: ${data.events[e].name}</li>`).join('')}
+                    </ul>
+                `;
+            } else if (nodeType === 'policy') {
+                contentHTML = `
+                    <h3>业务规则</h3>
+                    <p>${nodeData.rule}</p>
+                    <h3>监听事件</h3>
+                    <ul>
+                        ${nodeData.listenEvents.length > 0
+                            ? nodeData.listenEvents.map(e => `<li>${e}: ${data.events[e].name}</li>`).join('')
+                            : '<li>定时触发</li>'}
+                    </ul>
+                    <h3>触发命令</h3>
+                    <ul>
+                        ${nodeData.triggerCommands.length > 0
+                            ? nodeData.triggerCommands.map(c => `<li>${c}: ${data.commands[c].name}</li>`).join('')
+                            : '<li>无</li>'}
+                    </ul>
+                `;
+            }
+
+            header.innerHTML = headerHTML;
+            content.innerHTML = contentHTML;
+            panel.classList.add('visible');
+        }
+
+        function hideDetailPanel() {
+            document.getElementById('detail-panel').classList.remove('visible');
+        }
+
+        document.getElementById('close-detail').addEventListener('click', () => {
+            clearHighlight();
+        });
+
+        container.addEventListener('click', (e) => {
+            if (e.target === container || e.target === canvas) {
+                clearHighlight();
+            }
+        });
+    </script>
+</body>
+</html>
