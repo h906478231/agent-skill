@@ -419,6 +419,22 @@
 
     <script>
         // ============================================================
+        // 主题配置
+        // ============================================================
+        let themesConfig = null;
+        let currentTheme = 'bootstrap';
+
+        // 内置回退主题（当 themes.json 加载失败时使用）
+        const FALLBACK_THEME = {
+            name: "Bootstrap (默认)",
+            description: "默认主题",
+            command: { fill: "#fff3cd", stroke: "#ffc107", strokeWidth: "2px", color: "#856404" },
+            event: { fill: "#f8d7da", stroke: "#dc3545", strokeWidth: "2px", color: "#721c24" },
+            aggregate: { fill: "#d1ecf1", stroke: "#17a2b8", strokeWidth: "2px", color: "#0c5460" },
+            policy: { fill: "#e2d9f3", stroke: "#9c27b0", strokeWidth: "2px", color: "#5a3f7f" }
+        };
+
+        // ============================================================
         // 数据加载逻辑
         // ============================================================
         let data = null;
@@ -428,11 +444,37 @@
             showError('检测到 file:// 协议，无法加载 JSON 数据。\n\n请使用 HTTP 服务器打开此页面。');
             hideLoading();
         } else {
-            // 获取 JSON 路径（支持 URL 参数）
+            // 获取 URL 参数
             const params = new URLSearchParams(window.location.search);
             const dataPath = params.get('data') || './ddd-model.json';
+            const themeParam = params.get('theme');
 
-            // 加载 JSON
+            // 先加载主题配置
+            fetch('./themes.json?t=' + Date.now())
+                .then(response => {
+                    if (!response.ok) {
+                        console.warn('themes.json 加载失败，使用内置默认主题');
+                        return { themes: { bootstrap: FALLBACK_THEME }, default: 'bootstrap' };
+                    }
+                    return response.json();
+                })
+                .then(themes => {
+                    themesConfig = themes;
+                    // 确定使用哪个主题
+                    if (themeParam && themesConfig.themes[themeParam]) {
+                        currentTheme = themeParam;
+                    } else {
+                        currentTheme = themesConfig.default || 'bootstrap';
+                    }
+                    console.log(`使用主题: ${currentTheme} (${themesConfig.themes[currentTheme]?.name || '未知'})`);
+                })
+                .catch(err => {
+                    console.error('主题配置加载失败:', err);
+                    themesConfig = { themes: { bootstrap: FALLBACK_THEME }, default: 'bootstrap' };
+                    currentTheme = 'bootstrap';
+                });
+
+            // 加载数据 JSON
             fetch(dataPath + '?t=' + Date.now())  // 添加缓存破坏参数
                 .then(response => {
                     if (!response.ok) {
@@ -471,6 +513,38 @@
         }
 
         // ============================================================
+        // 主题辅助函数
+        // ============================================================
+        /**
+         * 根据主题配置生成 Mermaid classDef 语句
+         */
+        function generateClassDef(themeConfig) {
+            if (!themeConfig) {
+                themeConfig = FALLBACK_THEME;
+            }
+            const { command, event, aggregate, policy } = themeConfig;
+            return `    classDef commandStyle fill:${command.fill},stroke:${command.stroke},stroke-width:${command.strokeWidth},color:${command.color}
+    classDef eventStyle fill:${event.fill},stroke:${event.stroke},stroke-width:${event.strokeWidth},color:${event.color}
+    classDef aggregateStyle fill:${aggregate.fill},stroke:${aggregate.stroke},stroke-width:${aggregate.strokeWidth},color:${aggregate.color}
+    classDef policyStyle fill:${policy.fill},stroke:${policy.stroke},stroke-width:${policy.strokeWidth},color:${policy.color}
+`;
+        }
+
+        /**
+         * 更新页面图例的颜色
+         */
+        function updateLegendColors(themeConfig) {
+            if (!themeConfig) return;
+            const legendItems = document.querySelectorAll('.legend-color');
+            if (legendItems.length >= 4) {
+                legendItems[0].style.background = themeConfig.command.fill;
+                legendItems[1].style.background = themeConfig.event.fill;
+                legendItems[2].style.background = themeConfig.aggregate.fill;
+                legendItems[3].style.background = themeConfig.policy.fill;
+            }
+        }
+
+        // ============================================================
         // Mermaid 配置
         // ============================================================
         mermaid.initialize({
@@ -502,11 +576,10 @@
 
             let mermaidCode = 'graph LR\n';
 
-            // 样式定义
-            mermaidCode += '    classDef commandStyle fill:#fff3cd,stroke:#ffc107,stroke-width:2px,color:#856404\n';
-            mermaidCode += '    classDef eventStyle fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24\n';
-            mermaidCode += '    classDef aggregateStyle fill:#d1ecf1,stroke:#17a2b8,stroke-width:2px,color:#0c5460\n';
-            mermaidCode += '    classDef policyStyle fill:#e2d9f3,stroke:#9c27b0,stroke-width:2px,color:#5a3f7f\n\n';
+            // 样式定义（动态生成，基于当前主题）
+            const themeConfig = themesConfig?.themes[currentTheme] || FALLBACK_THEME;
+            mermaidCode += generateClassDef(themeConfig);
+            mermaidCode += '\n';
 
             // 命令节点
             Object.entries(data.commands).forEach(([id, cmd]) => {
@@ -536,9 +609,11 @@
 
             // 命令 -> 事件
             Object.entries(data.commands).forEach(([cmdId, cmd]) => {
-                cmd.events.forEach(eventId => {
-                    mermaidCode += `    ${cmdId} -->|产生| ${eventId}\n`;
-                });
+                if (cmd.events && Array.isArray(cmd.events)) {
+                    cmd.events.forEach(eventId => {
+                        mermaidCode += `    ${cmdId} -->|产生| ${eventId}\n`;
+                    });
+                }
             });
 
             // 命令 -> 聚合
@@ -550,12 +625,16 @@
 
             // 事件 -> Policy -> 命令
             Object.entries(data.policies).forEach(([policyId, policy]) => {
-                policy.listenEvents.forEach(eventId => {
-                    mermaidCode += `    ${eventId} -->|触发| ${policyId}\n`;
-                });
-                policy.triggerCommands.forEach(cmdId => {
-                    mermaidCode += `    ${policyId} -->|执行| ${cmdId}\n`;
-                });
+                if (policy.listenEvents && Array.isArray(policy.listenEvents)) {
+                    policy.listenEvents.forEach(eventId => {
+                        mermaidCode += `    ${eventId} -->|触发| ${policyId}\n`;
+                    });
+                }
+                if (policy.triggerCommands && Array.isArray(policy.triggerCommands)) {
+                    policy.triggerCommands.forEach(cmdId => {
+                        mermaidCode += `    ${policyId} -->|执行| ${cmdId}\n`;
+                    });
+                }
             });
 
             const { svg } = await mermaid.render('mermaid-svg', mermaidCode);
@@ -563,6 +642,9 @@
 
             // 绑定点击事件
             bindNodeClickEvents();
+
+            // 更新图例颜色
+            updateLegendColors(themeConfig);
         }
 
         function bindNodeClickEvents() {

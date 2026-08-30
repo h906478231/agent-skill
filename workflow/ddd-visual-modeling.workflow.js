@@ -14,11 +14,13 @@ const domainModelPath = args?.domainModelPath || 'docs/ddd/domain-model.md';
 const outputJsonPath = args?.outputJsonPath || 'ddd-model.json';
 const outputHtmlPath = args?.outputHtmlPath || 'event-storm.html';
 const scope = args?.scope || '领域模型';
+const theme = args?.theme || 'bootstrap';
 
-log(`🚀 开始 DDD 可视化生成流程（v2.0.0 - 数据与视图分离）`);
+log(`🚀 开始 DDD 可视化生成流程（v2.0.0 - 支持主题切换）`);
 log(`📄 领域模型: ${domainModelPath}`);
 log(`📊 输出 JSON: ${outputJsonPath}`);
 log(`📄 输出 HTML: ${outputHtmlPath}`);
+log(`🎨 使用主题: ${theme}`);
 
 // ============================================
 // 阶段 1: 读取 domain-model.md
@@ -28,7 +30,16 @@ phase('读取模型');
 log('正在读取 domain-model.md...');
 
 const readResult = await agent(
-    `读取文件 ${domainModelPath} 的内容，并原样返回文件内容。如果文件不存在，返回 "ERROR: 文件不存在"。`,
+    `请使用 Read 工具读取以下文件的完整内容：
+
+文件路径：${domainModelPath}
+
+要求：
+1. 使用 Read 工具读取文件
+2. 返回文件的完整内容（原样返回，不要添加任何说明）
+3. 如果文件不存在，返回 "ERROR: 文件不存在"
+
+开始执行。`,
     {
         label: '读取文件',
         phase: '读取模型'
@@ -181,10 +192,18 @@ if (!modelDataJson) {
 
 log('✅ 数据转换完成');
 
+// 清理可能的 Markdown 代码块标记
+let cleanedJson = modelDataJson.trim();
+if (cleanedJson.startsWith('```json')) {
+    cleanedJson = cleanedJson.replace(/^```json\s*\n/, '').replace(/\n```\s*$/, '');
+} else if (cleanedJson.startsWith('```')) {
+    cleanedJson = cleanedJson.replace(/^```\s*\n/, '').replace(/\n```\s*$/, '');
+}
+
 // 解析 JSON 并校验
 let modelData;
 try {
-    modelData = JSON.parse(modelDataJson);
+    modelData = JSON.parse(cleanedJson);
 
     // 检查是否有错误
     if (modelData.error) {
@@ -276,7 +295,24 @@ if (!writeJsonResult || !writeJsonResult.includes('SUCCESS')) {
 
 log(`✅ 已生成 ddd-model.json: ${outputJsonPath}`);
 
-// 4.3 复制 HTML 模板
+// 4.3 复制主题配置文件
+const themesSourcePath = 'skills/ddd-event-storm-visualizer/themes.json';
+const themesOutputPath = outputJsonPath.replace(/[^/]+$/, 'themes.json'); // 与 JSON 同目录
+const copyThemesResult = await agent(
+    `将文件 ${themesSourcePath} 复制到 ${themesOutputPath}。如果目标文件已存在，覆盖它。完成后返回 "SUCCESS"。`,
+    {
+        label: '复制主题配置',
+        phase: '生成输出'
+    }
+);
+
+if (copyThemesResult && copyThemesResult.includes('SUCCESS')) {
+    log(`✅ 已复制主题配置: ${themesOutputPath}`);
+} else {
+    log(`⚠️  主题配置复制可能失败，将使用内置默认主题`);
+}
+
+// 4.4 复制 HTML 模板
 const templateSourcePath = 'skills/ddd-event-storm-visualizer/template-v2.0.0.html';
 const copyHtmlResult = await agent(
     `将文件 ${templateSourcePath} 复制到 ${outputHtmlPath}。如果目标文件已存在，跳过复制。完成后返回 "SUCCESS" 或 "SKIPPED"（如果已存在）。`,
@@ -302,20 +338,27 @@ log('🎉 可视化文件生成完成！');
 log('');
 log('📊 输出文件：');
 log(`  - JSON 数据: ${outputJsonPath}`);
+log(`  - 主题配置: ${themesOutputPath}`);
 log(`  - HTML 模板: ${outputHtmlPath}`);
 log('');
 log('📖 使用指引：');
-log('1. 确保 JSON 和 HTML 在同一目录');
+log('1. 确保 JSON、themes.json 和 HTML 在同一目录');
 log('2. 使用 HTTP 服务器打开 HTML 文件（不支持 file:// 协议）：');
 log('   - VS Code Live Server: 右键点击 HTML → "Open with Live Server"');
 log('   - Python: python3 -m http.server');
 log('   - Node.js: npx serve');
-log('3. HTML 会自动加载同目录下的 ddd-model.json');
+log('3. HTML 会自动加载同目录下的 ddd-model.json 和 themes.json');
 log('4. 修改 domain-model.md → 重新运行本 workflow → 刷新浏览器即可看到更新');
+log('');
+log('🎨 主题切换：');
+log(`  - 当前主题: ${theme}`);
+log('  - 可用主题: bootstrap (柔和商务), vibrant (鲜艳展示)');
+log('  - 通过 URL 参数切换: ?theme=bootstrap 或 ?theme=vibrant');
+log('  - 通过 workflow 参数指定: --args \'{"theme": "vibrant"}\'');
 log('');
 log('⚡ 性能提升：');
 log('  - 旧版本：4 个 agent 调用，30s-2min');
-log('  - 新版本：3 个 agent 调用，预计 < 30s');
+log('  - 新版本：4 个 agent 调用，预计 < 30s');
 log('  - 后续迭代：只需刷新浏览器，< 1s');
 log('');
 
