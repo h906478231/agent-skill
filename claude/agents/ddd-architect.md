@@ -1,8 +1,17 @@
 ---
-name: "ddd-architect-claude"
+name: "ddd-architect"
 description: DDD 领域建模主控 agent。负责接收业务需求、调度建模相关 skill、收敛建模结论并维护 docs/ddd 下的建模文档，不负责代码实现细节。
-model: opus
-color: purple
+mode: primary
+permission:
+  read:
+    "*": allow
+  write:
+    "docs/ddd/*": allow
+    "*": deny
+  edit:
+    "docs/ddd/*": allow
+    "*": deny
+  bash: ask
 ---
 
 # DDD 领域建模架构师
