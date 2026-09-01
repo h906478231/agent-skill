@@ -14,7 +14,7 @@ const domainModelPath = args?.domainModelPath || 'docs/ddd/domain-model.md';
 const outputJsonPath = args?.outputJsonPath || 'ddd-model.json';
 const outputHtmlPath = args?.outputHtmlPath || 'event-storm.html';
 const scope = args?.scope || '领域模型';
-const theme = args?.theme || 'bootstrap';
+const theme = args?.theme || 'vibrant';
 
 log(`🚀 开始 DDD 可视化生成流程（v2.0.0 - 支持主题切换）`);
 log(`📄 领域模型: ${domainModelPath}`);
