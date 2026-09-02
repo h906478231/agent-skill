@@ -1,0 +1,25 @@
+{
+  "name": "yunzhou-mcp-servers",
+  "version": "1.0.0",
+  "description": "云舟 MCP 服务器，为 OpenCode 提供云舟平台集成",
+  "type": "module",
+  "main": "yunzhou-mcp-server.js",
+  "scripts": {
+    "start": "node yunzhou-mcp-server.js",
+    "test": "node test-mcp-server.js"
+  },
+  "keywords": [
+    "yunzhou",
+    "mcp",
+    "opencode",
+    "flows-cli"
+  ],
+  "author": "DevOps Automation Team",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
