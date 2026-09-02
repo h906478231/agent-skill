@@ -150,8 +150,13 @@ get_board() {
     # 直接执行命令，输出到临时文件
     TEMP_FILE=$(mktemp)
 
+    echo "[DEBUG] 执行 flows-cli board show --project-id $project_id" >&2
+
     flows-cli board show --project-id "$project_id" --json > "$TEMP_FILE" 2>&1
     local exit_code=$?
+
+    echo "[DEBUG] flows-cli 退出码: $exit_code" >&2
+    echo "[DEBUG] 临时文件大小: $(wc -c < "$TEMP_FILE") 字节" >&2
 
     if [ $exit_code -ne 0 ]; then
         >&2 echo "❌ flows-cli 命令执行失败（退出码：$exit_code）"
@@ -162,31 +167,77 @@ get_board() {
     fi
 
     # 先验证原始 JSON 是否有效
+    echo "[DEBUG] 验证原始 JSON..." >&2
+    BOARD_TEMP_FILE=$(mktemp)
+
     if jq empty "$TEMP_FILE" 2>/dev/null; then
-        BOARD_JSON=$(cat "$TEMP_FILE")
+        echo "[DEBUG] ✅ 原始 JSON 有效，直接使用" >&2
+        cp "$TEMP_FILE" "$BOARD_TEMP_FILE"
     else
-        # 只清理真正有问题的控制字符，使用 LC_ALL=C 确保字节级处理
-        BOARD_JSON=$(LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' < "$TEMP_FILE")
+        echo "[DEBUG] ⚠️  原始 JSON 无效，尝试修复" >&2
+
+        # 保存原始错误信息
+        ORIGINAL_ERROR=$(jq empty "$TEMP_FILE" 2>&1 || true)
+        echo "[DEBUG] 原始 JSON 错误: $ORIGINAL_ERROR" >&2
+
+        # 尝试修复常见的 JSON 转义问题
+        # 1. 清理控制字符（保留换行、制表符）
+        # 2. 修复无效的反斜杠转义：将 \\ 后面跟非法字符的情况替换为单个反斜杠
+        LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' < "$TEMP_FILE" | \
+            sed 's/\\\\\\([^"nrtbf/u\\]\)/\\\1/g' > "$BOARD_TEMP_FILE"
 
         # 再次验证
-        if ! echo "$BOARD_JSON" | jq empty 2>/dev/null; then
+        echo "[DEBUG] 验证修复后的 JSON..." >&2
+        if ! jq empty "$BOARD_TEMP_FILE" 2>/dev/null; then
             >&2 echo "❌ 清理后 JSON 仍然无效"
-            >&2 echo "原始文件前 1000 字符："
-            head -c 1000 "$TEMP_FILE" >&2
-            rm -f "$TEMP_FILE"
+            >&2 echo ""
+            >&2 echo "尝试定位问题："
+
+            # 尝试找出具体的错误位置
+            ERROR_MSG=$(jq empty "$BOARD_TEMP_FILE" 2>&1 || true)
+            >&2 echo "$ERROR_MSG"
+
+            # 如果错误信息包含行号，显示该行的内容
+            if echo "$ERROR_MSG" | grep -q "line [0-9]"; then
+                LINE_NUM=$(echo "$ERROR_MSG" | grep -oE "line [0-9]+" | grep -oE "[0-9]+")
+                >&2 echo ""
+                >&2 echo "问题行 $LINE_NUM 的内容："
+                sed -n "${LINE_NUM}p" "$BOARD_TEMP_FILE" | head -c 200 >&2
+                >&2 echo ""
+                >&2 echo "问题行附近内容（前后3行）："
+                sed -n "$((LINE_NUM-3)),$((LINE_NUM+3))p" "$BOARD_TEMP_FILE" | head -c 500 >&2
+                >&2 echo ""
+            fi
+
+            # 保存问题数据以供调试
+            DEBUG_FILE="/tmp/yunzhou_board_debug_$(date +%s).json"
+            cp "$BOARD_TEMP_FILE" "$DEBUG_FILE"
+            >&2 echo "已保存问题数据到: $DEBUG_FILE"
+
+            rm -f "$TEMP_FILE" "$BOARD_TEMP_FILE"
             exit 1
+        else
+            echo "[DEBUG] ✅ 修复后 JSON 有效" >&2
         fi
     fi
 
     rm -f "$TEMP_FILE"
 
-    if [ "$(echo "$BOARD_JSON" | jq -r '.ok')" != "true" ]; then
+    echo "[DEBUG] 检查 .ok 字段..." >&2
+    OK_VALUE=$(jq -r '.ok' "$BOARD_TEMP_FILE" 2>&1)
+    echo "[DEBUG] .ok 字段值: [$OK_VALUE]" >&2
+
+    if [ "$OK_VALUE" != "true" ]; then
         >&2 echo "❌ 获取看板失败"
-        echo "$BOARD_JSON" | jq >&2
+        jq . "$BOARD_TEMP_FILE" >&2
+        rm -f "$BOARD_TEMP_FILE"
         exit 1
     fi
 
-    echo "$BOARD_JSON"
+    echo "[DEBUG] ✅ get_board 函数执行成功" >&2
+    # 直接输出文件内容，不经过变量
+    cat "$BOARD_TEMP_FILE"
+    rm -f "$BOARD_TEMP_FILE"
 }
 
 # 添加项目配置
@@ -245,14 +296,12 @@ add_project() {
     # 获取看板信息
     echo "获取项目看板..."
 
-    # 使用临时文件避免子 shell 输出缓冲问题
-    BOARD_TEMP_FILE=$(mktemp)
-    get_board "$PROJECT_ID" > "$BOARD_TEMP_FILE"
-    BOARD_JSON=$(cat "$BOARD_TEMP_FILE")
-    rm -f "$BOARD_TEMP_FILE"
+    # 使用临时文件存储 get_board 的输出
+    BOARD_JSON_FILE=$(mktemp)
+    get_board "$PROJECT_ID" > "$BOARD_JSON_FILE"
 
-    # columns 是对象，需要转换为数组，并清理控制字符
-    COLUMNS_ARRAY=$(echo "$BOARD_JSON" | jq -c '[.data.columns | to_entries | .[] | .value]' | tr -d '\000-\037' | tr -d '\177')
+    # columns 是对象，需要转换为数组
+    COLUMNS_ARRAY=$(jq -c '[.data.columns | to_entries | .[] | .value]' "$BOARD_JSON_FILE")
     COLUMN_COUNT=$(echo "$COLUMNS_ARRAY" | jq 'length')
     echo "✅ 找到 $COLUMN_COUNT 个清单"
     echo ""
@@ -266,6 +315,7 @@ add_project() {
 
     if [ -z "$COLUMN_INDEX" ] || [ "$COLUMN_INDEX" -lt 1 ] || [ "$COLUMN_INDEX" -gt "$COLUMN_COUNT" ]; then
         echo "❌ 无效的清单编号"
+        rm -f "$BOARD_JSON_FILE"
         exit 1
     fi
 
@@ -319,7 +369,10 @@ fi
 echo ""
 
     # 提取所有清单信息（columns 是对象，需要转换）
-    COLUMNS=$(echo "$BOARD_JSON" | jq -c '[.data.columns | to_entries | .[] | .value | {id: .id, title: .title}]')
+    COLUMNS=$(jq -c '[.data.columns | to_entries | .[] | .value | {id: .id, title: .title}]' "$BOARD_JSON_FILE")
+
+    # 清理临时文件
+    rm -f "$BOARD_JSON_FILE"
 
 # 添加到配置文件
 if [ -n "$CODE_REPO" ]; then

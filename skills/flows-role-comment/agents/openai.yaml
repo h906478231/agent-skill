@@ -1,0 +1,4 @@
+interface:
+  display_name: "云舟角色评论"
+  short_description: "研发只讲逻辑，协作人用大白话看问题和行动"
+  default_prompt: "使用 $flows-role-comment 为这个云舟任务生成研发逻辑说明和大白话协作说明。"
