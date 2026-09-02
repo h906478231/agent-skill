@@ -23,7 +23,12 @@ export const meta = {
 //   }
 
 // 从全局配置文件加载默认值
-const configPath = `${process.env.HOME}/.yunzhou/config.json`
+// 通过 agent 获取 HOME 环境变量
+const homeDir = await agent(
+  '执行命令 echo $HOME 并返回结果（去除换行符）',
+  { label: 'get-home-dir' }
+)
+const configPath = `${homeDir.trim()}/.yunzhou/config.json`
 let config = null
 let defaultProject = null
 
@@ -80,12 +85,12 @@ if (selectedProjectId && config && config.projects) {
   }
 }
 
-const profile = (args && args.profile) || (config && config.yunzhou.profile) || 'default'
-const projectId = (args && args.projectId) || (defaultProject && defaultProject.projectId)
+const profile = (args && args.profile) || (config && config.yunzhou && config.yunzhou.profile) || 'default'
+let projectId = (args && args.projectId) || (defaultProject && defaultProject.projectId)
 const taskId = args && args.taskId
 const columnId = (args && args.columnId) || (defaultProject && defaultProject.defaultColumnId)
-const autoCommit = (args && args.autoCommit) !== undefined ? args.autoCommit : (config && config.workflow.autoCommit) || false
-const skipAnalysis = (args && args.skipAnalysis) !== undefined ? args.skipAnalysis : (config && config.workflow.skipAnalysis) || false
+const autoCommit = (args && args.autoCommit) !== undefined ? args.autoCommit : (config && config.workflow && config.workflow.autoCommit) || false
+const skipAnalysis = (args && args.skipAnalysis) !== undefined ? args.skipAnalysis : (config && config.workflow && config.workflow.skipAnalysis) || false
 
 // 验证必需参数
 if (!projectId) {
@@ -142,7 +147,7 @@ if (!codeRepo) {
 
 // 验证代码仓库路径（假设相对路径是相对于当前工作目录）
 // 如果是绝对路径直接使用，如果是相对路径则假设已提供完整路径
-const absoluteCodeRepo = codeRepo
+let absoluteCodeRepo = codeRepo
 
 // 通过 agent 检查代码仓库是否存在且为 Git 仓库
 const repoCheckResult = await agent(
@@ -351,7 +356,7 @@ if (taskBelongsToProject && taskBelongsToProject.projectId !== projectId) {
   log('')
 
   // 检查是否配置了自动切换
-  const autoSwitch = config.workflow.autoSwitchProject !== false
+  const autoSwitch = config && config.workflow && config.workflow.autoSwitchProject !== false
 
   if (autoSwitch && taskBelongsToProject.codeRepo) {
     log('✅ 自动切换到任务所属项目（autoSwitchProject: true）')
@@ -362,31 +367,46 @@ if (taskBelongsToProject && taskBelongsToProject.projectId !== projectId) {
     projectId = taskBelongsToProject.projectId
     const newCodeRepo = taskBelongsToProject.codeRepo
 
-    // 验证新的代码仓库
-    const newAbsoluteCodeRepo = path.resolve(newCodeRepo)
-    if (!fs.existsSync(newAbsoluteCodeRepo)) {
-      log(`❌ 错误：任务所属项目的代码仓库路径不存在：${newAbsoluteCodeRepo}`)
+    // 验证新的代码仓库（通过 agent 检查）
+    const newRepoCheckResult = await agent(
+      `检查目录 ${newCodeRepo} 是否存在且是 Git 仓库。执行以下命令：
+1. 检查目录是否存在：ls -d ${newCodeRepo}
+2. 检查是否为 Git 仓库：test -d ${newCodeRepo}/.git && echo "is_git_repo" || echo "not_git_repo"
+
+返回 JSON 格式：{"exists": true/false, "isGitRepo": true/false}`,
+      { label: 'check-switched-repo' }
+    )
+
+    let newRepoCheck
+    try {
+      newRepoCheck = JSON.parse(newRepoCheckResult)
+    } catch (e) {
+      log(`❌ 错误：无法验证新代码仓库状态`)
+      return { status: 'failed', reason: 'repo_check_failed' }
+    }
+
+    if (!newRepoCheck.exists) {
+      log(`❌ 错误：任务所属项目的代码仓库路径不存在：${newCodeRepo}`)
       return {
         status: 'failed',
         reason: 'task_project_code_repo_not_found',
         taskProject: taskBelongsToProject.name,
-        codeRepo: newAbsoluteCodeRepo
+        codeRepo: newCodeRepo
       }
     }
 
-    const newGitDir = path.join(newAbsoluteCodeRepo, '.git')
-    if (!fs.existsSync(newGitDir)) {
-      log(`❌ 错误：${newAbsoluteCodeRepo} 不是 Git 仓库`)
+    if (!newRepoCheck.isGitRepo) {
+      log(`❌ 错误：${newCodeRepo} 不是 Git 仓库`)
       return {
         status: 'failed',
         reason: 'task_project_not_git_repo',
         taskProject: taskBelongsToProject.name,
-        codeRepo: newAbsoluteCodeRepo
+        codeRepo: newCodeRepo
       }
     }
 
     // 切换成功
-    absoluteCodeRepo = newAbsoluteCodeRepo
+    absoluteCodeRepo = newCodeRepo
     log(`✅ 已切换代码仓库：${absoluteCodeRepo}`)
     log('')
   } else {
@@ -588,6 +608,11 @@ if (level === 'L0') {
   )
 }
 
+if (!developmentResult) {
+  log('❌ 开发阶段失败')
+  return { status: 'failed', reason: 'development_failed', task }
+}
+
 log(`开发完成`)
 
 // ============================================================
@@ -617,8 +642,8 @@ const commitResult = await agent(
     `3. 如果在 main/master，创建新分支`,
     `4. 暂存变更文件 (git add <files>)`,
     `5. 提交 commit`,
-    autoCommit ? `6. 推送到远程 (git push -u origin <branch>)` : `6. 准备推送（等待人工确认）`,
-    autoCommit ? `7. 创建 PR (gh pr create --title "..." --body "关联云舟任务: #${task.id}")` : ``,
+    `6. ⚠️  停止 - 不要执行 git push（需要人工确认）`,
+    `7. ⚠️  停止 - 不要创建 PR（需要人工确认）`,
     ``,
     `工作目录：${absoluteCodeRepo}`,
     ``,
@@ -630,76 +655,139 @@ const commitResult = await agent(
     `Commit 消息末尾添加：`,
     `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`,
     ``,
-    `返回结构化信息（branch/commitMessage/filesChanged/testsPassed/prUrl）`,
+    `⚠️  重要提示：`,
+    `- 只执行本地 commit，不推送到远程`,
+    `- 不创建 PR`,
+    `- 返回分支名和变更文件列表，由用户决定是否推送`,
+    ``,
+    `返回结构化信息（branch/commitMessage/filesChanged/testsPassed），不包含 prUrl`,
   ].join('\n'),
   { label: 'git-commit', phase: 'Commit', schema: COMMIT_SCHEMA }
 )
 
+if (!commitResult) {
+  log('❌ 提交阶段失败')
+  return { status: 'failed', reason: 'commit_failed', task, development: developmentResult }
+}
+
+if (!commitResult.filesChanged || commitResult.filesChanged.length === 0) {
+  log('⚠️  警告：没有文件变更')
+  return { status: 'failed', reason: 'no_files_changed', task, development: developmentResult }
+}
+
+log(`代码已提交：${commitResult.filesChanged.length} 个文件变更`)
+log(`分支：${commitResult.branch}`)
+log('')
+log('📋 下一步操作（需要人工确认）：')
+log('')
+log('1️⃣  推送代码到远程：')
+log(`   cd ${absoluteCodeRepo}`)
+log(`   git push -u origin ${commitResult.branch}`)
+log('')
+log('2️⃣  创建 Pull Request：')
+log(`   cd ${absoluteCodeRepo}`)
+log(`   gh pr create --title "${task.type}(#${task.id}): ${task.title}" --body "关联云舟任务: #${task.id}"`)
+log('')
+log('3️⃣  添加云舟评论（可选，使用 flows-role-comment skill）')
+log('')
+
 // ============================================================
-// Phase 5: 回写状态到云舟
+// Phase 5: 回写状态到云舟（使用 flows-role-comment skill）
 // ============================================================
 
 phase('Sync')
 
-const syncResult = await agent(
-  [
-    `你是云舟平台同步 Agent。`,
-    ``,
-    `任务 ID：${task.id}`,
-    `Profile：${profile}`,
-    ``,
-    `回写内容：`,
-    ``,
-    `1. 添加开发完成评论：`,
-    ``,
-    `使用命令：`,
-    `flows-cli task comment add --task-id ${task.id} \\`,
-    `  --content-file <临时文件路径> \\`,
-    `  --external-key "devops-loop-completed-${task.id}" \\`,
-    `  --profile ${profile} --json`,
-    ``,
-    `评论内容（Markdown格式）：`,
-    `---`,
-    `✅ **开发已完成**`,
-    ``,
-    `### 变更摘要`,
-    `- 文件数：${commitResult.filesChanged.length}`,
-    `- 分支：\`${commitResult.branch}\``,
-    commitResult.prUrl ? `- PR：${commitResult.prUrl}` : `- PR：待创建`,
-    analysis ? `- 复杂度：${analysis.estimatedComplexity}` : '',
-    analysis && analysis.risks.length > 0 ? `- 风险提示：${analysis.risks.join('; ')}` : '',
-    ``,
-    `### 变更文件`,
-    commitResult.filesChanged.map(f => `- \`${f}\``).join('\n'),
-    ``,
-    `### 测试状态`,
-    `- 单元测试：✅ 通过`,
-    `- 代码检查：✅ 通过`,
-    ``,
-    `---`,
-    `🤖 由 DevOps Automation Loop 自动生成`,
-    `---`,
-    ``,
-    `先将上述内容写入临时文件，然后执行命令。`,
-    ``,
-    `2. 可选：更新任务状态（如果需要）`,
-    `   如果任务应该标记为已完成，使用：`,
-    `   flows-cli task update --task-id ${task.id} --completed true --profile ${profile} --json`,
-    ``,
-    `3. 验证回写结果：`,
-    `   flows-cli task get --task-id ${task.id} --profile ${profile} --json`,
-    `   确认评论已添加到任务的 comments 列表中`,
-    ``,
-    `返回：是否成功、错误信息（如有）`,
-  ].join('\n'),
-  { label: 'sync-yunzhou', phase: 'Sync' }
+log('准备回写状态到云舟...')
+log('')
+
+// 检查是否存在 flows-role-comment skill
+const skillCheckResult = await agent(
+  `检查 flows-role-comment skill 是否存在。执行以下操作：
+1. 查找 skills/flows-role-comment/SKILL.md 文件
+2. 如果文件存在，返回 "SKILL_EXISTS"
+3. 如果文件不存在，返回 "SKILL_NOT_FOUND"`,
+  { label: 'check-flows-role-comment-skill' }
 )
 
-log(`状态已同步到云舟`)
+let commentResult = null
+
+if (skillCheckResult && skillCheckResult.includes('SKILL_EXISTS')) {
+  log('✓ 检测到 flows-role-comment skill')
+  log('')
+  log('⚠️  添加云舟评论需要人工确认')
+  log('')
+  log('如需添加评论，请执行以下命令：')
+  log('')
+  log('方式 1：使用 Skill 生成并发布评论')
+  log(`   /flows-role-comment`)
+  log(`   任务ID: ${task.id}`)
+  log(`   Profile: ${profile}`)
+  log('')
+  log('方式 2：手动构建评论内容')
+  log('   构建评论摘要：')
+  log(`   - 任务类型：${task.type}`)
+  log(`   - 变更文件数：${commitResult.filesChanged.length}`)
+  log(`   - 分支：${commitResult.branch}`)
+  if (analysis) {
+    log(`   - 复杂度：${analysis.estimatedComplexity}`)
+    if (analysis.risks && analysis.risks.length > 0) {
+      log(`   - 风险：${analysis.risks.join('; ')}`)
+    }
+  }
+  log('')
+  log('   然后使用 flows-cli 发布：')
+  log(`   flows-cli task comment add --task-id ${task.id} \\`)
+  log(`     --content-file <评论文件路径> \\`)
+  log(`     --external-key "devops-loop-completed-${task.id}" \\`)
+  log(`     --profile ${profile} --json`)
+  log('')
+
+  commentResult = {
+    status: 'pending_user_confirmation',
+    message: '评论准备就绪，等待人工确认后发布',
+    skillAvailable: true
+  }
+} else {
+  log('ℹ️  未检测到 flows-role-comment skill，跳过评论生成')
+  log('')
+  log('如需手动添加评论，可以使用 flows-cli：')
+  log(`flows-cli task comment add --task-id ${task.id} \\`)
+  log(`  --content "<评论内容>" \\`)
+  log(`  --profile ${profile} --json`)
+  log('')
+
+  commentResult = {
+    status: 'skipped',
+    message: 'flows-role-comment skill 不存在，已跳过',
+    skillAvailable: false
+  }
+}
 
 // ============================================================
 // 最终返回
 // ============================================================
+
+log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+log('✅ 工作流执行完成')
+log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+log('')
+log(`📦 任务信息：`)
+log(`   ID: ${task.id}`)
+log(`   标题: ${task.title}`)
+log(`   类型: ${task.type}`)
+log(`   优先级: ${task.priority}`)
+log('')
+log(`💻 开发结果：`)
+log(`   代码仓库: ${absoluteCodeRepo}`)
+log(`   分支: ${commitResult.branch}`)
+log(`   变更文件: ${commitResult.filesChanged.length} 个`)
+log(`   测试状态: ${commitResult.testsPassed ? '✅ 通过' : '⚠️  待确认'}`)
+log('')
+log(`⏭️  待完成操作：`)
+log(`   □ 推送代码到远程`)
+log(`   □ 创建 Pull Request`)
+log(`   □ 添加云舟评论（可选）`)
+log('')
 
 return {
   status: 'completed',
@@ -707,7 +795,25 @@ return {
   analysis,
   development: developmentResult,
   commit: commitResult,
-  sync: syncResult,
+  comment: commentResult,
   codeRepo: absoluteCodeRepo,
-  summary: `任务 #${task.id} 在 ${absoluteCodeRepo} 中完成开发并提交，${commitResult.prUrl ? 'PR: ' + commitResult.prUrl : '分支: ' + commitResult.branch}`,
+  nextSteps: {
+    push: {
+      command: `cd ${absoluteCodeRepo} && git push -u origin ${commitResult.branch}`,
+      description: '推送代码到远程仓库',
+      required: true
+    },
+    pr: {
+      command: `cd ${absoluteCodeRepo} && gh pr create --title "${task.type}(#${task.id}): ${task.title}" --body "关联云舟任务: #${task.id}"`,
+      description: '创建 Pull Request',
+      required: true
+    },
+    comment: {
+      skill: 'flows-role-comment',
+      available: commentResult.skillAvailable,
+      description: '添加云舟评论',
+      required: false
+    }
+  },
+  summary: `任务 #${task.id} 在 ${absoluteCodeRepo} 中完成开发并提交到分支 ${commitResult.branch}，等待推送和创建 PR`,
 }
