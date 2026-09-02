@@ -23,7 +23,7 @@ export const meta = {
 //   }
 
 // 从全局配置文件加载默认值
-const configPath = `${process.env.HOME}/.claude/yunzhou-config.json`
+const configPath = `${process.env.HOME}/.yunzhou/config.json`
 let config = null
 let defaultProject = null
 
@@ -400,7 +400,7 @@ if (taskBelongsToProject && taskBelongsToProject.projectId !== projectId) {
     log('  })')
     log('')
     log('方式 2：启用自动项目切换')
-    log('  编辑 .claude/yunzhou-config.json，添加：')
+    log('  编辑 ~/.yunzhou/config.json，添加：')
     log('  "workflow": {')
     log('    "autoSwitchProject": true')
     log('  }')

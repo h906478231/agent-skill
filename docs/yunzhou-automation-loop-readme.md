@@ -82,7 +82,7 @@ flows-cli auth whoami --json
 1. 选择云舟项目
 2. 选择默认清单（用于拉取待办任务）
 3. **配置代码仓库路径**（重要）
-4. 生成配置文件 `~/.claude/yunzhou-config.json`
+4. 生成配置文件 `~/.yunzhou/config.json`
 
 ### 第四步：运行工作流
 
@@ -189,7 +189,7 @@ workflow('devops-automation-loop-yunzhou', {
 
 ### 配置文件结构
 
-配置文件位于 `~/.claude/yunzhou-config.json`：
+配置文件位于 `~/.yunzhou/config.json`：
 
 ```json
 {
@@ -568,7 +568,7 @@ workflow('devops-automation-loop-yunzhou', {
 })
 
 // 方式 2：启用自动切换
-// 编辑 ~/.claude/yunzhou-config.json
+// 编辑 ~/.yunzhou/config.json
 {
   "workflow": {
     "autoSwitchProject": true
@@ -599,7 +599,7 @@ flows-cli project members --project-id <project-id> --json
 **解决**：
 ```bash
 # 验证 JSON 格式
-cat ~/.claude/yunzhou-config.json | jq
+cat ~/.yunzhou/config.json | jq
 
 # 如果无法修复，重新生成
 ./setup-yunzhou-config.sh
@@ -636,10 +636,10 @@ cat ~/.claude/yunzhou-config.json | jq
 **定期备份配置文件**：
 ```bash
 # 手动备份
-cp ~/.claude/yunzhou-config.json ~/.claude/yunzhou-config.backup.$(date +%Y%m%d).json
+cp ~/.yunzhou/config.json ~/.yunzhou/config.backup.$(date +%Y%m%d).json
 
 # 或使用 Git 跟踪（可选）
-git add ~/.claude/yunzhou-config.json
+git add ~/.yunzhou/config.json
 git commit -m "chore: 更新云舟项目配置"
 ```
 
@@ -814,7 +814,7 @@ for (const task of tasks.tasks) {
 ### 工具
 
 - [工作流源码](../workflow/devops-automation-loop-yunzhou.workflow.js)
-- [配置向导脚本](../setup-yunzhou-config.sh)
+- [配置向导脚本](../scripts/setup-yunzhou-config.sh)
 - [项目编码规范](../CLAUDE.md)
 
 ### 支持

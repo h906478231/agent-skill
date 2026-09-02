@@ -128,12 +128,12 @@
 ### 源码
 
 - [工作流源码](../workflow/devops-automation-loop-yunzhou.workflow.js)
-- [配置向导脚本](../setup-yunzhou-config.sh)
+- [配置向导脚本](../scripts/setup-yunzhou-config.sh)
 - [项目编码规范](../CLAUDE.md)
 
 ### 配置文件
 
-- 配置文件位置：`~/.claude/yunzhou-config.json`
+- 配置文件位置：`~/.yunzhou/config.json`
 - 配置版本：v1.2.0
 
 ### 云舟 CLI
@@ -180,7 +180,7 @@
 flows-cli health check --json
 
 # 验证配置
-cat .claude/yunzhou-config.json | jq
+cat ~/.yunzhou/config.json | jq
 
 # 测试项目访问
 flows-cli project list --json
@@ -198,10 +198,10 @@ flows-cli board show --project-id <project-id> --json
 ./setup-yunzhou-config.sh
 
 # 查看配置
-cat ~/.claude/yunzhou-config.json | jq
+cat ~/.yunzhou/config.json | jq
 
 # 验证配置格式
-cat ~/.claude/yunzhou-config.json | jq '.'
+cat ~/.yunzhou/config.json | jq '.'
 ```
 
 ### 工作流调用

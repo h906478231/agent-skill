@@ -6,9 +6,9 @@
 
 set -e
 
-# 使用全局 .claude 目录
-CONFIG_DIR="$HOME/.claude"
-CONFIG_FILE="$CONFIG_DIR/yunzhou-config.json"
+# 使用全局 .yunzhou 目录
+CONFIG_DIR="$HOME/.yunzhou"
+CONFIG_FILE="$CONFIG_DIR/config.json"
 
 echo "========================================="
 echo "云舟 DevOps 自动化配置向导"
@@ -49,8 +49,18 @@ fi
 if [ -f "$CONFIG_FILE" ]; then
     echo "发现已有配置文件"
     echo ""
-    echo "当前配置的项目："
-    cat "$CONFIG_FILE" | jq -r '.projects[] | "  - \(.name) (ID: \(.projectId))"'
+
+    # 检查项目数量
+    PROJECT_COUNT=$(cat "$CONFIG_FILE" | jq '.projects | length')
+
+    if [ "$PROJECT_COUNT" -gt 0 ]; then
+        echo "当前配置的项目："
+        cat "$CONFIG_FILE" | jq -r '.projects[] | "  - \(.name) (ID: \(.projectId))"'
+    else
+        echo "当前配置的项目："
+        echo "  （暂无项目）"
+    fi
+
     echo ""
     echo "请选择操作："
     echo "  1. 添加新项目"
@@ -136,11 +146,43 @@ get_projects() {
 # 获取看板信息
 get_board() {
     local project_id=$1
-    BOARD_JSON=$(flows-cli board show --project-id "$project_id" --json | tr -d '\000-\037' | tr -d '\177')
+
+    # 直接执行命令，输出到临时文件
+    TEMP_FILE=$(mktemp)
+
+    flows-cli board show --project-id "$project_id" --json > "$TEMP_FILE" 2>&1
+    local exit_code=$?
+
+    if [ $exit_code -ne 0 ]; then
+        >&2 echo "❌ flows-cli 命令执行失败（退出码：$exit_code）"
+        >&2 echo "输出："
+        cat "$TEMP_FILE" >&2
+        rm -f "$TEMP_FILE"
+        exit 1
+    fi
+
+    # 先验证原始 JSON 是否有效
+    if jq empty "$TEMP_FILE" 2>/dev/null; then
+        BOARD_JSON=$(cat "$TEMP_FILE")
+    else
+        # 只清理真正有问题的控制字符，使用 LC_ALL=C 确保字节级处理
+        BOARD_JSON=$(LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' < "$TEMP_FILE")
+
+        # 再次验证
+        if ! echo "$BOARD_JSON" | jq empty 2>/dev/null; then
+            >&2 echo "❌ 清理后 JSON 仍然无效"
+            >&2 echo "原始文件前 1000 字符："
+            head -c 1000 "$TEMP_FILE" >&2
+            rm -f "$TEMP_FILE"
+            exit 1
+        fi
+    fi
+
+    rm -f "$TEMP_FILE"
 
     if [ "$(echo "$BOARD_JSON" | jq -r '.ok')" != "true" ]; then
-        echo "❌ 获取看板失败"
-        echo "$BOARD_JSON" | jq
+        >&2 echo "❌ 获取看板失败"
+        echo "$BOARD_JSON" | jq >&2
         exit 1
     fi
 
@@ -202,10 +244,15 @@ add_project() {
 
     # 获取看板信息
     echo "获取项目看板..."
-    BOARD_JSON=$(get_board "$PROJECT_ID")
 
-    # columns 是对象，需要转换为数组
-    COLUMNS_ARRAY=$(echo "$BOARD_JSON" | jq -c '[.data.columns | to_entries | .[] | .value]')
+    # 使用临时文件避免子 shell 输出缓冲问题
+    BOARD_TEMP_FILE=$(mktemp)
+    get_board "$PROJECT_ID" > "$BOARD_TEMP_FILE"
+    BOARD_JSON=$(cat "$BOARD_TEMP_FILE")
+    rm -f "$BOARD_TEMP_FILE"
+
+    # columns 是对象，需要转换为数组，并清理控制字符
+    COLUMNS_ARRAY=$(echo "$BOARD_JSON" | jq -c '[.data.columns | to_entries | .[] | .value]' | tr -d '\000-\037' | tr -d '\177')
     COLUMN_COUNT=$(echo "$COLUMNS_ARRAY" | jq 'length')
     echo "✅ 找到 $COLUMN_COUNT 个清单"
     echo ""
