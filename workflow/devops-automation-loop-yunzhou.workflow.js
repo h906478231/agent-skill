@@ -622,16 +622,33 @@ phase('OpenSpec Explore')
 const changeId = CONFIG.CHANGE_ID_PREFIX + task.id
 log(`变更 ID：${changeId}`)
 
-// 调用 OpenSpec Explore 工作流
+// 调用 OpenSpec Explore skill
 let exploreResult = null
 try {
-  exploreResult = await workflow('openspec-explore', {
-    args: {
-      change: changeId,
-      taskInfo: task,
-      complexity: routing ? routing.complexity : 'medium'
-    }
-  })
+  exploreResult = await agent(
+    [
+      `使用 openspec-explore skill 进行需求澄清和方案设计。`,
+      ``,
+      `变更名称：${changeId}`,
+      ``,
+      `任务信息：`,
+      `- 标题：${task.title}`,
+      `- 描述：${task.description}`,
+      `- 类型：${task.type}`,
+      `- 复杂度：${routing ? routing.complexity : 'medium'}`,
+      ``,
+      `执行步骤：`,
+      `1. 调用 /openspec-explore skill`,
+      `2. 创建或使用变更：${changeId}`,
+      `3. 进行需求澄清，生成 proposal.md`,
+      `4. 进行方案设计，生成 design.md`,
+      ``,
+      `确保生成以下产物：`,
+      `- openspec/changes/${changeId}/proposal.md`,
+      `- openspec/changes/${changeId}/design.md`,
+    ].join('\n'),
+    { label: 'openspec-explore', phase: 'OpenSpec Explore' }
+  )
 
   log(`需求澄清与方案设计完成 → openspec/changes/${changeId}/`)
 
@@ -657,7 +674,7 @@ try {
   }
 
 } catch (error) {
-  log(`❌ OpenSpec Explore 调用失败：${error.message || error}`)
+  log(`❌ OpenSpec Explore 失败：${error.message || error}`)
   return {
     status: 'failed',
     reason: 'openspec_explore_failed',
@@ -721,12 +738,25 @@ if (gateLevel !== 'L0') {
   phase('OpenSpec Review')
 
   try {
-    reviewResult = await workflow('openspec-review', {
-      args: {
-        change: changeId,
-        roles: roles
-      }
-    })
+    reviewResult = await agent(
+      [
+        `使用 openspec-technical-review skill 进行技术评审。`,
+        ``,
+        `变更名称：${changeId}`,
+        `门禁级别：${gateLevel}`,
+        `评审维度：${roles.join(', ')}`,
+        ``,
+        `执行步骤：`,
+        `1. 调用 /openspec-technical-review skill`,
+        `2. 对变更 ${changeId} 执行 ${gateLevel} 级别的技术评审`,
+        `3. 评审维度包括：${roles.join(', ')}`,
+        `4. 生成评审报告到 openspec/changes/${changeId}/review/`,
+        `5. 生成汇总到 openspec/changes/${changeId}/review-summary.md`,
+        ``,
+        `注意：本阶段不写业务代码，只识别问题并给建议。`,
+      ].join('\n'),
+      { label: 'openspec-review', phase: 'OpenSpec Review' }
+    )
 
     log(`技术评审完成 → openspec/changes/${changeId}/review-summary.md`)
 
@@ -741,7 +771,7 @@ if (gateLevel !== 'L0') {
     }
 
   } catch (error) {
-    log(`❌ OpenSpec Review 调用失败：${error.message || error}`)
+    log(`❌ OpenSpec Review 失败：${error.message || error}`)
     return {
       status: 'failed',
       reason: 'openspec_review_failed',
@@ -822,17 +852,32 @@ phase('OpenSpec Apply')
 let applyResult = null
 
 try {
-  applyResult = await workflow('openspec-apply', {
-    args: {
-      change: changeId,
-      codeRepo: absoluteCodeRepo
-    }
-  })
+  applyResult = await agent(
+    [
+      `使用 openspec-apply-change skill 实施代码变更。`,
+      ``,
+      `变更名称：${changeId}`,
+      `代码仓库：${absoluteCodeRepo}`,
+      ``,
+      `执行步骤：`,
+      `1. 调用 /openspec-apply-change skill`,
+      `2. 按照 openspec/changes/${changeId}/design.md 中的设计实施代码`,
+      `3. 参考 review-summary.md 中的"涉及代码模块"和"建议修复"`,
+      `4. 所有代码操作在 ${absoluteCodeRepo} 目录中执行`,
+      `5. 确保通过技术评审门禁检查`,
+      ``,
+      `任务信息：`,
+      `- 任务 ID：${task.id}`,
+      `- 标题：${task.title}`,
+      `- 描述：${task.description}`,
+    ].join('\n'),
+    { label: 'openspec-apply', phase: 'OpenSpec Apply' }
+  )
 
   log(`代码实现完成`)
 
 } catch (error) {
-  log(`❌ OpenSpec Apply 调用失败：${error.message || error}`)
+  log(`❌ OpenSpec Apply 失败：${error.message || error}`)
   return {
     status: 'failed',
     reason: 'openspec_apply_failed',
@@ -851,16 +896,28 @@ phase('OpenSpec Verify')
 let verifyResult = null
 
 try {
-  verifyResult = await workflow('openspec-verify', {
-    args: {
-      change: changeId
-    }
-  })
+  verifyResult = await agent(
+    [
+      `使用 openspec-verify-change skill 进行三维校验。`,
+      ``,
+      `变更名称：${changeId}`,
+      ``,
+      `执行步骤：`,
+      `1. 调用 /openspec-verify-change skill`,
+      `2. 对变更 ${changeId} 执行三维校验：`,
+      `   - Completeness：任务完整性（tasks.md 是否全部完成）`,
+      `   - Correctness：实现正确性（requirement 与代码映射）`,
+      `   - Coherence：一致性（实现是否偏离 design.md）`,
+      `3. 检查 overview.md 的条件矩阵，标注未落地的条目`,
+      `4. 存在 CRITICAL 级别问题时报告并阻止继续`,
+    ].join('\n'),
+    { label: 'openspec-verify', phase: 'OpenSpec Verify' }
+  )
 
   log(`OpenSpec 三维校验完成`)
 
 } catch (error) {
-  log(`❌ OpenSpec Verify 调用失败：${error.message || error}`)
+  log(`❌ OpenSpec Verify 失败：${error.message || error}`)
   log(`验证未通过，阻止继续执行`)
 
   return {
