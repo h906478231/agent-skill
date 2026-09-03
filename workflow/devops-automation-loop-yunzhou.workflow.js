@@ -1,16 +1,52 @@
 export const meta = {
   name: 'devops-automation-loop-yunzhou',
-  description: '云舟全流程自动化：从云舟拉取任务 → 分析 → OpenSpec开发 → 提交 → 回写状态',
+  description: '云舟全流程自动化：拉取任务 → 路由决策 → OpenSpec Explore → 门禁分级 → 技术评审 → 人工确认 → Apply → Verify → 提交回写',
   phases: [
     { title: 'Fetch', detail: '从云舟拉取待办任务' },
-    { title: 'Analyze', detail: '需求分析与可行性评估' },
-    { title: 'Develop', detail: 'OpenSpec 工作流开发' },
-    { title: 'Commit', detail: '代码提交与验证' },
+    { title: 'Route', detail: '任务路由与复杂度快速分类' },
+    { title: 'OpenSpec Explore', detail: '需求澄清与方案设计' },
+    { title: 'Gate Decision', detail: '门禁分级决策' },
+    { title: 'OpenSpec Review', detail: '技术评审门禁（L1-L3）' },
+    { title: 'Human Gate', detail: '人工签字确认' },
+    { title: 'OpenSpec Apply', detail: '代码实施' },
+    { title: 'OpenSpec Verify', detail: '三维校验' },
+    { title: 'Commit', detail: '代码提交' },
     { title: 'Sync', detail: '回写状态到云舟' },
   ],
 }
 
+// ============================================================
+// 配置常量
+// ============================================================
+
+const CONFIG = {
+  // 复杂度到门禁级别的映射
+  GATE_LEVEL_MAP: {
+    trivial: 'L0',
+    simple: 'L1',
+    medium: 'L2',
+    complex: 'L3',
+    epic: 'L3',
+  },
+
+  // 门禁级别到评审维度的映射
+  REVIEW_ROLES: {
+    L0: [],
+    L1: ['database', 'security'],
+    L2: ['architecture', 'database', 'security', 'performance'],
+    L3: ['architecture', 'concurrency', 'performance', 'database', 'security'],
+  },
+
+  // 云舟配置
+  YUNZHOU_PROFILE: process.env.YUNZHOU_PROFILE || 'default',
+
+  // 变更 ID 前缀
+  CHANGE_ID_PREFIX: 'yunzhou-',
+}
+
+// ============================================================
 // 配置参数
+// ============================================================
 // args:
 //   {
 //     profile: 'default',                      // 云舟 CLI profile 名称（可选）
@@ -251,16 +287,14 @@ const TASK_SCHEMA = {
   }
 }
 
-const ANALYSIS_SCHEMA = {
+const ROUTING_SCHEMA = {
   type: 'object',
-  required: ['feasible', 'estimatedComplexity', 'risks', 'recommendation'],
+  required: ['decision', 'complexity', 'reasoning'],
   properties: {
-    feasible: { type: 'boolean' },
-    estimatedComplexity: { type: 'string', enum: ['trivial', 'simple', 'medium', 'complex', 'epic'] },
-    risks: { type: 'array', items: { type: 'string' } },
-    missingInfo: { type: 'array', items: { type: 'string' } },
-    recommendation: { type: 'string', enum: ['proceed', 'clarify', 'reject'] },
-    clarificationNeeded: { type: 'string' },
+    decision: { type: 'string', enum: ['proceed', 'clarify', 'reject'] },
+    complexity: { type: 'string', enum: ['trivial', 'simple', 'medium', 'complex', 'epic'] },
+    reasoning: { type: 'string' },
+    missingInfo: { type: 'string' },
   }
 }
 
@@ -513,44 +547,45 @@ if (taskBelongsToProject && taskBelongsToProject.projectId !== projectId) {
 // Phase 2: 需求分析
 // ============================================================
 
-phase('Analyze')
+phase('Route')
 
-let analysis = null
+let routing = null
 
 if (!skipAnalysis) {
-  analysis = await agent(
+  routing = await agent(
     [
-      `你是需求分析 Agent，评估任务的可行性与复杂度。`,
+      `你是任务路由 Agent，快速判断任务复杂度以决定后续流程。`,
       ``,
       `任务信息：`,
       JSON.stringify(task, null, 2),
       ``,
-      `分析维度：`,
-      `1. 需求完整性：描述是否清晰？验收标准是否明确？`,
-      `2. 技术可行性：现有技术栈能否支持？有无技术债务阻塞？`,
-      `3. 复杂度评估：`,
-      `   - trivial: 10分钟内完成的简单修改`,
-      `   - simple: 1-2小时的小功能或简单修复`,
-      `   - medium: 半天的中等功能或复杂修复`,
-      `   - complex: 1-3天的大功能或架构调整`,
-      `   - epic: 需要拆分为多个子任务的大型项目`,
-      `4. 风险识别：性能风险、安全风险、兼容性风险、数据迁移风险`,
-      `5. 缺失信息：哪些信息需要补充才能开工？`,
+      `只需快速判断：`,
+      `1. 任务信息是否完整（缺少关键字段 → clarify）`,
+      `2. 复杂度快速分类：`,
+      `   - trivial: 纯文案/注释/格式化/配置值调整`,
+      `   - simple: 单表CRUD/新增非核心字段`,
+      `   - medium: 新增业务流程/跨模块调用/引入缓存`,
+      `   - complex: 涉及MQ/异步/并发/分布式一致性`,
+      `   - epic: 需拆分的大型重构或新模块`,
+      `3. 明显不合理的任务 → reject`,
       ``,
-      `建议：`,
-      `  - proceed: 可以直接开发`,
-      `  - clarify: 需要补充信息后再开发（在 clarificationNeeded 中说明）`,
-      `  - reject: 不建议接受（说明原因）`,
+      `决策选项：`,
+      `  - proceed: 信息完整，可以继续`,
+      `  - clarify: 需要补充信息（在 missingInfo 中说明）`,
+      `  - reject: 不建议接受（在 reasoning 中说明原因）`,
       ``,
-      `读取相关代码上下文（如有）以辅助判断。`,
+      `重要：`,
+      `- 不要深入分析技术方案和风险（这些交给 OpenSpec 工作流处理）`,
+      `- 只做快速分类和基本信息完整性检查`,
+      `- reasoning 字段用 1-2 句话说明判断依据`,
     ].join('\n'),
-    { label: 'analyze-requirement', phase: 'Analyze', schema: ANALYSIS_SCHEMA }
+    { label: 'route-task', phase: 'Route', schema: ROUTING_SCHEMA }
   )
 
-  log(`需求分析完成：${analysis.recommendation} (复杂度: ${analysis.estimatedComplexity})`)
+  log(`任务路由完成：${routing.complexity}`)
 
-  if (analysis.recommendation === 'clarify') {
-    log(`需要澄清的问题：${analysis.clarificationNeeded}`)
+  if (routing.decision === 'clarify') {
+    log(`需要补充的信息：${routing.missingInfo}`)
 
     // 自动回写评论到云舟
     await agent(
@@ -558,7 +593,7 @@ if (!skipAnalysis) {
         `使用 flows-cli 在任务 ${task.id} 下添加评论：`,
         ``,
         `flows-cli task comment add --task-id ${task.id} \\`,
-        `  --content "🤖 需求澄清\\n\\n${analysis.clarificationNeeded}" \\`,
+        `  --content "🤖 需求澄清\\n\\n${routing.missingInfo}" \\`,
         `  --external-key "devops-loop-clarification-${task.id}" \\`,
         `  --profile ${profile} --json`,
         ``,
@@ -566,104 +601,276 @@ if (!skipAnalysis) {
       ].join('\n')
     )
 
-    return { status: 'blocked', reason: 'clarification_needed', task, analysis }
+    return { status: 'blocked', reason: 'clarification_needed', task, routing }
   }
 
-  if (analysis.recommendation === 'reject') {
-    log(`不建议接受此任务`)
-    return { status: 'rejected', task, analysis }
+  if (routing.decision === 'reject') {
+    log(`任务被拒绝：${routing.reasoning}`)
+    return { status: 'rejected', task, routing }
   }
 } else {
-  log('跳过需求分析，直接进入开发')
+  log('跳过路由决策，直接进入开发')
 }
 
 // ============================================================
-// Phase 3: OpenSpec 开发流程
+// Phase 2: OpenSpec Explore（需求澄清与方案设计）
 // ============================================================
 
-phase('Develop')
+phase('OpenSpec Explore')
 
-const OPENSPEC_LEVEL = {
-  trivial: 'L0',
-  simple: 'L0',
-  medium: 'L1',
-  complex: 'L2',
-  epic: 'L3',
+// 定义变更 ID 映射规则
+const changeId = CONFIG.CHANGE_ID_PREFIX + task.id
+log(`变更 ID：${changeId}`)
+
+// 调用 OpenSpec Explore 工作流
+let exploreResult = null
+try {
+  exploreResult = await workflow('openspec-explore', {
+    args: {
+      change: changeId,
+      taskInfo: task,
+      complexity: routing ? routing.complexity : 'medium'
+    }
+  })
+
+  log(`需求澄清与方案设计完成 → openspec/changes/${changeId}/`)
+
+  // 验证关键产物是否生成
+  const proposalExists = await agent(
+    `检查文件是否存在：test -f openspec/changes/${changeId}/proposal.md && echo "exists" || echo "not_found"`,
+    { label: 'check-proposal' }
+  )
+
+  const designExists = await agent(
+    `检查文件是否存在：test -f openspec/changes/${changeId}/design.md && echo "exists" || echo "not_found"`,
+    { label: 'check-design' }
+  )
+
+  if (proposalExists.trim() === 'not_found' || designExists.trim() === 'not_found') {
+    log('⚠️  警告：部分 OpenSpec 产物未生成')
+    if (proposalExists.trim() === 'not_found') {
+      log('  缺失：proposal.md')
+    }
+    if (designExists.trim() === 'not_found') {
+      log('  缺失：design.md')
+    }
+  }
+
+} catch (error) {
+  log(`❌ OpenSpec Explore 调用失败：${error.message || error}`)
+  return {
+    status: 'failed',
+    reason: 'openspec_explore_failed',
+    task,
+    changeId,
+    error: error.message || String(error)
+  }
 }
 
-const level = analysis ? OPENSPEC_LEVEL[analysis.estimatedComplexity] : 'L1'
-log(`OpenSpec 等级：${level}`)
+// ============================================================
+// Phase 2.5: 门禁分级决策
+// ============================================================
 
-let developmentResult = null
+phase('Gate Decision')
 
-if (level === 'L0') {
-  // 简单任务：直接编码
-  developmentResult = await agent(
+// 使用配置中的门禁分级映射
+const gateLevel = routing ? CONFIG.GATE_LEVEL_MAP[routing.complexity] : 'L1'
+const roles = CONFIG.REVIEW_ROLES[gateLevel]
+
+log(`门禁级别：${gateLevel}`)
+
+if (gateLevel === 'L0') {
+  log(`L0 豁免：跳过技术门禁，记录豁免理由`)
+
+  // 生成 L0 豁免记录
+  await agent(
     [
-      `你是编码 Agent，在指定的代码仓库中实现任务。`,
+      `在 openspec/changes/${changeId}/ 目录创建 review-summary.md 文件，内容如下：`,
       ``,
-      `⚠️  重要：所有开发操作必须在以下目录中执行：`,
-      `代码仓库：${absoluteCodeRepo}`,
+      `# 技术评审豁免记录`,
       ``,
-      `任务 #${task.id}：${task.title}`,
-      `描述：${task.description}`,
-      `验收标准：${task.acceptanceCriteria || '见描述'}`,
+      `**变更**：${task.title}`,
+      `**豁免级别**：L0`,
+      `**豁免理由**：${routing ? routing.reasoning : '简单任务，无需技术门禁'}`,
+      `**豁免人**：devops-automation-bot`,
+      `**豁免时间**：${new Date().toISOString()}`,
       ``,
-      `实施步骤：`,
-      `1. 切换到代码仓库目录（所有后续操作都在此目录）`,
-      `2. 读取项目的 CLAUDE.md、README.md 或 package.json 了解项目结构`,
-      `3. 定位相关代码文件`,
-      `4. 实现功能逻辑（遵循项目编码规范）`,
-      `5. 编写或更新单元测试`,
-      `6. 运行测试验证`,
+      `## 门禁裁决`,
+      `READY_FOR_HUMAN_APPROVAL（豁免模式）`,
       ``,
-      `工作目录：${absoluteCodeRepo}`,
+      `## 人工确认区`,
+      `Technical Review Approved: __________`,
       ``,
-      `返回：变更的文件列表、测试结果、是否 ready for commit`,
+      `使用 Write 工具创建该文件。`,
     ].join('\n'),
-    { label: 'direct-coding', phase: 'Develop' }
+    { label: 'create-l0-exemption' }
   )
+
+  log(`豁免记录已生成 → openspec/changes/${changeId}/review-summary.md`)
 } else {
-  // 中高复杂度：使用 OpenSpec 工作流
-  developmentResult = await agent(
-    [
-      `你是 OpenSpec 工作流执行 Agent。`,
-      ``,
-      `⚠️  重要：所有开发操作必须在以下目录中执行：`,
-      `代码仓库：${absoluteCodeRepo}`,
-      ``,
-      `任务信息：`,
-      `  ID: ${task.id}`,
-      `  标题：${task.title}`,
-      `  描述：${task.description}`,
-      `  验收标准：${task.acceptanceCriteria || '未明确'}`,
-      `  复杂度等级：${level}`,
-      ``,
-      level === 'L1' ? `执行 L1 流程（轻量）：` : level === 'L2' ? `执行 L2 流程（完整评审）：` : `执行 L3 流程（架构评审）：`,
-      `1. 需求澄清 (proposal.md)`,
-      `2. 技术方案 (design.md)`,
-      level === 'L1' ? `3. 编码实施` : `3. 技术评审门禁`,
-      level === 'L1' ? `4. 测试验证` : `4. 编码实施`,
-      level === 'L1' ? `` : `5. 代码质量评审`,
-      level === 'L1' ? `` : `6. 三维验证`,
-      ``,
-      `工作目录：${absoluteCodeRepo}`,
-      ``,
-      `使用本项目的 openspec-* skills 或相关工作流完成开发。`,
-      `所有文件读写、测试运行都在上述工作目录中执行。`,
-      ``,
-      `返回：开发摘要、变更文件列表、测试结果`,
-    ].join('\n'),
-    { label: 'openspec-flow', phase: 'Develop' }
-  )
+  log(`执行 ${gateLevel} 门禁，评审维度：${roles.join(', ')}`)
 }
 
-if (!developmentResult) {
-  log('❌ 开发阶段失败')
-  return { status: 'failed', reason: 'development_failed', task }
+// ============================================================
+// Phase 2.7: OpenSpec Review（技术评审门禁）
+// ============================================================
+
+let reviewResult = null
+
+if (gateLevel !== 'L0') {
+  phase('OpenSpec Review')
+
+  try {
+    reviewResult = await workflow('openspec-review', {
+      args: {
+        change: changeId,
+        roles: roles
+      }
+    })
+
+    log(`技术评审完成 → openspec/changes/${changeId}/review-summary.md`)
+
+    // 验证 review-summary.md 是否生成
+    const reviewSummaryExists = await agent(
+      `检查文件是否存在：test -f openspec/changes/${changeId}/review-summary.md && echo "exists" || echo "not_found"`,
+      { label: 'check-review-summary' }
+    )
+
+    if (reviewSummaryExists.trim() === 'not_found') {
+      log('⚠️  警告：review-summary.md 未生成')
+    }
+
+  } catch (error) {
+    log(`❌ OpenSpec Review 调用失败：${error.message || error}`)
+    return {
+      status: 'failed',
+      reason: 'openspec_review_failed',
+      task,
+      changeId,
+      gateLevel,
+      error: error.message || String(error)
+    }
+  }
 }
 
-log(`开发完成`)
+// ============================================================
+// Phase 2.9: 人工门禁等待
+// ============================================================
+
+phase('Human Gate')
+
+log(`⏸️  等待人工签字确认...`)
+log(`请审阅：openspec/changes/${changeId}/review-summary.md`)
+log(``)
+log(`签字格式示例：`)
+log(`  Technical Review Approved: 张三  2026-09-03`)
+log(``)
+
+// 检查是否已签字
+const approvalCheck = await agent(
+  [
+    `读取文件 openspec/changes/${changeId}/review-summary.md，检查是否包含签字行。`,
+    ``,
+    `判断标准：`,
+    `1. 文件中包含 "Technical Review Approved:" 字符串`,
+    `2. 该行不是占位符（即不是 "Technical Review Approved: __________"）`,
+    `3. 该行包含实际的姓名和日期`,
+    ``,
+    `返回 JSON 格式：{"approved": true/false, "signatureLine": "实际签字内容或null"}`,
+  ].join('\n'),
+  { label: 'check-approval' }
+)
+
+let approved = false
+try {
+  const checkResult = JSON.parse(approvalCheck)
+  approved = checkResult.approved
+  if (approved && checkResult.signatureLine) {
+    log(`✅ 检测到签字：${checkResult.signatureLine}`)
+  }
+} catch (e) {
+  log(`⚠️  签字检查结果解析失败，假定未签字`)
+}
+
+if (!approved) {
+  log(`❌ 人工门禁未通过，工作流暂停`)
+  log(``)
+  log(`下一步操作：`)
+  log(`1. 审阅技术评审文档：openspec/changes/${changeId}/review-summary.md`)
+  log(`2. 在文件末尾的"人工确认区"填写签字`)
+  log(`3. 重新运行本工作流（将自动从后续阶段继续）`)
+  log(``)
+
+  return {
+    status: 'waiting_for_approval',
+    reason: 'human_gate_not_approved',
+    task,
+    changeId,
+    gateLevel,
+    message: `等待人工签字：openspec/changes/${changeId}/review-summary.md`
+  }
+}
+
+log(`✅ 人工门禁已通过，继续自动化流程`)
+
+// ============================================================
+// Phase 3: OpenSpec Apply（代码实施）
+// ============================================================
+
+phase('OpenSpec Apply')
+
+let applyResult = null
+
+try {
+  applyResult = await workflow('openspec-apply', {
+    args: {
+      change: changeId,
+      codeRepo: absoluteCodeRepo
+    }
+  })
+
+  log(`代码实现完成`)
+
+} catch (error) {
+  log(`❌ OpenSpec Apply 调用失败：${error.message || error}`)
+  return {
+    status: 'failed',
+    reason: 'openspec_apply_failed',
+    task,
+    changeId,
+    error: error.message || String(error)
+  }
+}
+
+// ============================================================
+// Phase 3.5: OpenSpec Verify（验证）
+// ============================================================
+
+phase('OpenSpec Verify')
+
+let verifyResult = null
+
+try {
+  verifyResult = await workflow('openspec-verify', {
+    args: {
+      change: changeId
+    }
+  })
+
+  log(`OpenSpec 三维校验完成`)
+
+} catch (error) {
+  log(`❌ OpenSpec Verify 调用失败：${error.message || error}`)
+  log(`验证未通过，阻止继续执行`)
+
+  return {
+    status: 'failed',
+    reason: 'openspec_verify_failed',
+    task,
+    changeId,
+    error: error.message || String(error)
+  }
+}
 
 // ============================================================
 // Phase 4: 代码提交
@@ -776,19 +983,43 @@ if (skillCheckResult && skillCheckResult.includes('SKILL_EXISTS')) {
   log('方式 2：手动构建评论内容')
   log('   构建评论摘要：')
   log(`   - 任务类型：${task.type}`)
+  log(`   - 变更 ID：${changeId}`)
+  log(`   - 变更文档：openspec/changes/${changeId}/`)
+  log(`   - 门禁级别：${gateLevel}`)
+  if (gateLevel !== 'L0' && roles && roles.length > 0) {
+    log(`   - 评审维度：${roles.join(', ')}`)
+  }
   log(`   - 变更文件数：${commitResult.filesChanged.length}`)
   log(`   - 分支：${commitResult.branch}`)
-  if (analysis) {
-    log(`   - 复杂度：${analysis.estimatedComplexity}`)
-    if (analysis.risks && analysis.risks.length > 0) {
-      log(`   - 风险：${analysis.risks.join('; ')}`)
-    }
+  if (routing) {
+    log(`   - 复杂度：${routing.complexity}`)
+  }
+  if (commitResult.prUrl) {
+    log(`   - PR 链接：${commitResult.prUrl}`)
+  }
+  log('')
+  log('   评论内容建议：')
+  log(`   ✅ 任务完成`)
+  log(`   `)
+  log(`   **OpenSpec 变更信息：**`)
+  log(`   - 变更 ID: ${changeId}`)
+  log(`   - 文档路径: openspec/changes/${changeId}/`)
+  log(`   - 门禁级别: ${gateLevel}`)
+  if (gateLevel !== 'L0' && roles && roles.length > 0) {
+    log(`   - 评审维度: ${roles.join(', ')}`)
+  }
+  log(`   `)
+  log(`   **代码变更：**`)
+  log(`   - 分支: ${commitResult.branch}`)
+  log(`   - 变更文件: ${commitResult.filesChanged.length} 个`)
+  if (commitResult.prUrl) {
+    log(`   - PR: ${commitResult.prUrl}`)
   }
   log('')
   log('   然后使用 flows-cli 发布：')
   log(`   flows-cli task comment add --task-id ${task.id} \\`)
-  log(`     --content-file <评论文件路径> \\`)
-  log(`     --external-key "devops-loop-completed-${task.id}" \\`)
+  log(`     --content "<上述评论内容>" \\`)
+  log(`     --external-key "devops-loop-completion-${task.id}" \\`)
   log(`     --profile ${profile} --json`)
   log('')
 
