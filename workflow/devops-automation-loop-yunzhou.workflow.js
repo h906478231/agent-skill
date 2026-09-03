@@ -22,59 +22,65 @@ export const meta = {
 //     skipAnalysis: false,                    // 跳过需求分析（默认false）
 //   }
 
+// 辅助函数：清理 agent 返回的 JSON 内容（去除 markdown 代码块）
+function cleanJsonResponse(text) {
+  if (!text) return text
+  // 去除 markdown 代码块标记
+  let cleaned = text.trim()
+  if (cleaned.startsWith('```json')) {
+    cleaned = cleaned.substring(7)
+  } else if (cleaned.startsWith('```')) {
+    cleaned = cleaned.substring(3)
+  }
+  if (cleaned.endsWith('```')) {
+    cleaned = cleaned.substring(0, cleaned.length - 3)
+  }
+  return cleaned.trim()
+}
+
 // 从全局配置文件加载默认值
-// 通过 agent 获取 HOME 环境变量
-const homeDir = await agent(
-  '执行命令 echo $HOME 并返回结果（去除换行符）',
-  { label: 'get-home-dir' }
+// 直接通过 agent 读取配置文件（使用 Bash cat 命令确保返回纯文本）
+const configContent = await agent(
+  '执行命令读取云舟配置文件，返回纯 JSON 内容（不要添加任何说明文字）：cat ~/.yunzhou/config.json 2>/dev/null || echo "FILE_NOT_FOUND"',
+  { label: 'read-yunzhou-config' }
 )
-const configPath = `${homeDir.trim()}/.yunzhou/config.json`
+
 let config = null
 let defaultProject = null
+
+// 解析配置文件
+try {
+  const trimmedContent = configContent.trim()
+  if (trimmedContent && trimmedContent !== 'FILE_NOT_FOUND') {
+    config = JSON.parse(cleanJsonResponse(trimmedContent))
+    log('✓ 成功加载云舟配置文件')
+  } else {
+    log('⚠️  配置文件不存在：~/.yunzhou/config.json')
+  }
+} catch (e) {
+  log(`❌ 配置文件解析失败: ${e.message}`)
+  log(`   原始内容: ${configContent.substring(0, 200)}...`)
+}
 
 // 优先使用参数中的配置
 let selectedProjectId = args && args.projectId
 
-// 如果提供了项目名称但未提供 projectId，需要从配置文件加载
-if (!selectedProjectId && args && args.projectName) {
-  // 通过 agent 读取配置文件
-  const configResult = await agent(
-    `读取文件 ${configPath}，返回文件的完整 JSON 内容。如果文件不存在，返回字符串 "FILE_NOT_FOUND"。`,
-    { label: 'read-config-for-project-lookup' }
-  )
-
-  try {
-    if (configResult && configResult !== 'FILE_NOT_FOUND') {
-      config = JSON.parse(configResult)
-      const projectByName = config.projects.find(p => p.name === args.projectName)
-      if (projectByName) {
-        selectedProjectId = projectByName.projectId
-        defaultProject = projectByName
-        log(`按名称找到项目：${args.projectName}`)
-      }
-    }
-  } catch (e) {
-    log(`配置文件解析失败，使用参数配置`)
+// 如果提供了项目名称但未提供 projectId，从配置文件中查找
+if (!selectedProjectId && args && args.projectName && config && config.projects) {
+  const projectByName = config.projects.find(p => p.name === args.projectName)
+  if (projectByName) {
+    selectedProjectId = projectByName.projectId
+    defaultProject = projectByName
+    log(`✓ 按名称找到项目：${args.projectName}`)
+  } else {
+    log(`⚠️  未找到名为 "${args.projectName}" 的项目`)
   }
 }
 
-// 如果还没有 projectId，尝试从配置文件读取默认项目
-if (!selectedProjectId && !config) {
-  const configResult = await agent(
-    `读取文件 ${configPath}，返回文件的完整 JSON 内容。如果文件不存在，返回字符串 "FILE_NOT_FOUND"。`,
-    { label: 'read-config-for-default-project' }
-  )
-
-  try {
-    if (configResult && configResult !== 'FILE_NOT_FOUND') {
-      config = JSON.parse(configResult)
-      if (config.defaultProjectId) {
-        selectedProjectId = config.defaultProjectId
-      }
-    }
-  } catch (e) {
-    log(`配置文件解析失败，使用参数配置`)
-  }
+// 如果还没有 projectId，从配置文件读取默认项目
+if (!selectedProjectId && config && config.defaultProjectId) {
+  selectedProjectId = config.defaultProjectId
+  log(`✓ 使用默认项目ID：${selectedProjectId}`)
 }
 
 // 查找项目配置
@@ -117,6 +123,15 @@ if (!projectId) {
 // 确定代码仓库路径
 // ============================================================
 
+log('【代码仓库配置检查】')
+
+// 调试信息：显示当前配置状态
+log(`调试信息：`)
+log(`  args.codeRepo: ${args && args.codeRepo ? args.codeRepo : '未指定'}`)
+log(`  defaultProject: ${defaultProject ? defaultProject.name : '未找到'}`)
+log(`  defaultProject.codeRepo: ${defaultProject && defaultProject.codeRepo ? defaultProject.codeRepo : '未配置'}`)
+log('')
+
 const codeRepo = (args && args.codeRepo) || (defaultProject && defaultProject.codeRepo)
 
 if (!codeRepo) {
@@ -124,26 +139,61 @@ if (!codeRepo) {
   log('')
   log('代码仓库路径用于指定在哪个目录中执行开发和 Git 提交操作。')
   log('')
-  log('请使用以下方式之一：')
+
+  // 根据当前状态给出更精确的指引
+  if (!defaultProject) {
+    log('⚠️  当前问题：未找到项目配置')
+    log('')
+    log('可能的原因：')
+    log('  1. 配置文件 ~/.yunzhou/config.json 不存在或解析失败')
+    log('  2. 配置文件中没有项目配置')
+    log('  3. 指定的项目ID或项目名称不匹配')
+    log('')
+  } else {
+    log(`⚠️  当前问题：项目 "${defaultProject.name}" 未配置代码仓库路径`)
+    log('')
+  }
+
+  log('解决方法：')
   log('')
   log('方式 1：在配置文件中为项目配置代码仓库路径')
   log('  运行：./setup-yunzhou-config.sh')
-  log('  选择：2. 修改已有项目')
-  log('  然后输入代码仓库路径')
+  if (defaultProject) {
+    log('  选择：2. 修改已有项目')
+    log(`  项目：${defaultProject.name}`)
+  } else {
+    log('  选择：1. 添加新项目 或 2. 修改已有项目')
+  }
+  log('  然后输入代码仓库的绝对路径（例如：/Users/your-name/projects/your-repo）')
   log('')
   log('方式 2：在调用工作流时指定 codeRepo 参数')
   log('  workflow("devops-automation-loop-yunzhou", {')
   if (defaultProject) {
     log('    projectId: "' + projectId + '",')
   } else {
-    log('    projectId: "<your-project-id>",')
+    log('    projectName: "<your-project-name>",')
   }
-  log('    taskId: 12345,')
-  log('    codeRepo: "/path/to/your/project"')
+  if (taskId) {
+    log('    taskId: ' + taskId + ',')
+  }
+  log('    codeRepo: "/absolute/path/to/your/project"')
   log('  })')
   log('')
-  return { status: 'failed', reason: 'missing_code_repo' }
+
+  return {
+    status: 'failed',
+    reason: 'missing_code_repo',
+    debug: {
+      hasConfig: config !== null,
+      hasDefaultProject: defaultProject !== null,
+      projectId: projectId,
+      configPath: '~/.yunzhou/config.json'
+    }
+  }
 }
+
+log(`✓ 代码仓库配置：${codeRepo}`)
+log('')
 
 // 验证代码仓库路径（假设相对路径是相对于当前工作目录）
 // 如果是绝对路径直接使用，如果是相对路径则假设已提供完整路径
