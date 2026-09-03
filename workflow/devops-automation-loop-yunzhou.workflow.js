@@ -37,9 +37,6 @@ const CONFIG = {
     L3: ['architecture', 'concurrency', 'performance', 'database', 'security'],
   },
 
-  // 云舟配置
-  YUNZHOU_PROFILE: process.env.YUNZHOU_PROFILE || 'default',
-
   // 变更 ID 前缀
   CHANGE_ID_PREFIX: 'yunzhou-',
 }
