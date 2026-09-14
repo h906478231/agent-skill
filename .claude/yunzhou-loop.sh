@@ -3,7 +3,7 @@
 # 云舟 DevOps 自动化快速启动脚本
 
 # 使用全局配置文件
-CONFIG_FILE="$HOME/.claude/yunzhou-config.json"
+CONFIG_FILE="$HOME/.yunzhou/config.json"
 
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "❌ 配置文件不存在，请先运行 ./setup-yunzhou-config.sh"

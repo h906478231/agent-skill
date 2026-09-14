@@ -26,6 +26,7 @@
   "license": "Apache-2.0",
   "author": "tigger",
   "scripts": {
+    "test:orchestration": "node --test scripts/test-orchestration.mjs scripts/test-opencode-install.mjs",
     "pack": "bash scripts/pack-skill.sh",
     "verify": "bash scripts/verify-references.sh"
   },
