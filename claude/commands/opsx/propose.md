@@ -79,6 +79,8 @@ When ready to implement, run /opsx:apply
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
+   **任务切片纪律（生成 `tasks` artifact 之前）**：完整规则见 skill `openspec-propose` 自己的 `shared/task-slicing.md`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-propose/shared/`、Codex CLI `~/.codex/skills/openspec-propose/shared/`、opencode `~/.config/opencode/skills/openspec-propose/shared/` 等；找不到时用 Glob 搜 `**/openspec-propose/shared/task-slicing.md`），**生成 tasks.md 前先读取并遵守**。要点：L2/L3 变更必须按**垂直切片**组织（每个切片打穿 schema→逻辑→API→测试，独立可演示；`Blocked by:` 显式声明；`Seam:` 行引用 design.md「测试 Seam 决策」区块），禁止按技术层水平拆分；生成后按「发布前三问」（粒度 / 阻塞边 / 合并拆分）用 **AskUserQuestion** 向用户确认后才算定稿。L0 无要求，L1 建议。checkbox 行保持 `- [ ]` 格式不变（apply 与 verify 依赖它解析进度，切片分组写在 checkbox 之外）。
+
 5. **Show final status**
    ```bash
    openspec status --change "<name>"
@@ -104,6 +106,7 @@ After completing all artifacts, summarize:
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
+- **生成 `tasks` artifact 时遵守 skill `openspec-propose` 自己的 `shared/task-slicing.md` 切片规则**（Step 4）—— L2/L3 垂直切片 + 显式阻塞边，checkbox 格式不变，发布前三问用户确认后才定稿
 - Always read dependency artifacts before creating a new one
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one

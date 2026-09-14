@@ -1,9 +1,11 @@
 # OpenSpec + AI Agent 研发流程
 
+> **编排更新**：必要判定直接内置于 coordinator 与 workflow，不额外加载编排 skill。下文 grill → explore 的线性示例仅展示能力关系，不是必跑顺序；L2/L3 检查决策充分性，已有有效共识不重复访谈。事实待查用 explore，无阻断未知直接 propose/update。使用与恢复说明见 [按状态编排](../docs/opencode/orchestration.md)。
+
 > **📖 文档说明**  
 > 本文档是面向**人类阅读**的完整汇总版本，包含流程说明、部署指南、FAQ 等。  
-> **AI skills 使用的是模块化版本**，位于 [`shared/workflow/`](../shared/workflow/) 目录，按主题拆分为 8 个独立模块。  
-> 如需修改流程规则，请编辑 `shared/workflow/` 模块，本文档定期同步更新。
+> **AI skills 使用的是模块化版本**，分布于 [`shared/workflow/`](../shared/workflow/)（流程级规则，如门禁分级、任务切片）与各 skill 的 `shared/` 目录（如 `skills/openspec-explore/shared/` 的第一性原理/交叉验证/Seam 决策，`skills/openspec-technical-review/shared/` 的门禁裁决/TDD 纪律）。  
+> 如需修改流程规则，请编辑对应模块，本文档定期同步更新。
 
 > 以 OpenSpec 作为研发流程的核心控制器（需求澄清、方案设计、变更生命周期），在进入代码实现前增加 **Technical Review Gate（技术评审门禁）**，由 AI Agent 模拟架构/并发/性能/数据库/安全评审角色。
 >
@@ -161,12 +163,19 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 ### L1-L3 标准流程
 
 ```bash
+# ── Grill 访谈（仅未决项；L2/L3 检查共识充分性）─────────
+/openspec:grill <change-name>
+#   → 决策树分轮访谈：消除隐含假设，frontier 清空 + 用户确认才结束
+#   → CONTEXT.md（领域术语，统一语言）+ docs/adr/（重大权衡决策）
+#      ※ 项目级资产，跨变更复用，不随变更归档
+
 # ── Phase 1-2：需求澄清 + 方案探索 ──────────────────────
 /openspec:explore <change-name>
 #   → openspec/changes/<change-name>/proposal.md
 #      ※ 必含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证）
 #   → openspec/changes/<change-name>/design.md
 #      ※ 必含「候选方案交叉验证矩阵」（至少2个候选方案 × 四维对比）
+#      ※ 必含「测试 Seam 决策」区块（L2/L3；从哪些公共边界验证行为）
 #   → discussion-log.md（子agent讨论结论回流，见skill openspec-discussion-sync）
 
 # ── 生成变更总览（可选但推荐）──────────────────────────
@@ -174,6 +183,12 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
 #   一页看懂流程、字段变更与规则条件是否遗漏
 #   标 ⚠️ 未落地 的条目视同 Blocker
+
+# ── 任务拆分：垂直切片 + 阻塞 DAG ─────────────────────
+#   tasks.md 按 tracer-bullet 垂直切片组织（规则：skills/openspec-propose/shared/task-slicing.md，
+#   由 /openspec:propose 生成 tasks 时自动加载）
+#   每个切片端到端可演示，Blocked by 显式声明，frontier 可并行
+#   发布前三问（粒度/阻塞边/合并拆分）由用户确认后定稿
 
 # ── 分级判定 ────────────────────────────────────────
 # 根据上面的决策树判断：L0 / L1 / L2 / L3
@@ -196,6 +211,8 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 /openspec:apply <change-name>
 #   参考 review-summary.md 的「涉及代码模块」和「建议修复」
 #   按已评审通过的设计实现，不重新设计
+#   ※ 按切片实施 + TDD 纪律：只在声明的 Seam 测试，red before green
+#     （规则：skills/openspec-apply-change/shared/tdd-discipline.md）
 
 # ── Phase 5.5：代码质量评审 ──────────────────────────
 /openspec:quality <change-name>
@@ -451,14 +468,22 @@ Phase 6验证时会回溯检查实现是否解决了「底层问题」而非「�
 ## 🗺️ 全景流程
 
 ```
+（存在未决决策时）/opsx:grill
+      │  决策树分轮访谈：消除隐含假设 → 共识
+      │  同步沉淀：CONTEXT.md（领域术语）+ docs/adr/（重大权衡决策）
+      ▼
 OpenSpec Explore
       │  需求澄清（Phase 1）→ proposal.md
       │    ※ 第一性原理分析（表面需求 vs 底层问题 / 基本约束 / 必要性验证）
       │  方案探索（Phase 2）→ design.md（候选方案 + 推荐方案）
       │    ※ 交叉验证 I：候选方案四维对比矩阵（成本/性能/复杂度/风险）
+      │    ※ 测试 Seam 决策区块：从哪些公共边界验证行为
       │  ※ 子 agent 讨论结论回流 → discussion-log.md（贯穿 Phase 1–2）
       ▼
 技术方案确认（design.md 含推荐方案）
+      │
+      ├─ tasks.md 任务拆分：垂直切片 + 阻塞 DAG（openspec-propose 的 shared/task-slicing.md）
+      │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户三问确认后定稿
       │
       ├─ /openspec:overview → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
       ▼
@@ -504,15 +529,17 @@ OpenSpec Archive → specs 沉淀能力；评审与讨论产物随变更进 chan
 
 | 阶段 | 入口 | 做什么 | 产物 | 是否改代码 |
 |------|------|--------|------|-----------|
+| Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查共识充分性，已有决策不重复访谈；沉淀术语与决策 | 共识 + `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
 | Phase 1 需求澄清 | `/openspec:explore` | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
-| Phase 2 方案探索 | `/openspec:explore` | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证** | `design.md`（含方案交叉验证矩阵） | 否 |
+| Phase 2 方案探索 | `/openspec:explore` | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块） | 否 |
 | （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
 | 变更总览 | `/openspec:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵 | `overview.md`（派生视图，勿手改） | 否 |
+| 任务拆分 | `/openspec:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前三问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 分级判定 | 人工（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `review-summary.md` | 否 |
 | Phase 3 技术评审门禁 | `/openspec:review` | 专项 Agent 并行评审已确定方案；**五角色多维度交叉验证** | `review/*.md` | 否 |
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
-| Phase 5 代码实现 | `/openspec:apply` | 按已评审通过的设计实现，不重新设计 | 代码 + `tasks.md` 勾选 | 是 |
+| Phase 5 代码实现 | `/openspec:apply` | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律** | 代码 + `tasks.md` 勾选 | 是 |
 | Phase 5.5 代码质量评审 | `/openspec:quality` | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
 | Phase 6 验证 | `/openspec:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
 | 收口 | `/openspec:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
@@ -535,6 +562,17 @@ Coding Agent    = 代码执行者（Claude / Codex / GPT），只实现已评审
 ---
 
 ## 📐 Phase 1: 需求澄清（第一性原理分析）
+
+### 前置强化：Grill 访谈（存在未决决策时）
+
+`/openspec:grill` 用**决策树分轮访谈**消除隐含假设：每个决策分支都被问到、每轮问题附推荐答案、frontier 清空且用户确认共识才结束。事实查找是 agent 的职责（派子 agent 查代码与环境），业务决策是用户的职责。
+
+访谈同步沉淀两类**项目级资产**（跨变更复用，不随变更归档）：
+
+- `CONTEXT.md`：领域术语表（统一语言）。存在时，proposal/design/tasks 与代码命名必须使用其词汇
+- `docs/adr/`：难以撤销、无上下文会显得反常、存在真实权衡的决策记录（三条件全满足才建）
+
+L0/L1 变更可选。规则与格式见 skill `openspec-grill`。
 
 ### 核心任务
 
@@ -615,8 +653,38 @@ Phase 2 的核心任务是**在多个候选方案之间做出有依据的选择*
 | **维度完整性** | 至少覆盖成本/性能/复杂度/风险四维 | 只比较「哪个更快」 |
 | **决策可追溯** | 能回答「为什么不选其他方案」 | 只说「方案 B 最好」，未说明为什么 |
 | **回溯验证** | 推荐方案确实解决 proposal.md 中的底层问题 | 推荐方案偏离了第一性原理分析的结论 |
+| **Seam 已确定** | 每个验收行为都能映射到至少一个声明的测试 Seam | 测试边界未定，留给 apply 阶段随手写 |
 
 **未通过交叉验证的 design 不得进入 Phase 3 门禁。**
+
+### design.md 还必须包含：测试 Seam 决策区块
+
+Phase 2 除方案矩阵外，必须确定**从哪些公共边界（Seam）验证行为**。选择判据：优先复用既有 seam、选最高层 seam（HTTP 优先于 Service）、seam 总数最少、新增需说明理由。
+
+- **L2/L3 变更**：design.md 必含该区块，缺失不得进入 Phase 3 门禁
+- **L0/L1 变更**：建议有；缺省时 apply 阶段先与用户口头确认测试边界
+
+规则唯一事实源：`skills/openspec-explore/shared/seam-decisions.md`。
+
+---
+
+## 📐 任务拆分：垂直切片与阻塞 DAG
+
+tasks.md 不按技术层水平拆分（「先做所有表，再做所有接口」的任何一个中间状态都不可运行、不可验证），按 **tracer-bullet 垂直切片**组织：
+
+- 每个切片打穿 schema → 逻辑 → API → UI → 测试，完成后**独立可演示**
+- 体量装进一个全新 agent 会话；prefactoring 需求作为第一个切片
+- `Blocked by:` 显式声明，frontier 上的切片可并行领取
+- 宽重构例外：expand → 分批 migrate → contract，批批保 CI 绿
+- **发布前三问**（粒度 / 阻塞边 / 合并拆分）由用户确认后 tasks.md 定稿
+
+格式与规则唯一事实源：[`skills/openspec-propose/shared/task-slicing.md`](../skills/openspec-propose/shared/task-slicing.md)（`/openspec:propose` 生成 tasks artifact 时自动加载）。tasks.md 保持 checkbox 兼容，`/openspec:apply` 与 `/openspec:verify` 的进度解析不受影响。
+
+| 等级 | 要求 |
+|------|------|
+| L0 | 无要求，直接 apply |
+| L1 | 建议采用；任务少于 3 条时平铺清单亦可 |
+| L2/L3 | **必须采用** |
 
 ---
 
@@ -790,6 +858,13 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 **做什么**：
 按已评审通过的设计实现，不重新设计方案。参考 `review-summary.md` 的「涉及代码模块」和「建议修复」。
+
+**实施纪律（TDD，所有等级默认执行）**：
+- 只在 design.md「测试 Seam 决策」区块声明的公共边界写测试；未声明的边界先问
+- red before green；一次一个切片，切片内一次一个行为（一个失败测试 → 最小实现 → 下一个）
+- 每完成一个任务项：跑单个测试文件 + 类型检查；全部完成：跑完整测试套件
+- 重构不进 red-green 循环，留给 `/openspec:quality`（Phase 5.5）
+- 规则唯一事实源：`skills/openspec-apply-change/shared/tdd-discipline.md`
 
 **产出**：
 - 代码（Controller/Service/Repository/SQL/测试）
@@ -1133,8 +1208,8 @@ jq --version
 
 ---
 
-**最后更新**：2026-08-26  
-**文档版本**：v2.0（重组版）  
+**最后更新**：2026-09-04  
+**文档版本**：v2.1（v2.0 基础上吸收 grill 访谈、垂直切片、seam-first TDD 三项工程实践）  
 **维护者**：[AI Skills 开发团队]
 
 ---

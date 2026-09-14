@@ -102,10 +102,11 @@ npx skills remove --skill ddd-aggregate
 `openspec-propose` `openspec-apply-change` `openspec-update-change`
 `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
-### OpenSpec 流程增强（4 个）
+### OpenSpec 流程增强（5 个）
 
 | skill                      | 作用 | 命令 |
 |----------------------------|---|---|
+| `openspec-grill`               | Phase 1 决策树分轮访谈：消除隐含假设，沉淀 CONTEXT.md 领域术语与 ADR（项目级资产） | `/opsx:grill` |
 | `openspec-technical-review`    | 编码前五维度技术评审门禁（含 `shared/` 规则事实源、roles、hook、workflow） | `/opsx:review` |
 | `openspec-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵 | `/opsx:overview` |
 | `openspec-code-quality`    | 实现层代码质量评审：对 diff 查重复率 / 可读性 / 死代码 / 复杂度 / 设计偏离 | `/opsx:quality` |
@@ -117,6 +118,8 @@ npx skills remove --skill ddd-aggregate
 
 ## 研发流程
 
+云舟两条入口的最新使用方式见 [按状态编排](docs/opencode/orchestration.md)。必要判定直接内置于 coordinator 与 workflow：按未决项选择 grill/explore，已有共识直接复用，阶段通过需证据，Git 与外部操作单独授权，不额外加载编排 skill。原生 opencode 使用 `.opencode/agents/*.md`，旧 YAML 不再由安装器加载。
+
 `workflow/OpenSpec-AI-研发流程.md` —— OpenSpec + 技术评审门禁的完整研发流程：分级规则、门禁裁决、闭环留痕、签字责任、**门禁产物的 git 归属与生命周期**、门禁强制力边界与部署方法。
 
 规则的事实源划分：**面向人的策略**（分级 / 签字责任 / 强制力边界 / git 生命周期）只写在该流程文档；**面向 agent 的执行规则**（finding 字段 / 闭环验证 / 裁决判定 / apply 签字校验）只写在 `skills/openspec-technical-review/shared/`。其余文件一律引用，不复制 —— 改规则时只改事实源那一处。
@@ -127,7 +130,7 @@ npx skills remove --skill ddd-aggregate
 
 | 资产 | 说明 | 手动安装位置 |
 |---|---|---|
-| `commands/opsx/` | opsx 命令组（11 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
+| `commands/opsx/` | opsx 命令组（12 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
 | `agents/ddd-modeler.md` | DDD 建模 subagent | `~/.claude/agents/` |
 | `agents/ddd-architect-claude.md` | DDD 主控 subagent（含子 agent 结论回流规则） | `~/.claude/agents/` |
 

@@ -83,6 +83,8 @@ When ready to implement, run /opsx:apply
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
+   **Task slicing discipline (when creating the `tasks` artifact, read `shared/task-slicing.md` and follow it)** —— 本 skill 目录下的规则文件（相对本 SKILL.md 解析，装了 openspec-propose 就一定存在）；读不到时用 Glob 搜 `**/openspec-propose/shared/task-slicing.md`。要点：L2/L3 变更的 tasks.md 必须按**垂直切片**组织（每个切片打穿 schema→逻辑→API→测试，独立可演示；`Blocked by:` 显式声明；`Seam:` 行引用 design.md「测试 Seam 决策」区块），禁止按技术层水平拆分；宽重构按 expand-contract 编排。生成后按「发布前三问」（粒度 / 阻塞边 / 合并拆分）用 **AskUserQuestion** 向用户确认后才算定稿。L0 无要求，L1 建议采用。checkbox 行保持 `- [ ]` 格式不变（apply 与 verify 依赖它解析进度，切片分组写在 checkbox 之外）。
+
 5. **Show final status**
    ```bash
    openspec status --change "<name>"
@@ -108,6 +110,7 @@ After completing all artifacts, summarize:
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
+- **When creating the `tasks` artifact, follow the slicing rules in `shared/task-slicing.md`** (Step 4) — vertical slices with explicit blocking edges for L2/L3, checkbox format preserved, three-question user confirmation before finalizing
 - Always read dependency artifacts before creating a new one
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one

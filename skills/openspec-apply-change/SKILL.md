@@ -76,6 +76,8 @@ Implement tasks from an OpenSpec change.
 
 7. **Implement tasks (loop until done or blocked)**
 
+   **TDD 实施纪律（写第一个测试之前，读取 `shared/tdd-discipline.md` 并遵守）** —— 本 skill 目录下的规则文件（相对本 SKILL.md 解析，装了 openspec-apply-change 就一定存在）；读不到时用 Glob 搜 `**/openspec-apply-change/shared/tdd-discipline.md`。要点：只在 design.md「测试 Seam 决策」区块（或口头确认后回记到切片 `Seam:` 行）声明的公共边界写测试，未声明的边界先问；red before green；一次一个切片、切片内一次一个行为（一个失败测试 → 最小实现 → 下一个）；每完成一个任务项跑单个测试文件 + 类型检查，全部完成跑一次完整测试套件；重构不进 red-green 循环，留给 `/opsx:quality`。
+
    For each pending task:
    - Show which task is being worked on
    - Make the code changes required
@@ -150,6 +152,7 @@ What would you like to do?
 
 **Guardrails**
 - **Never implement before the Technical Review Gate is signed off** (Step 2) when the project uses it — no exceptions, no signing on the user's behalf
+- **Follow the TDD discipline in `shared/tdd-discipline.md`** (Step 7) — seam-first, red before green, refactoring is deferred to `/opsx:quality`, never on the red-green path
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing
