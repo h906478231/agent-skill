@@ -64,10 +64,11 @@ Archive a completed change in the experimental workflow.
    - Show a combined summary before prompting
 
    **Prompt options:**
+   **Prompt options:**
    - If changes needed: "Sync now (recommended)", "Archive without syncing"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
+   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice, but when main specs differ and sync is skipped, require the user to state the reason and record it in the archive summary.
 
 5. **Perform the archive**
 
@@ -108,10 +109,22 @@ Archive a completed change in the experimental workflow.
 All artifacts complete. All tasks complete.
 ```
 
+**归档前置校验（本仓自加，非上游原文）**
+
+在移动目录之前必须检查下列项，任一不通过时**拒绝归档**（不是告警后继续）：
+
+- **技术评审签字**：若 `review-summary.md` 存在，必须有 `Technical Review Approved:` 签字行；缺签字或裁决为 BLOCKED 时拒绝。
+- **未闭环 Blocker**：`review-summary.md` 的「已确认风险详细清单」中未闭环 Blocker 必须为 0（闭合判定见 `../openspec-technical-review/shared/closed-loop-verification.md`）。
+- **代码质量评审**：若存在 `review/code-quality.md`，结论不得为「打回」，未闭环 Blocker 必须为 0。
+- **Phase 6 验证**：`/opsx:verify` 的 CRITICAL 项必须已清零；`overview.md` 条件矩阵中标 `⚠️ 未落地` 的行必须已清零（尚未拆分 tasks 的「待拆分」行不计）。
+- **验证结论留痕**：`/opsx:verify` 的结论只在对话内，归档前必须取得用户「验证已通过」的显式确认，并把该确认写进归档摘要。
+
+阶段顺序与门禁口径的唯一事实源见 `../openspec-technical-review/shared/phases.md`。
 **Guardrails**
 - Always prompt for change selection if not provided
 - Use artifact graph (openspec status --json) for completion checking
-- Don't block archive on warnings - just inform and confirm
+- Don't block archive on warnings (incomplete artifacts/tasks, skipped delta sync) - just inform and confirm
+- **门禁类问题必须阻断，不得只告警**（本仓自加）—— 见上方「归档前置校验」
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use openspec-sync-specs approach (agent-driven)

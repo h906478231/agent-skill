@@ -60,18 +60,25 @@ const REVIEW_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'severity', 'location', 'plainLanguage', 'trigger', 'impact', 'fix'],
+        required: ['id', 'severity', 'businessImpact', 'location', 'module', 'plainLanguage', 'trigger', 'impact', 'fix'],
         properties: {
           id: { type: 'string' },
           severity: { type: 'string', enum: ['Blocker', 'Major', 'Minor'] },
+          // 影响业务功能：该问题影响哪些业务功能，供产品/项目经理判断影响范围
+          businessImpact: { type: 'string' },
           location: { type: 'string' },
+          // 涉及代码模块：需改动的代码模块/表，供工作量评估
+          module: { type: 'string' },
           // 一句话白话：面向没参与设计的人，不得出现未解释的专有名词
           plainLanguage: { type: 'string' },
           // 触发场景：什么输入/时序/数据量/故障 → 出现什么可观测现象。写不出的 Blocker 一律降级 Major
           trigger: { type: 'string' },
           // 不修的后果：影响面（哪些用户/数据/接口）+ 严重度，禁止「可能有风险」这类空话
           impact: { type: 'string' },
+          // 建议修复：可直接执行的修改方向，落到文件/表/接口粒度
           fix: { type: 'string' },
+          // 闭环状态：缺省视为 open（保守计入裁决）。重走门禁时按 shared/closed-loop-verification.md 的判定填 closed/risk-accepted/false-positive
+          status: { type: 'string', enum: ['open', 'closed', 'risk-accepted', 'false-positive'] },
         },
       },
     },
@@ -95,7 +102,7 @@ const reviews = await parallel(rerun.map(r => () =>
       ``,
       `第一步：读取以下三个文件，作为本次评审的准则：`,
       `  · ${SD}/roles/${r.key}.md —— 你的角色定位、审查清单、本维度闭环判据；`,
-      `  · ${SD}/shared/finding-format.md —— finding 七字段、三条硬规则、维度结论取值；`,
+      `  · ${SD}/shared/finding-format.md —— finding 9 个字段、五条硬规则、维度结论取值；`,
       `  · ${SD}/shared/closed-loop-verification.md —— 上轮闭环验证规则。`,
       `第二步：读取方案文档 ${base}/proposal.md（需求澄清结论）与 ${base}/design.md（已确定方案，可能是回改后的新版）。`,
       `第三步（上轮闭环验证）：仅当 design.md 末尾存在「## 评审意见闭环记录」区块时执行，完全按 ${SD}/shared/closed-loop-verification.md 的规则处理其中「维度」属于你（${r.title}）的每一行，并结合角色文件里的「本维度闭环判据」判定。你是全新上下文，没有上轮记忆 —— 不做这一步就会重复报同一问题或漏掉验证。`,
@@ -109,10 +116,10 @@ const reviews = await parallel(rerun.map(r => () =>
 
 phase('Summarize')
 
-// 汇总裁决对全部 5 维度求值：重跑维度用本轮结构化结论；沿用维度由汇总人读取上轮 review/<key>.md 参与裁决。
+// 汇总裁决对全部纳入维度求值：重跑维度用本轮结构化结论；沿用维度由汇总人读取上轮 review/<key>.md 参与裁决。
 const reuseNote = incremental
   ? `本轮为增量重走。以下维度沿用上一轮结论，请读取其 ${base}/review/<key>.md 参与裁决，并在一览表中标注「沿用上轮」：${reuse.map(r => r.key).join(', ')}。`
-  : `本轮为全量重走，5 维度均为本轮最新结论。`
+  : `本轮为全量重走，纳入维度均为本轮最新结论。`
 
 const summary = await agent(
   [
@@ -122,18 +129,24 @@ const summary = await agent(
     JSON.stringify(reviews, null, 2),
     ``,
     `裁决与留痕规则以 ${SD}/shared/gate-policy.md 为准，先读取它。`,
-    `请读取 ${base}/review/*.md（含重跑与沿用维度）补充细节，产出 ${base}/review-summary.md（中文），包含：`,
+    `请读取 ${base}/review/*.md（含重跑与沿用维度）补充细节，产出 ${base}/review-summary.md（中文）。汇总项与顺序必须与 ${SD}/SKILL.md 的 Step 2 一致（共 16 项）：`,
     `1) 摘要（给非设计者看）：三句话说清「发现了什么 / 能不能开工 / 卡在哪」，不使用专有名词。`,
-    `2) 门禁裁决：对全部 5 维度（重跑+沿用）求值，判定规则见 gate-policy.md。`,
-    `3) 各维度结论一览表（维度 | 结论 | Blocker数 | Major数 | Minor数 | 本轮重跑/沿用上轮）。`,
-    `4) 已确认风险：按维度+严重级别汇总。`,
-    `5) 修改建议：合并去重，标注需在 design.md / tasks.md 落实的项。`,
-    `6) 「有条件通过」的条件清单（条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态）。映射不到 tasks 的条件视同 Blocker。`,
-    `7) 最终设计调整：需回改 design 的点（若有）。若本轮为 BLOCKED，按 gate-policy.md 的闭环记录格式明确提示回改后必须登记每条 Blocker，下一轮评审 Agent 依赖该区块验证闭环。`,
-    `8) 上轮闭环验证结果（仅当各维度 review 中存在「上轮闭环验证」小节时）：汇总哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环。任何「声称已闭环但实际未闭环」的项一律按未闭环 Blocker 计入裁决。`,
-    `9) 术语表：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。`,
-    `10) 人工确认区：留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply。`,
-    `本阶段不写业务代码。返回门禁裁决字符串（BLOCKED 或 READY_FOR_HUMAN_APPROVAL）与一句话理由。`,
+    `2) 业务影响地图：按业务功能分组列出 Blocker/Major/Minor 数量与主要风险。`,
+    `3) 代码改动范围：按代码模块聚合改动类型与预估影响，用于工作量评估。`,
+    `4) 执行误报检测：按 gate-policy.md 第 4 节「不认可评审结论：驳回与 risk accepted」的规则检测可能的误报或过度建议（写不出可复现触发场景的问题降级为 Major）。`,
+    `5) 门禁裁决：对全部纳入维度（重跑+沿用）求值，判定规则见 gate-policy.md。未闭环 Blocker = findings 表中 severity=Blocker 且 status=open（含缺省）的项。`,
+    `6) 各维度结论一览表（维度 | 结论 | Blocker数 | Major数 | Minor数 | 本轮重跑/沿用上轮）。`,
+    `7) 疑似误报检测：列出可能的误报、过度建议、跨维度矛盾，分「自动降级建议」与「需人工判断」两类。`,
+    `8) 已确认风险详细清单：按维度+严重级别汇总，使用完整 10 字段表格（含「影响业务功能」「涉及代码模块」「闭环状态」）。`,
+    `9) 修改建议执行计划：合并去重，标注需在 design.md / tasks.md 落实的项与建议优先级。`,
+    `10) 跨维度冲突清单：不同维度建议互相矛盾时列出，冲突项必须在 design.md 闭环、不得同时进入 tasks.md。`,
+    `11) 「有条件通过」的条件清单（条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态）。映射不到 tasks 的条件视同 Blocker。`,
+    `12) 上轮闭环验证结果（仅当各维度 review 中存在「上轮闭环验证」小节时）：汇总哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环，并给出各自的 status 取值。任何「声称已闭环但实际未闭环」的项一律按未闭环 Blocker 计入裁决。`,
+    `13) 术语表：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。`,
+    `14) 分级结论：变更等级（L1/L2/L3，规则见 ${SD}/shared/gate-levels.md）+ 判定人 + 依据。`,
+    `15) 评审输入版本：列出本轮依据的 proposal.md / design.md / specs / tasks.md 的版本依据（如 git rev-parse HEAD 或文件哈希），供重走与恢复时判断输入是否变化。`,
+    `16) 人工确认区：留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply。`,
+    `若本轮裁决为 BLOCKED，按 gate-policy.md 的闭环记录格式明确提示：回改 design.md 后必须登记每条 Blocker 的闭环记录，下一轮评审 Agent 依赖该区块验证闭环。`,
   ].join('\n'),
   { label: 'summarize', phase: 'Summarize' }
 )

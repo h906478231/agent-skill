@@ -26,6 +26,8 @@ OpenSpec Explore 是**自由模式**的思考伙伴——没有固定问题、�
 | L0 / L1 | 可选（变更小，explore 自由模式够用） |
 | L2 / L3 | **检查决策充分性**；有有效共识直接复用，仅访谈未决项 |
 
+- **分级的唯一事实源是 `../openspec-technical-review/shared/gate-levels.md`**：本表只用其等级含义判断「要不要访谈」，不自造分级标准；判定时机在 Phase 3 门禁，本 skill 不重复定义。
+
 - 已在 explore 会话中：主 agent 直接加载本 skill 继续，不必新开会话
 - 尚未开始：先判断未决项；需要决策才运行本 skill，事实待查才进 explore，无阻断未知直接 propose
 

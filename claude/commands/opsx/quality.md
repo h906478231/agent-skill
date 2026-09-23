@@ -6,7 +6,7 @@ category: Workflow
 tags: [workflow, review, quality]
 ---
 
-在 `/opsx:apply` 编码完成之后、`/opsx:verify` 之前，对本次变更实际产生的代码做质量评审。门禁五维度审的是设计，`/opsx:verify` 查的是一致性，**这里审的是代码本身**。
+在 `/opsx:apply` 编码完成之后、`/opsx:verify` 之前，对本次变更实际产生的代码做质量评审。门禁纳入范围的各维度审的是设计，`/opsx:verify` 查的是一致性，**这里审的是代码本身**。
 
 **IMPORTANT: 本命令不改代码。** 只报告 + 分级 + 留痕，修复动作回 `tasks.md` 加勾选项再做。想直接改用内置 `/simplify`，但那不构成闭环证据。
 
@@ -19,7 +19,7 @@ tags: [workflow, review, quality]
 关键约束（详见 skill）：
 
 - 输入是 `git diff`，不是设计文档；diff 为空则中止并提示先完成 `/opsx:apply`。
-- finding 格式沿用 skill `openspec-technical-review` 的 `shared/finding-format.md` 七字段（该 skill 的实际安装目录见其 SKILL.md「路径约定：`<SKILL_DIR>`」一节，**不要写死绝对路径**），ID 前缀 `CQ-`，「位置」必须精确到 `文件:行号`。
+- finding 格式沿用 skill `openspec-technical-review` 的 `shared/finding-format.md` 9 个字段（该 skill 的实际安装目录见其 SKILL.md「路径约定：`<SKILL_DIR>`」一节，**不要写死绝对路径**），ID 前缀 `CQ-`，「位置」必须精确到 `文件:行号`。
 - 「应复用而未复用」一项**必须实际搜索仓库确认**，不得凭印象下结论。
 - L0 变更豁免，L1 及以上都跑。
 - **存在未闭环 Blocker 不得 `openspec archive`**；「有条件通过」的条件映射不到 tasks 视同 Blocker。

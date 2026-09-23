@@ -152,30 +152,17 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
 9. **交叉验证 III：人工核对清单（超出自动校验范围）**
 
-   以下项目需要人工核对，`/opsx:verify` 不自动检查：
+   以下人工核对清单的**规则与条目以 skill `openspec-technical-review` 的 `../openspec-technical-review/shared/phase6-verification.md` 为唯一事实源**（本文件不复制条目）：
+   - **回溯第一性原理**：实现是否解决 `proposal.md` 的底层问题；是否引入未识别的新约束
+   - **方案选择一致性**：实现是否与 `design.md` 推荐方案一致；偏离是否已回填 `design.md`
+   - **评审条件闭环**：先跑 `/opsx:overview` 刷新条件矩阵，逐条核对 `review-summary.md` 的「有条件通过」条件
+   - **设计阶段可测试性 / 运维成本**：关键路径测试覆盖、mock 可行性、新增的运维成本与监控告警
 
-   **回溯第一性原理（Phase 1）**:
-   - [ ] 实现是否解决了 `proposal.md` 中识别的**底层问题**（而非仅表面需求）？
-   - [ ] 基本约束是否得到遵守（物理/业务/资源约束）？
-   - [ ] 如果当初识别了"更简单的替代方案"，为何最终选择开发而非采用替代方案？
-
-   **方案选择一致性（Phase 2）**:
-   - [ ] 实现是否与 `design.md` 的推荐方案一致？
-   - [ ] 如果偏离，偏离的理由是否记录在 `design.md` 更新中？
-   - [ ] 候选方案对比时提出的风险点是否在实现中得到规避？
-
-   **评审条件闭环（Phase 3）**:
-   - [ ] 运行 `/opsx:overview` 刷新条件矩阵，核对 `review-summary.md` 的「有条件通过」条件是否完成
-   - [ ] ⚠️ 标记的未落地项是否已在本次实现中闭环？
-
-   **可测试性与运维成本**:
-   - [ ] 关键路径是否有测试覆盖（单元测试/集成测试）？
-   - [ ] 新增的组件/服务是否有运维文档（部署/监控/故障排查）？
-   - [ ] 是否引入了新的运维成本（新的中间件/定时任务/资源消耗）？
+   逐项判据与「不通过视同 Blocker」的处理规则见该文件。
 
    **人工核对建议**：
    - 在完成自动校验后，逐项核对以上清单
-   - 不通过的项视同 BLOCKER，需补充实现或更新文档
+   - 不通过的项视同 **Blocker**，需补充实现或更新文档
    - 完成人工核对后再执行 `/opsx:archive`
 
 **Verification Heuristics**
@@ -209,7 +196,8 @@ Use clear markdown with:
 |------|---------|-----------|---------|
 | Phase 1 | 第一性原理分析 | 解决错误的问题 | `/opsx:explore` |
 | Phase 2 | 候选方案交叉验证 | 方案选择无依据 | `/opsx:explore` |
-| Phase 3 | 五维度交叉验证 | 方案存在盲区 | `/opsx:review` |
+| Phase 3 | 多维度交叉验证（维度数按分级） | 方案存在盲区 | `/opsx:review` |
+| Phase 5.5 | 实现层代码质量评审 | 重复率/可读性/死代码/复杂度热点/设计偏离 | `/opsx:quality` |
 | Phase 6 | 实现与设计交叉验证（当前阶段） | 实现偏离设计意图 | `/opsx:verify` + 人工核对 |
 
 参考完整质量保障体系：`workflow/OpenSpec-AI-研发流程.md`

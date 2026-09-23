@@ -96,7 +96,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - If all done: suggest the implementation-stage checks — `/opsx:quality` (Phase 5.5) then `/opsx:verify` (Phase 6); do not suggest archive before both pass
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -127,7 +127,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Ready to archive this change.
+All tasks complete! Next: `/opsx:quality` (Phase 5.5) → `/opsx:verify` (Phase 6). Archive after both pass.
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -153,6 +153,7 @@ What would you like to do?
 **Guardrails**
 - **Never implement before the Technical Review Gate is signed off** (Step 2) when the project uses it — no exceptions, no signing on the user's behalf
 - **Follow the TDD discipline in `shared/tdd-discipline.md`** (Step 7) — seam-first, red before green, refactoring is deferred to `/opsx:quality`, never on the red-green path
+- **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5，产出 `review/code-quality.md`）与 `/opsx:verify`（Phase 6，三维校验 + 评审条件核对）；任一未通过或存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序与门禁口径的唯一事实源见 `../openspec-technical-review/shared/phases.md`
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing

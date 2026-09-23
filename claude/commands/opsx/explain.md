@@ -29,7 +29,7 @@ tags: [workflow, review, finding, documentation]
 
 - **前置条件**：变更必须已完成技术评审，存在 `review-summary.md` 或 `review/<role>.md`；指定的 finding ID 必须存在
 - **参数解析**：支持 `--finding <ID>`、`--all-blockers`、`--all`、`--audience <type>`（tech/non-tech/new-dev）
-- **读取信息**：从 `review-summary.md` 和对应维度的 `review/<role>.md` 读取 finding 的 9 字段信息，从 `design.md` 读取上下文
+- **读取信息**：从 `review-summary.md` 和对应维度的 `review/<role>.md` 读取 finding 的 10 字段信息（含 `闭环状态`），从 `design.md` 读取上下文
 - **文档结构**：包含基本信息、业务场景完整描述、技术问题深入分析、解决方案详解（含代码示例）、实施指南（含改动清单、实施步骤、测试用例、回滚方案、监控指标）、相关资源、FAQ
 - **批量模式**：`--all-blockers` 或 `--all` 时，额外生成 `review/finding-details-summary.md` 汇总文档
 
@@ -57,5 +57,5 @@ tags: [workflow, review, finding, documentation]
 
 ## 两层产出设计
 
-- **第一层**：finding 表格（9 字段）—— 评审阶段快速判断
+- **第一层**：finding 表格（10 字段，含 `闭环状态`）—— 评审阶段快速判断
 - **第二层**：详细解析文档 —— 实施阶段深入理解，按需生成避免信息过载

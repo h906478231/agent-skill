@@ -11,7 +11,7 @@
 
 | 条件 | 裁决 |
 |------|------|
-| 任一维度 `verdict = 打回`，或存在未闭环 Blocker | `BLOCKED` |
+| 任一维度 `verdict = 打回`，或存在**未闭环 Blocker**（findings 表中 `严重级别 = Blocker` 且 `闭环状态 = open`，含缺省） | `BLOCKED` |
 | 全部 `通过` / `有条件通过`，且无未闭环 Blocker | `READY_FOR_HUMAN_APPROVAL` |
 
 三条补充判定：
@@ -56,7 +56,7 @@ AI 评审会误报，**被误报卡死不是流程的本意**。两条逃生通�
 
 前提：**不改 `design.md` 就不重走门禁**。输入没变，重跑只会得到同样的结论。
 
-在 `review/<role>.md` 对应 finding 下追加记录，并在 `review-summary.md` 的裁决计数中扣除。
+在 `review/<role>.md` 对应 finding 下追加记录，并把该 finding 的 `闭环状态` 改为 `false-positive` / `risk-accepted`（**保留该行，不得删除**），再在 `review-summary.md` 的裁决计数中扣除。
 
 **误报**（问题不成立）：
 

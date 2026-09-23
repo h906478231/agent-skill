@@ -1,6 +1,6 @@
 ---
 name: openspec-technical-review
-description: OpenSpec 技术评审门禁（Technical Review Gate，交叉验证 II）。在 OpenSpec Explore 阶段、技术方案已确定（design.md 完成）但尚未进入代码实现（openspec apply）之前，调度架构/并发/性能/数据库/安全五个专项评审 Agent 对同一方案做五维度交叉验证，汇总为 review-summary.md，并停在人工确认门禁。核心原则：需求未明确不分析性能，方案未确定不开始编码。用于任何 OpenSpec 变更在编码前的质量门禁。
+description: OpenSpec 技术评审门禁（Technical Review Gate，交叉验证 II）。在 OpenSpec Explore 阶段、技术方案已确定（design.md 完成）但尚未进入代码实现（openspec apply）之前，调度架构/并发/性能/数据库/安全五个专项评审 Agent 对同一方案做多维度交叉验证（维度数按分级），汇总为 review-summary.md，并停在人工确认门禁。核心原则：需求未明确不分析性能，方案未确定不开始编码。用于任何 OpenSpec 变更在编码前的质量门禁。
 ---
 
 # OpenSpec 技术评审门禁（Technical Review Gate）
@@ -9,7 +9,7 @@ description: OpenSpec 技术评审门禁（Technical Review Gate，交叉验证 
 
 这是插在 OpenSpec `explore/propose` 与 `apply` 之间的**质量门禁**。方案已在 `design.md` 中确定，但**还没有进入代码实现**。本门禁调度五个专项评审 Agent，对方案做架构/并发/性能/数据库/安全多角色评审，汇总风险与修改建议，交人工确认后才允许进入 `openspec apply`。
 
-**核心机制：交叉验证 II - 五角色多维度交叉验证同一方案**。架构/并发/性能/数据库/安全五个专业视角独立审查，互相发现盲区。
+**核心机制：交叉验证 II - 多角色多维度交叉验证同一方案（角色数按分级）**。架构/并发/性能/数据库/安全五个专业视角独立审查，互相发现盲区。
 
 ```
 OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案确认(design.md)
@@ -33,7 +33,7 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 openspec-technical-review/
 ├── SKILL.md                          # 本文件：门禁编排流程
 ├── shared/                           # 共用规则的唯一事实源，roles / 命令 / workflow 一律引用不复制
-│   ├── finding-format.md             #   finding 七字段 + 五条硬规则 + verdict + 输出骨架
+│   ├── finding-format.md             #   finding 9 个字段 + 五条硬规则 + verdict + 输出骨架
 │   ├── gate-levels.md                #   L0–L3 门禁适用范围分级与升级信号
 │   ├── gate-policy.md                #   裁决判定 / 重走范围 / 牵连关系 / 驳回与 risk accepted
 │   ├── mvp-review-standard.md        #   MVP 方案下只检查阻断性问题的评审标准
@@ -99,7 +99,7 @@ done
    - 读取 `design.md` 的"推荐方案"或"Decisions"部分
    - 判断是否为 **MVP 方案**（标志：明确说明"优先复用现有能力"/"最小化实现"/"快速验证"）
    - 如果是 MVP，告知用户：**技术评审将使用 MVP 标准，只检查阻断性问题**
-5. 判定评审范围：参照 [门禁分级标准](shared/gate-levels.md) 向用户确认跑哪些维度。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动五角色。
+5. 判定评审范围：参照 [门禁分级标准](shared/gate-levels.md) 向用户确认跑哪些维度。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动评审角色。
 6. 在 `changeRoot` 下创建 `review/` 目录。
 
 ## 执行步骤
@@ -129,7 +129,7 @@ done
 
 finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一句话白话 / 触发场景可复现 / 不修的后果）与维度结论取值，统一见 `shared/finding-format.md`，此处不重复。
 
-> 若当前环境支持 Pi Workflow，可改用 `technical-review-gate.workflow.js` 一次性并行 fan-out（`args = { change, roles, skillDir }`；`skillDir` 省略时脚本会让子 agent 自行探测，显式传入更省一次探测）。二者产出一致。
+> 若当前环境支持 Pi Workflow，可改用 `technical-review-gate.workflow.js` 一次性并行 fan-out（`args = { change, roles, skillDir }`；`skillDir` 省略时脚本会让子 agent 自行探测，显式传入更省一次探测）。**二者产物必须一致**：workflow 的 finding 结构化 schema 与汇总项以本文件 Step 2 与 `shared/finding-format.md` 为准，改动任一侧必须同步另一侧。
 >
 > 注：`shared/`、`roles/`、workflow、门禁 hook 全部位于 `<SKILL_DIR>` 内，随 skill 一起安装，不依赖任何单个项目的目录结构。
 
@@ -154,19 +154,21 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
    | staging_batch 表 | 表结构 + 状态机 | CONC-06 | 大（新增状态机逻辑） |
    ```
 4. **执行误报检测**：按 `shared/gate-policy.md` 第 4 节「不认可评审结论：驳回与 risk accepted」的规则检测可能的误报或过度建议（判据之一见 `shared/finding-format.md` 硬规则 4：写不出可复现触发场景的问题降级为 Major）。生成"疑似误报检测"区块，列出需要人工复核的 finding。
-5. **门禁裁决**：判定规则见 `shared/gate-policy.md`。**注意**：在计算裁决时，应考虑误报检测建议降级后的级别（如果用户选择应用自动降级）。
+5. **门禁裁决**：判定规则见 `shared/gate-policy.md`。**未闭环 Blocker 的判据是 findings 表中 `严重级别 = Blocker` 且 `闭环状态 = open`（含缺省）的项**；`closed` / `risk-accepted` / `false-positive` 一律不计入。**注意**：在计算裁决时，应考虑误报检测建议降级后的级别（如果用户选择应用自动降级）。
 6. **各维度结论一览表**：维度 | 结论 | Blocker 数 | Major 数 | Minor 数 | 本轮重跑/沿用上轮。
 7. **疑似误报检测**：列出可能的误报、过度建议、跨维度矛盾等，供人工复核。包含"自动降级建议"和"需人工判断"两类。
-8. **已确认风险详细清单**：按维度 + 严重级别汇总，使用完整的 9 字段表格（含"影响业务功能"和"涉及代码模块"）。
+8. **已确认风险详细清单**：按维度 + 严重级别汇总，使用完整的 10 字段表格（含"影响业务功能"、"涉及代码模块"和"闭环状态"）。
 9. **修改建议执行计划**：合并各维度建议，去重，明确标注：
    - 需在 `design.md` 中补充的设计细节（如状态机图、CAS 算法）
    - 需在 `tasks.md` 中新增的任务项（映射到具体 finding）
    - 建议的任务优先级（P0/P1/P2）和依赖关系
 10. **跨维度冲突清单（交叉验证核心产出）**：不同维度的建议互相矛盾时列出（如性能建议与安全建议冲突）。**冲突项必须在 `design.md` 中闭环，不能让矛盾的建议同时进入 `tasks.md`。**
 11. **「有条件通过」的条件清单**：`条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态`。**映射不到 tasks 的条件视同 Blocker。**
-12. **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环。后者一律按未闭环 Blocker 计入裁决。
+12. **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环，逐一给出对应的 `闭环状态` 取值。后者一律按未闭环 Blocker 计入裁决。
 13. **术语表**：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。
-14. **人工确认区**：留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply。
+14. **分级结论**：变更等级（L1/L2/L3，判定规则见 `shared/gate-levels.md`）+ 判定人 + 依据。L0 不进入本门禁，故此处的等级至少为 L1。
+15. **评审输入版本**：列出本轮评审依据的 `proposal.md` / `design.md` / `specs` / `tasks.md` 的版本依据（如 `git rev-parse HEAD` 或文件哈希），供重走门禁与恢复时判断输入是否已变化。
+16. **人工确认区**：留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply。
 
 裁决为 `BLOCKED` 时的告知内容与闭环记录格式，见 `shared/gate-policy.md`。
 
@@ -177,7 +179,11 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 - 认可后在人工确认区写下 `Technical Review Approved`（可加签名/日期）；
 - 之后才可运行 `/opsx:apply` 进入实现。
 
-若门禁为 `BLOCKED`，建议先回 `design.md` 闭环 Blocker，再重跑门禁。
+若门禁为 `BLOCKED`：
+
+1. 回 `design.md` 闭环 Blocker；
+2. **在 `design.md` 末尾登记「评审意见闭环记录」区块**（列定义与闭合判定见 `shared/closed-loop-verification.md`，格式见 `shared/gate-policy.md`）—— 这是重走门禁时唯一能让新子 agent 知道「上轮提过什么、这轮改了什么」的载体，漏登记会导致上轮 Blocker 被静默跳过或被重复发现；
+3. 重跑门禁：全量 `/opsx:review <change>`，或对受影响维度增量重走。
 
 ## 重走门禁（迭代回路）
 
@@ -193,14 +199,14 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 - **交叉验证链条**：
   - Phase 1 第一性原理 → 确保解决正确的问题
   - Phase 2 候选方案交叉验证 → 确保方案选择有依据
-  - **Phase 3 五维度交叉验证（当前阶段）** → 确保方案无盲区、发现跨维度冲突
+  - **Phase 3 多维度交叉验证（当前阶段，维度数按分级）** → 确保方案无盲区、发现跨维度冲突
 - 本门禁：`/opsx:review`（本 skill）产出 `review/*.md` + `review-summary.md`，停在人工确认。
 - 下游：人工批准后 `/opsx:apply` 编码 → `/opsx:quality` 实现层代码质量评审 → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）三维校验 → `openspec archive`。完整流程见 [研发流程 Phases 定义](shared/phases.md)。
 - 角色分工：OpenSpec = 流程与设计文档中心；本门禁 = AI 评审编排；Coding Agent = 代码执行者。
 
 ## 交叉验证机制说明
 
-**五角色独立评审**：每个子 agent 只读 `proposal.md` + `design.md`，不看其他维度的 `review/<role>.md`，避免锚定偏差。
+**纳入范围的角色独立评审**：每个子 agent 只读 `proposal.md` + `design.md`，不看其他维度的 `review/<role>.md`，避免锚定偏差。
 
 **典型交叉验证场景**：
 - 幂等设计：并发维度认为"有唯一索引就够了" → 数据库维度发现"索引缺少 tenant_id 前导，跨租户会冲突"

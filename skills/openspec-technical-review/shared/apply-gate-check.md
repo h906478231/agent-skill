@@ -9,6 +9,8 @@
 
 **无 `review-summary.md` → 直接放行，跳过本校验** —— 该变更未启用门禁，无需审批即可实现。
 
+**L0 豁免的变更不创建 `review-summary.md`**，因此天然走上面的「直接放行」分支 —— 这是设计意图，不是漏检（L0 落点见 `gate-levels.md`）。
+
 ## 校验动作（仅在 review-summary.md 存在时执行）
 
 ```bash

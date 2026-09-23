@@ -13,13 +13,13 @@
 | 变更总览 | `/opsx:overview`                 | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵 | `overview.md`（派生视图，勿手改） | 否 |
 | 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载 `../../openspec-propose/shared/task-slicing.md`） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前三问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 分级判定 | 人工（参照下表）                         | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `review-summary.md` | 否 |
-| Phase 3 技术评审门禁 | `/opsx:review`                   | 专项 Agent 并行评审已确定方案；**五角色多维度交叉验证** | `review/*.md` | 否 |
+| Phase 3 技术评审门禁 | `/opsx:review`                   | 专项 Agent 并行评审已确定方案；**多角色多维度交叉验证（角色数按分级）** | `review/*.md` | 否 |
 | Phase 4 评审确认 | 同上（汇总）                           | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工                               | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply`                    | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**（规则见 `../../openspec-apply-change/shared/tdd-discipline.md`） | 代码 + `tasks.md` 勾选 | 是 |
 | Phase 5.5 代码质量评审 | `/opsx:quality`                  | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对**（门禁侧的条件核对与增强交叉核对清单见 `phase6-verification.md`） | 校验报告（对话内） | 修复项 |
-| 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
+| 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs（delta→main 由 skill `openspec-sync-specs` / `/opsx:sync` 执行，archive 调用；主 spec 有差异却跳过同步时需用户显式确认原因）；**归档前置校验**：签字缺失 / 未闭环 Blocker / verify 未通过时拒绝归档；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 
 ## 全景流程图
 
@@ -47,7 +47,7 @@ OpenSpec Explore
       │ L1/L2/L3                                │
       ▼                                         │
 ┌──── Technical Review Gate（Phase 3，仍属 Explore，不写代码）────┐
-│  ※ 交叉验证 II：五角色并行评审同一方案（多维度互证）              │
+│  ※ 交叉验证 II：纳入范围的角色并行评审同一方案（多维度互证）      │
 │  架构 Agent   → review/architecture.md                        │
 │  并发 Agent   → review/concurrency.md                         │
 │  性能 Agent   → review/performance.md                         │

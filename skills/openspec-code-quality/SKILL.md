@@ -1,13 +1,13 @@
 ---
 name: openspec-code-quality
-description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec apply 编码完成之后、verify 校验之前，对本次变更的 git diff 做重复率、可读性、死代码、复杂度热点与设计偏离五项审查，产出 review/code-quality.md。只报告不改代码，修复走 tasks 勾选。填补五个设计层评审维度不覆盖实现代码的空档。
+description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec apply 编码完成之后、verify 校验之前，对本次变更的 git diff 做重复率、可读性、死代码、复杂度热点与设计偏离五项审查，产出 review/code-quality.md。只报告不改代码，修复走 tasks 勾选。填补设计层评审维度不覆盖实现代码的空档。
 ---
 
 # 实现层代码质量评审（Code Quality Review）
 
 ## 定位
 
-技术评审门禁的五个维度（架构/并发/性能/数据库/安全）审的是 **`design.md` 里的方案**，`/opsx:verify` 查的是 **Completeness / Correctness / Coherence 三维一致性**。两者都不看**实现出来的代码本身写得怎么样**。本 skill 补这个空档。
+技术评审门禁纳入范围的各维度（架构/并发/性能/数据库/安全）审的是 **`design.md` 里的方案**，`/opsx:verify` 查的是 **Completeness / Correctness / Coherence 三维一致性**。两者都不看**实现出来的代码本身写得怎么样**。本 skill 补这个空档。
 
 ```
 /opsx:apply（编码）──> 【/opsx:quality 本 skill】──> /opsx:verify ──> openspec archive
@@ -30,12 +30,7 @@ description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec 
 
 ## 适用范围分级
 
-沿用 [门禁分级标准](../openspec-technical-review/shared/gate-levels.md)：
-
-| 层级 | 是否跑 |
-|------|-------|
-| L0（纯文案/配置/注释） | 豁免 |
-| L1 及以上 | 都跑 —— 单 agent，成本低 |
+沿用 [门禁分级标准](../openspec-technical-review/shared/gate-levels.md)：**L0（纯文案/配置/注释/纯测试补充）豁免；L1 及以上都跑** —— 单 agent，成本低。分级定义与判定口诀不在本文件重复，以该事实源为准。
 
 ## 前置
 
@@ -50,7 +45,7 @@ description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec 
 
 ## finding 格式
 
-**完全沿用** 兄弟 skill `openspec-technical-review` 的 `../openspec-technical-review/shared/finding-format.md`：七字段（`ID | 严重级别 | 位置 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复`）、三条硬规则、`通过 / 有条件通过 / 打回` 三值结论。
+**完全沿用** 兄弟 skill `openspec-technical-review` 的 `../openspec-technical-review/shared/finding-format.md`：10 个字段（`ID | 严重级别 | 影响业务功能 | 位置 | 涉及代码模块 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复 | 闭环状态`）、五条硬规则、`通过 / 有条件通过 / 打回` 三值结论。
 
 > **路径解析**：所有 skill 平铺在同一个 skills 根目录下，因此相对本 SKILL.md 的路径恒为 `../openspec-technical-review/shared/finding-format.md`。**不要写死绝对路径** —— skills 根目录随 agent 而不同（Claude Code `~/.claude/skills/`、Codex `~/.codex/skills/`、opencode `~/.config/opencode/skills/`、Cursor `~/.cursor/skills/`、项目级 `.claude/skills/`、直接使用本仓时的 `skills/`）。相对路径读不到时，用 Glob 搜 `**/openspec-technical-review/shared/finding-format.md`。
 
@@ -94,7 +89,7 @@ description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec 
 
 1. **摘要**：三句话说清「代码质量如何 / 能不能进 verify / 卡在哪」。
 2. **审查范围**：diff 涉及的文件数与行数，起止 commit 或工作区状态。
-3. **Findings 表**：按 `finding-format.md` 的七字段，按严重级别降序。
+3. **Findings 表**：完整遵循 `finding-format.md` 的字段定义，按严重级别降序。
 4. **重复率专项**：重复块清单 —— `位置A ↔ 位置B | 相似行数 | 建议抽取到哪里`。
 5. **与设计的偏离清单**：`偏离项 | 设计中有无 | 建议：回记 design / 撤销实现`。
 6. 末尾结论行：`代码质量评审结论：通过 / 有条件通过 / 打回`。

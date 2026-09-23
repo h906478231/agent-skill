@@ -170,7 +170,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    **人工核对建议**：
    - 在完成自动校验后，逐项核对以上清单
-   - 不通过的项视同 BLOCKER，需补充实现或更新文档
+   - 不通过的项视同 **Blocker**，需补充实现或更新文档
    - 完成人工核对后再执行 `/opsx:archive`
 
 **Verification Heuristics**
@@ -204,7 +204,8 @@ Use clear markdown with:
 |------|---------|-----------|---------|
 | Phase 1 | 第一性原理分析 | 解决错误的问题 | `/opsx:explore` |
 | Phase 2 | 候选方案交叉验证 | 方案选择无依据 | `/opsx:explore` |
-| Phase 3 | 五维度交叉验证 | 方案存在盲区 | `/opsx:review` |
+| Phase 3 | 多维度交叉验证（维度数按分级） | 方案存在盲区 | `/opsx:review` |
+| Phase 5.5 | 实现层代码质量评审 | 重复率/可读性/死代码/复杂度热点/设计偏离 | `/opsx:quality` |
 | Phase 6 | 实现与设计交叉验证（当前阶段） | 实现偏离设计意图 | `/opsx:verify` + 人工核对 |
 
 参考完整质量保障体系：`workflow/OpenSpec-AI-研发流程.md`

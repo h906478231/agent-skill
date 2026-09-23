@@ -1,6 +1,6 @@
 # Phase 3 技术评审门禁：多维度交叉验证
 
-Phase 3 的五角色并行评审本身就是交叉验证机制：同一方案被五个不同专业视角审查，互相发现盲区。
+Phase 3 的多维度并行评审本身就是交叉验证机制：同一方案被多个不同专业视角审查，互相发现盲区。**纳入哪些维度由分级决定**（L1 两维 / L2 四维 / L3 全量），分级规则见 `../../openspec-technical-review/shared/gate-levels.md`。
 
 ## 交叉验证的典型场景
 
@@ -12,15 +12,13 @@ Phase 3 的五角色并行评审本身就是交叉验证机制：同一方案被
 
 ## 交叉验证的落地机制
 
-1. **五个维度独立评审**：每个子 agent 只读 `proposal.md` + `design.md`，不看其他维度的 `review/<role>.md`，避免锚定偏差
+1. **纳入范围的各维度独立评审**：每个子 agent 只读 `proposal.md` + `design.md`，不看其他维度的 `review/<role>.md`，避免锚定偏差
 2. **汇总阶段做冲突检测**：`review-summary.md` 必须列出「跨维度冲突项」（如：性能建议与安全建议矛盾）
 3. **冲突必须在 design.md 中闭环**：不能让矛盾的建议同时进入 `tasks.md`
 
 ## 门禁裁决规则
 
-- 任一维度 `verdict = 打回`，或存在**未闭环 Blocker** → 门禁 `BLOCKED`：回 `design.md` 闭环后重跑门禁。
-- 全部 `通过 / 有条件通过` 且无未闭环 Blocker → `READY_FOR_HUMAN_APPROVAL`：交人工确认。
-- **人工确认是硬门禁**：人工在 `review-summary.md` 写入 `Technical Review Approved` 前，禁止 `/opsx:apply`。
+裁决判定、边界情形与重走范围见 `../../openspec-technical-review/shared/gate-policy.md`（唯一事实源），本文件不复制判定表。要点：任一纳入维度 `verdict = 打回` 或存在**未闭环 Blocker** → `BLOCKED`；全部 `通过 / 有条件通过` 且无未闭环 Blocker → `READY_FOR_HUMAN_APPROVAL`。**人工确认是硬门禁**：人工在 `review-summary.md` 写入 `Technical Review Approved` 前，禁止 `/opsx:apply`。
 
 ## 「有条件通过」的条件必须落地
 
@@ -40,31 +38,15 @@ Phase 3 的五角色并行评审本身就是交叉验证机制：同一方案被
 **无法映射到 tasks 的条件，视同 Blocker 处理** —— 因为它没有落地路径。
 Phase 6 验证时逐条核对条件是否真的满足，未满足不得归档。
 
-## Blocker 闭环留痕格式
+## Blocker 闭环留痕（格式见事实源）
 
-门禁 `BLOCKED` 后回改 `design.md`，**必须留闭环记录**。原因：第二轮评审的 Agent 是全新上下文，它不知道 ARCH-01 上轮提过、这轮已改 —— 没有留痕，它要么重新发现同一问题，要么完全漏掉验证。
-
-在 `design.md` 末尾维护固定区块：
-
-```markdown
-## 评审意见闭环记录
-
-| finding ID | 维度 | 原始问题 | 处理方式 | 落在 design 的哪一节 | 轮次 |
-|-----------|------|---------|---------|-------------------|------|
-| ARCH-01 | 架构 | 计数真值源不明，DB 与缓存双写漂移 | 改为 DB 为唯一真值源，缓存仅做读加速 | §3.2 一致性设计 | R1 |
-| CONC-02 | 并发 | 重复消费导致计数重复累加 | 引入 msg_id 唯一索引 + 状态 CAS | §4.1 幂等设计 | R1 |
-| SEC-01 | 安全 | 导出未做 CSV 公式注入转义 | 驳回：非误报但属已知接受风险，导出仅内部管理员可见 | —（risk accepted） | R1 |
-```
-
-重走门禁时，把本区块一并交给评审 Agent，要求它**先验证上轮 Blocker 是否真的闭环**，再做新一轮审查。
+门禁 `BLOCKED` 后回改 `design.md` 时，**必须在末尾登记「评审意见闭环记录」区块** —— 重走门禁的子 agent 是全新上下文，没有留痕它会重新发现同一问题或漏掉验证。区块的列定义与闭合判定（已闭环 / 假闭环 / risk accepted）见 `../../openspec-technical-review/shared/closed-loop-verification.md`，本文件不复制表格。
 
 ## 重走门禁（迭代回路）
 
 铁律：**门禁输入是 `design.md`（+ `proposal.md`）。输入变了且变在评审维度上 → 重走；没变 → 不重走。**
 
-判断口诀：**宁可多跑一个维度，不可漏跑被牵连的维度。**
-
-操作命令：
+完整的场景判定表与牵连关系速查表见 `../../openspec-technical-review/shared/gate-policy.md`。操作命令：
 
 ```bash
 /opsx:review <change>                          # 全量重走

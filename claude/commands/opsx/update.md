@@ -50,7 +50,8 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - Read the artifact(s) the request touches and the change's other existing artifacts.
    - Apply the requested edit. Then check every other existing artifact against it - in ANY direction: an edit to a later artifact may require revising an earlier one, not only the other way around. Build order is a useful reading order, not a constraint on which artifacts may be revised.
    - Note everything that is now inconsistent, missing, or contradictory.
-   - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/opsx:continue` to create them.
+   - When the revised artifact is `proposal.md` or `design.md`, keep the repository-mandated blocks intact and compliant: proposal 的「第一性原理分析」区块、design 的「候选方案交叉验证矩阵」与（L2/L3）「测试 Seam 决策」区块。规则在 skill `openspec-explore` 的 `shared/`（找不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md`）：`first-principles.md`、`cross-validation.md`、`seam-decisions.md`。若某次修改会让这些区块缺失或不满足判据，等于把变更退回 Phase 1/2，必须向用户说明后再改，不得静默放行。
+   - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/opsx:propose` to create them.
    - If the change is already coherent, say so and make no edits.
 
 5. **Confirm and apply, one artifact at a time**
@@ -62,7 +63,7 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
      ```
 
 6. **Point to the next step (guidance only - NEVER act on it)**
-   - Artifacts still missing -> suggest `/opsx:continue` to create them.
+   - Artifacts still missing -> suggest `/opsx:propose` to create them.
    - Change already implemented (tasks checked off / already applied) -> the code may no longer match the revised plan; suggest `/opsx:apply` to carry the delta into code.
    - Everything done and implemented -> suggest `/opsx:archive`.
 
@@ -70,13 +71,13 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
 
 After each invocation, show:
 - Which artifacts were revised (and which proposed revisions were rejected)
-- Anything deferred to `/opsx:continue` (not-yet-created artifacts or files)
+- Anything deferred to `/opsx:propose` (not-yet-created artifacts or files)
 - Where the change stands and the recommended next command
 
 **Guardrails**
 - Planning artifacts only - NEVER edit implementation code. If the revised plan implies code changes, stop and point to `/opsx:apply`.
 - Use the artifact ids and paths reported by `openspec status`; never branch on hardcoded artifact names.
 - Edit only the concrete files in `existingOutputPaths`; never write to a glob `resolvedOutputPath`.
-- Do not advance the build frontier: no new artifacts, no new files under glob artifacts - that is `/opsx:continue`'s job.
+- Do not advance the build frontier: no new artifacts, no new files under glob artifacts - that is `/opsx:propose`'s job.
 - Confirm every edit with the user before writing.
-- If the request changes the change's *intent* rather than refining it, recommend starting fresh with `/opsx:new` (the "Update vs. Start Fresh" heuristic).
+- If the request changes the change's *intent* rather than refining it, recommend starting fresh with a new change via `/opsx:propose` (the "Update vs. Start Fresh" heuristic).

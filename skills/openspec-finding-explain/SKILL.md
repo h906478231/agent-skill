@@ -22,7 +22,7 @@ description: 为技术评审的 finding 生成详细的业务场景解析文档�
 ```
 技术评审（/opsx:review）
     ↓ 产出 review-summary.md
-    ↓ 包含 finding 表格（9 字段）
+    ↓ 包含 finding 表格（完整字段）
     ↓
 【人工确认】发现某些 finding 需要详细说明
     ↓
@@ -96,10 +96,10 @@ openspec-finding-explain --finding SEC-01 --audience non-tech
 ### Step 2 — 读取 finding 信息
 
 1. 读取 `review-summary.md` 的"已确认风险详细清单"区块
-2. 找到指定 finding ID 的完整 9 字段信息：
+2. 找到指定 finding ID 的完整 字段信息：
    - ID、严重级别、影响业务功能、位置
    - 涉及代码模块、一句话白话、触发场景
-   - 不修的后果、建议修复
+   - 不修的后果、建议修复、闭环状态（`open` / `closed` / `risk-accepted` / `false-positive`；只对 `open` 的项做实施解析，已闭环/已接受的项只说明结论与依据）
 3. 读取对应维度的详细评审文档（如 `review/concurrency.md`），获取更多上下文
 4. 读取 `design.md` 中 finding 位置指向的章节
 
@@ -410,7 +410,7 @@ async submitMaterial(
 
 ```
 /opsx:review
-    ↓ 产出 finding 表格（9 字段）
+    ↓ 产出 finding 表格（完整字段）
     ↓
 【可选】openspec-finding-explain --finding CONC-02
     ↓ 产出详细解析文档（完整业务场景 + 代码示例）

@@ -8,7 +8,7 @@ tags: [workflow, review, gate, experimental, cross-validation]
 
 技术评审门禁（Technical Review Gate）。插在 `/opsx:explore` 与 `/opsx:apply` 之间：方案已在 `design.md` 定稿，但尚未进入代码实现。
 
-**核心机制：交叉验证 II - 五角色多维度交叉验证同一方案**。架构/并发/性能/数据库/安全五个专业视角独立审查，互相发现盲区。
+**核心机制：交叉验证 II - 多角色多维度交叉验证同一方案（角色数按分级）**。架构/并发/性能/数据库/安全五个专业视角独立审查，互相发现盲区。
 
 **IMPORTANT: 本阶段不写任何业务代码。** 评审 Agent 只识别问题、给建议、产出评审文档；汇总后必须停在人工确认门禁，禁止自动继续 apply。
 
@@ -25,10 +25,10 @@ tags: [workflow, review, gate, experimental, cross-validation]
 
 | 内容 | 位置 |
 |------|------|
-| finding 字段、三条硬规则、维度结论取值 | `shared/finding-format.md` |
+| finding 字段、五条硬规则、维度结论取值 | `shared/finding-format.md` |
 | 上轮闭环验证（重走门禁时） | `shared/closed-loop-verification.md` |
 | 门禁裁决、重走范围、牵连关系、驳回留痕 | `shared/gate-policy.md` |
-| 五个维度的审查清单 | `roles/<role>.md` |
+| 纳入范围的各维度的审查清单 | `roles/<role>.md` |
 
 ## 产物
 
@@ -45,13 +45,13 @@ tags: [workflow, review, gate, experimental, cross-validation]
 - **交叉验证链条**：
   - Phase 1 第一性原理 → 确保解决正确的问题
   - Phase 2 候选方案交叉验证 → 确保方案选择有依据
-  - **Phase 3 五维度交叉验证（当前阶段）** → 确保方案无盲区、发现跨维度冲突
+  - **Phase 3 多维度交叉验证（维度数按分级）（当前阶段）** → 确保方案无盲区、发现跨维度冲突
 - 下游：人工批准后 `/opsx:apply` → `/opsx:quality` → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）
 - 完整流程与分级规则：`workflow/OpenSpec-AI-研发流程.md`
 
 ## 交叉验证机制说明
 
-**五角色独立评审**：每个子 agent 只读 `proposal.md` + `design.md`，不看其他维度的 `review/<role>.md`，避免锚定偏差。
+**纳入范围的角色独立评审**：每个子 agent 只读 `proposal.md` + `design.md`，不看其他维度的 `review/<role>.md`，避免锚定偏差。
 
 **典型交叉验证场景**：
 - 幂等设计：并发维度认为"有唯一索引就够了" → 数据库维度发现"索引缺少 tenant_id 前导，跨租户会冲突"

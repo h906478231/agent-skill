@@ -93,6 +93,16 @@ After completing all artifacts, summarize:
   - Do NOT copy `<context>`, `<rules>`, `<project_context>` blocks into the artifact
   - These guide what you write, but should never appear in the output
 
+**本仓自加的产物规则（非上游原文）**
+
+生成 `proposal` / `design` / `tasks` 三类 artifact 时，除 schema 的 `instruction` 外还必须满足本仓规则（规则文件在对应 skill 的 `shared/` 下；skill 目录随 agent 而不同，找不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md` 或 `**/openspec-propose/shared/<file>.md`）：
+
+- **proposal（Phase 1）**：必须包含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证），见 `openspec-explore` 的 `shared/first-principles.md`。
+- **design（Phase 2）**：必须包含「候选方案交叉验证矩阵」（至少 2 个有实质差异的方案 × 成本/性能/复杂度/风险四维，并回答「为什么不选其他方案」）；L2/L3 变更还必须包含「测试 Seam 决策」区块。见 `openspec-explore` 的 `shared/cross-validation.md` 与 `shared/seam-decisions.md`。
+- **tasks**：必须按垂直切片 + 阻塞 DAG 组织并保持 checkbox 兼容（`/opsx:apply` 与 `/opsx:verify` 依赖 `- [ ]` 解析进度）。见 `openspec-propose` 的 `shared/task-slicing.md`。
+
+上述区块缺失时，不得宣称本变更已 ready for implementation。
+
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
 - Always read dependency artifacts before creating a new one

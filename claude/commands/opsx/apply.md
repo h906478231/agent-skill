@@ -51,8 +51,8 @@ Implement tasks from an OpenSpec change.
    - Dynamic instruction based on current state
 
    **Handle states:**
-   - If `state: "blocked"` (missing artifacts): show message, suggest using `/opsx:continue`
-   - If `state: "all_done"`: congratulate, suggest archive
+   - If `state: "blocked"` (missing artifacts): show message, suggest using `/opsx:propose` to create the missing artifacts
+   - If `state: "all_done"`: congratulate, then suggest `/opsx:quality` (Phase 5.5) → `/opsx:verify` (Phase 6) before archive
    - Otherwise: proceed to implementation
 
 5. **Read context files**
@@ -92,7 +92,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - If all done: suggest `/opsx:quality` (Phase 5.5) → `/opsx:verify` (Phase 6), not archive
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -123,7 +123,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! You can archive this change with `/opsx:archive`.
+All tasks complete! Next: `/opsx:quality` → `/opsx:verify`, then `/opsx:archive`.
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -149,6 +149,7 @@ What would you like to do?
 **Guardrails**
 - **技术评审门禁未签字前，绝不写任何实现代码**（Step 2）—— 无例外，不代签
 - **遵守 skill `openspec-apply-change` 自己的 `shared/tdd-discipline.md` TDD 纪律**（Step 7）—— seam-first、red before green、重构留给 `/opsx:quality`
+- **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5）与 `/opsx:verify`（Phase 6）；任一未通过或存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序见 skill `openspec-technical-review` 的 `shared/phases.md`
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing

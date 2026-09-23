@@ -81,6 +81,10 @@ When ready to implement, run /opsx:apply
 
    **任务切片纪律（生成 `tasks` artifact 之前）**：完整规则见 skill `openspec-propose` 自己的 `shared/task-slicing.md`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-propose/shared/`、Codex CLI `~/.codex/skills/openspec-propose/shared/`、opencode `~/.config/opencode/skills/openspec-propose/shared/` 等；找不到时用 Glob 搜 `**/openspec-propose/shared/task-slicing.md`），**生成 tasks.md 前先读取并遵守**。要点：L2/L3 变更必须按**垂直切片**组织（每个切片打穿 schema→逻辑→API→测试，独立可演示；`Blocked by:` 显式声明；`Seam:` 行引用 design.md「测试 Seam 决策」区块），禁止按技术层水平拆分；生成后按「发布前三问」（粒度 / 阻塞边 / 合并拆分）用 **AskUserQuestion** 向用户确认后才算定稿。L0 无要求，L1 建议。checkbox 行保持 `- [ ]` 格式不变（apply 与 verify 依赖它解析进度，切片分组写在 checkbox 之外）。
 
+   **Phase 1/2 产物区块（创建 proposal / design artifact 之前）**：规则文件在 skill `openspec-explore` 的 `shared/`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-explore/shared/`、Codex CLI `~/.codex/skills/openspec-explore/shared/`、opencode `~/.config/opencode/skills/openspec-explore/shared/` 等；找不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md`），**创建前先读取并遵守**：
+   - `proposal.md` 必须包含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证），见 `first-principles.md`；缺失时继续澄清需求，不要直接落盘。
+   - `design.md` 必须包含「候选方案交叉验证矩阵」（至少 2 个有实质差异的方案 × 成本/性能/复杂度/风险四维，并回答「为什么不选其他方案」），见 `cross-validation.md`；L2/L3 变更还必须包含「测试 Seam 决策」区块，见 `seam-decisions.md`。
+
 5. **Show final status**
    ```bash
    openspec status --change "<name>"

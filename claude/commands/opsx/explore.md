@@ -134,7 +134,7 @@ If the user mentions a change or you detect one is relevant:
     | New requirement discovered | `specs/<capability>/spec.md` | - |
     | Requirement changed        | `specs/<capability>/spec.md` | - |
     | **Phase 1 需求澄清完成** | `proposal.md` | **必须包含「第一性原理分析」区块**（表面需求 vs 底层问题 / 基本约束 / 必要性验证）；不通过不得进入 Phase 2 |
-    | **Phase 2 方案探索完成** | `design.md` | **必须包含「候选方案交叉验证矩阵」**（至少 2 个候选方案 × 四维对比 + 推荐理由）；未通过交叉验证不得进入 Phase 3 门禁 |
+    | **Phase 2 方案探索完成** | `design.md` | **必须包含「候选方案交叉验证矩阵」**（至少 2 个有实质差异的候选方案 × 四维对比 + 推荐理由）；**L2/L3 还必须包含「测试 Seam 决策」区块**；未通过交叉验证不得进入 Phase 3 门禁 |
     | Design decision made       | `design.md`                  | - |
     | Scope changed              | `proposal.md`                | - |
     | New work identified        | `tasks.md`                   | - |
@@ -199,9 +199,12 @@ When things crystallize, you might offer a summary - but it's optional. Sometime
 - [ ] 是否从成本/性能/复杂度/风险四维对比？
 - [ ] 是否回答了"为什么不选其他方案"？
 - [ ] 推荐方案是否回溯验证了 Phase 1 的底层问题？
+- [ ] 是否确定了测试 Seam 并写入 `design.md` 的「测试 Seam 决策」区块（L2/L3 必含）？
 
 **不通过检查点的处理**：
 - Phase 1 未通过 → 继续澄清需求，补充第一性原理分析
 - Phase 2 未通过 → 补充候选方案或完善对比矩阵
 
 完整的质量保障体系见 `workflow/OpenSpec-AI-研发流程.md`。
+
+> **本仓自加（非上游原文）**：本文件上方的 Phase 1/2 检查点是简写，**规则事实源在 skill `openspec-explore`** —— 第一性原理见其 `shared/first-principles.md`、候选方案交叉验证见 `shared/cross-validation.md`、测试 Seam 见 `shared/seam-decisions.md`。本命令入口产出的 `proposal.md` / `design.md` 必须满足这些区块要求（`proposal.md` 含「第一性原理分析」，`design.md` 含「候选方案交叉验证矩阵」与 L2/L3 的「测试 Seam 决策」），不得以本文件的简写清单为准。skill 的安装路径随 agent 而不同（Claude Code / Codex / opencode 各异），按 skill 名 `openspec-explore` 加载，不要写死绝对路径。
