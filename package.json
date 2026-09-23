@@ -26,8 +26,9 @@
   "license": "Apache-2.0",
   "author": "tigger",
   "scripts": {
-    "test": "npm run verify && npm run test:orchestration",
+    "test": "npm run verify && npm run test:orchestration && npm run test:migration",
     "test:orchestration": "node --test scripts/test-orchestration.mjs",
+    "test:migration": "node --test scripts/test-migration.mjs",
     "pack": "bash scripts/pack-skill.sh",
     "verify": "node scripts/verify-references.mjs"
   },
