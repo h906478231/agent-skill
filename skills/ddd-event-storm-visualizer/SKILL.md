@@ -9,24 +9,24 @@ description: 将 ddd-modeling-workflow 的建模产物转换为交互式的事�
 
 ## 版本：v2.0.0
 
-**模板文件**：`skills/ddd-event-storm-visualizer/template-v2.0.0.html`  
-**主题配置**：`skills/ddd-event-storm-visualizer/themes.json`
+**模板文件**：`template-v2.0.0.html`  
+**主题配置**：`themes.json`
 
 ## 定位
 
 - 本 skill 是**可视化生成器**，不负责建模
 - 输入：`ddd-modeling-workflow` 的输出（事件、命令、聚合、Policy）
-- 输出：交互式 HTML 流程图（基于标准模板 v2.1.0）
+- 输出：交互式 HTML 流程图（基于标准模板 v2.0.0）
 - 不负责建模逻辑，不负责业务分析
 
 ## 核心特性
 
 ### 1. 统一模板标准
-- ✅ 使用单一标准模板（template-v2.1.0.html）
+- ✅ 使用单一标准模板（template-v2.0.0.html）
 - ✅ 确保同一领域多次生成结果一致
 - ✅ 支持主题切换，满足不同场景需求
 
-### 2. 主题系统（v2.1.0 新增）
+### 2. 主题系统（v2.0.0 新增）
 - ✅ **Bootstrap 主题**（默认）：柔和商务风格，适合长时间工作场景
 - ✅ **Vibrant 主题**：鲜艳展示风格，适合演示和展示场景
 - ✅ 通过 URL 参数动态切换主题
@@ -108,11 +108,13 @@ description: 将 ddd-modeling-workflow 的建模产物转换为交互式的事�
 
 ### 步骤 3：填充模板并输出 HTML
 
+**说明**：v2.0.0 模板不含占位符，建模数据与主题由页面**运行时**从同目录加载；v1.0.0 的 `{{DOMAIN_NAME}}` / `{{MODEL_DATA}}` 占位符替换方式已废弃。
+
 **操作**：
-1. 读取 `template-v1.0.0.html`
-2. 替换 `{{DOMAIN_NAME}}`
-3. 替换 `{{MODEL_DATA}}`（完整 JSON）
-4. 输出 `event-storm-{domain_name}.html`
+1. 复制 `template-v2.0.0.html` 为 `event-storm-{domain_name}.html`
+2. 在同目录写出 `ddd-model.json`（完整建模 JSON）
+3. 在同目录复制 `themes.json`
+4. 用 HTTP 服务器打开生成的 HTML（`file://` 协议下无法加载同目录数据文件）
 
 ---
 
@@ -240,7 +242,7 @@ http://localhost:8000/event-storm.html?theme=vibrant
 - [ ] 建模数据已通过完整性检查
 - [ ] 建模数据已通过引用一致性检查
 - [ ] 建模数据已通过必填字段检查
-- [ ] 模板文件存在且版本正确（v2.1.0）
+- [ ] 模板文件存在且版本正确（v2.0.0）
 - [ ] 主题配置文件存在（themes.json）
 
 ### 生成后
@@ -271,5 +273,6 @@ http://localhost:8000/event-storm.html?theme=vibrant
 
 ## 参考文档
 
-- [template-v1.0.0.html](template-v1.0.0.html) - 标准模板文件（带占位符）
+- [template-v2.0.0.html](template-v2.0.0.html) - 标准模板文件（运行时从同目录加载 `ddd-model.json` / `themes.json`）
+- [template-v1.0.0.html](template-v1.0.0.html) - 旧版模板（`{{DOMAIN_NAME}}` / `{{MODEL_DATA}}` 占位符方式，已被 v2.0.0 取代，仅作历史参考）
 - [demo.html](demo.html) - 完整可运行示例

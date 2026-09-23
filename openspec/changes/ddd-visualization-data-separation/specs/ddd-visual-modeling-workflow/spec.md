@@ -4,7 +4,7 @@
 
 ### Requirement: 从 domain-model.md 生成可视化文件
 
-workflow 必须从已有的 `domain-model.md` 文件生成可视化文件，而不是重新进行代码分析和领域建模。
+workflow SHALL从已有的 `domain-model.md` 文件生成可视化文件，而不是重新进行代码分析和领域建模。
 
 #### Scenario: 检测 domain-model.md 存在
 
@@ -23,7 +23,7 @@ workflow 必须从已有的 `domain-model.md` 文件生成可视化文件，而�
 
 ### Requirement: 三阶段执行流程
 
-workflow 必须按照"解析 → 转换 → 生成"三个阶段执行。
+workflow SHALL按照"解析 → 转换 → 生成"三个阶段执行。
 
 #### Scenario: 阶段 1 - 解析 domain-model.md
 
@@ -42,7 +42,7 @@ workflow 必须按照"解析 → 转换 → 生成"三个阶段执行。
 
 ### Requirement: 性能优化
 
-workflow 必须显著减少执行时间和资源消耗。
+workflow SHALL显著减少执行时间和资源消耗。
 
 #### Scenario: 单 agent 调用
 
@@ -61,7 +61,7 @@ workflow 必须显著减少执行时间和资源消耗。
 
 ### Requirement: 输出文件管理
 
-workflow 必须支持配置输出文件的路径和名称。
+workflow SHALL支持配置输出文件的路径和名称。
 
 #### Scenario: 默认输出路径
 
@@ -85,7 +85,7 @@ workflow 必须支持配置输出文件的路径和名称。
 
 ### Requirement: 错误处理和回退
 
-workflow 必须在转换失败时提供清晰的错误信息和回退机制。
+workflow SHALL在转换失败时提供清晰的错误信息和回退机制。
 
 #### Scenario: 转换 agent 失败
 
@@ -104,7 +104,7 @@ workflow 必须在转换失败时提供清晰的错误信息和回退机制。
 
 ### Requirement: 用户体验优化
 
-workflow 必须提供清晰的进度提示和执行结果反馈。
+workflow SHALL提供清晰的进度提示和执行结果反馈。
 
 #### Scenario: 阶段进度提示
 

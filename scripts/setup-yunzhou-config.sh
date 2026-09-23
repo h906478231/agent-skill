@@ -209,10 +209,6 @@ get_board() {
                 >&2 echo ""
             fi
 
-            # 保存问题数据以供调试
-            DEBUG_FILE="/tmp/yunzhou_board_debug_$(date +%s).json"
-            cp "$BOARD_TEMP_FILE" "$DEBUG_FILE"
-            >&2 echo "已保存问题数据到: $DEBUG_FILE"
 
             rm -f "$TEMP_FILE" "$BOARD_TEMP_FILE"
             exit 1
@@ -556,33 +552,27 @@ if [ "$DEFAULT_PROJECT_ID" != "null" ]; then
     echo "  默认清单ID：$DEFAULT_COLUMN_ID"
     echo ""
 
+    DEFAULT_CODE_REPO=$(echo "$DEFAULT_PROJECT" | jq -r '.codeRepo // empty')
+
     echo "快速开始："
     echo ""
-    echo "1. 从默认项目的默认清单拉取任务："
-    echo "   workflow('devops-automation-loop-yunzhou')"
-        DEFAULT_CODE_REPO=$(echo "$DEFAULT_PROJECT" | jq -r '.codeRepo // empty')
-        if [ -n "$DEFAULT_CODE_REPO" ]; then
-            echo "  代码仓库：$DEFAULT_CODE_REPO"
-        else
-            echo "  ⚠️  未配置代码仓库，需要在调用时指定 codeRepo 参数"
-        fi
+    echo "在 Claude Code 中执行（taskId 与 intent 为必填）："
     echo ""
-    echo "2. 指定项目和清单："
     echo "   workflow('devops-automation-loop-yunzhou', {"
-    echo "     projectId: '$DEFAULT_PROJECT_ID',"
-    echo "     columnId: '$DEFAULT_COLUMN_ID'"
+    echo "     taskId: <任务ID>,"
+    echo "     intent: 'implement'   # discuss | investigate | plan | implement"
     echo "   })"
     echo ""
-    echo "3. 指定任务ID："
-    echo "   workflow('devops-automation-loop-yunzhou', {"
-    echo "     projectId: '$DEFAULT_PROJECT_ID',"
-    echo "     taskId: <任务ID>"
-    echo "   })"
+    if [ -n "$DEFAULT_CODE_REPO" ]; then
+        echo "默认代码仓库：$DEFAULT_CODE_REPO"
+    else
+        echo "⚠️  未配置代码仓库，需要在调用时指定 codeRepo 参数"
+    fi
     echo ""
 fi
 
 echo "管理配置："
-echo "  添加项目：   ./setup-yunzhou-config.sh"
-echo "  修改项目：   ./setup-yunzhou-config.sh"
+echo "  添加项目：   scripts/setup-yunzhou-config.sh"
+echo "  修改项目：   scripts/setup-yunzhou-config.sh"
 echo "  查看配置：   cat $CONFIG_FILE | jq"
 echo ""

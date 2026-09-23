@@ -26,9 +26,10 @@
   "license": "Apache-2.0",
   "author": "tigger",
   "scripts": {
-    "test:orchestration": "node --test scripts/test-orchestration.mjs scripts/test-opencode-install.mjs",
+    "test": "npm run verify && npm run test:orchestration",
+    "test:orchestration": "node --test scripts/test-orchestration.mjs",
     "pack": "bash scripts/pack-skill.sh",
-    "verify": "bash scripts/verify-references.sh"
+    "verify": "node scripts/verify-references.mjs"
   },
   "engines": {
     "node": ">=16"

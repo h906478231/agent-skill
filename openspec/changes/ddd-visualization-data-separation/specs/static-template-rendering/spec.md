@@ -4,7 +4,7 @@
 
 ### Requirement: 静态 HTML 模板支持外部 JSON 加载
 
-系统必须提供一个静态 HTML 模板（`template-v2.0.0.html`），能够从外部 JSON 文件加载领域模型数据并动态渲染事件风暴流程图。
+系统SHALL提供一个静态 HTML 模板（`template-v2.0.0.html`），能够从外部 JSON 文件加载领域模型数据并动态渲染事件风暴流程图。
 
 #### Scenario: 页面加载时自动获取 JSON 数据
 
@@ -28,7 +28,7 @@
 
 ### Requirement: 支持可配置的 JSON 文件路径
 
-系统必须支持通过 URL 参数配置 JSON 文件的路径。
+系统SHALL支持通过 URL 参数配置 JSON 文件的路径。
 
 #### Scenario: 默认路径
 
@@ -47,7 +47,7 @@
 
 ### Requirement: 保留原有的交互功能
 
-系统必须保留 `template-v1.0.0.html` 中的所有交互功能。
+系统SHALL保留 `template-v1.0.0.html` 中的所有交互功能。
 
 #### Scenario: 卡片点击展开详情
 
@@ -71,7 +71,7 @@
 
 ### Requirement: 支持本地和远程 HTTP 服务器部署
 
-系统必须能够在本地 HTTP 服务器和远程服务器上正常工作。
+系统SHALL能够在本地 HTTP 服务器和远程服务器上正常工作。
 
 #### Scenario: VS Code Live Server 环境
 
@@ -95,7 +95,7 @@
 
 ### Requirement: 响应式布局
 
-系统必须支持不同屏幕尺寸的响应式布局。
+系统SHALL支持不同屏幕尺寸的响应式布局。
 
 #### Scenario: 桌面端显示
 
@@ -114,7 +114,7 @@
 
 ### Requirement: 数据刷新机制
 
-系统必须支持在数据变更后刷新页面查看最新内容。
+系统SHALL支持在数据变更后刷新页面查看最新内容。
 
 #### Scenario: 浏览器刷新
 
@@ -133,7 +133,7 @@
 
 ### Requirement: 向后兼容性
 
-系统必须保持与 `template-v1.0.0.html` 的向后兼容性。
+系统SHALL保持与 `template-v1.0.0.html` 的向后兼容性。
 
 #### Scenario: 保留 v1.0.0 模板
 
@@ -147,7 +147,7 @@
 
 ### Requirement: 性能优化
 
-系统必须优化页面加载和渲染性能，确保流畅的用户体验。
+系统SHALL优化页面加载和渲染性能，确保流畅的用户体验。
 
 #### Scenario: 大规模数据渲染
 

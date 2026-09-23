@@ -17,6 +17,8 @@ description: 为技术评审的 finding 生成详细的业务场景解析文档�
 
 本 skill 读取 `review-summary.md` 或单个维度的 `review/<role>.md`，为指定的 finding 生成详细解析文档。
 
+本 skill **没有对应的斜杠命令**，由主 agent 加载后按下面的参数执行（命令清单见 README 的 skills 清单表）。
+
 ```
 技术评审（/opsx:review）
     ↓ 产出 review-summary.md
@@ -24,9 +26,9 @@ description: 为技术评审的 finding 生成详细的业务场景解析文档�
     ↓
 【人工确认】发现某些 finding 需要详细说明
     ↓
-/opsx:explain --finding CONC-02      ← 本 skill
+openspec-finding-explain --finding CONC-02    ← 本 skill
     ↓ 或
-/opsx:explain --all-blockers          ← 展开所有 Blocker
+openspec-finding-explain --all-blockers       ← 展开所有 Blocker
     ↓
 产出 review/finding-details/CONC-02.md
 ```
@@ -36,7 +38,7 @@ description: 为技术评审的 finding 生成详细的业务场景解析文档�
 ### 场景 1：单个复杂 finding 需要展开
 ```bash
 # 开发看到 CONC-02 "引入 fencing token 机制"，不知道具体怎么做
-/opsx:explain --finding CONC-02
+openspec-finding-explain --finding CONC-02
 ```
 
 产出 `review/finding-details/CONC-02.md`，包含：
@@ -48,7 +50,7 @@ description: 为技术评审的 finding 生成详细的业务场景解析文档�
 ### 场景 2：批量展开所有 Blocker
 ```bash
 # 技术评审后，需要给团队讲解所有 Blocker
-/opsx:explain --all-blockers
+openspec-finding-explain --all-blockers
 ```
 
 产出：
@@ -60,7 +62,7 @@ description: 为技术评审的 finding 生成详细的业务场景解析文档�
 ### 场景 3：向非技术人员解释
 ```bash
 # 需要向产品经理解释为什么这个问题严重
-/opsx:explain --finding SEC-01 --audience non-tech
+openspec-finding-explain --finding SEC-01 --audience non-tech
 ```
 
 产出的文档会：
@@ -403,14 +405,14 @@ async submitMaterial(
 ## 与整体流程的关系
 
 - 上游：`/opsx:review` 产出 `review-summary.md` 和 `review/<role>.md`
-- 本 skill：`/opsx:explain` 读取评审结果，生成详细解析文档
+- 本 skill：`openspec-finding-explain` 读取评审结果，生成详细解析文档
 - 下游：`/opsx:apply` 实施修复时，参考详细解析文档
 
 ```
 /opsx:review
     ↓ 产出 finding 表格（9 字段）
     ↓
-【可选】/opsx:explain --finding CONC-02
+【可选】openspec-finding-explain --finding CONC-02
     ↓ 产出详细解析文档（完整业务场景 + 代码示例）
     ↓
 /opsx:apply
@@ -443,14 +445,14 @@ async submitMaterial(
 
 ```bash
 # 单个 finding
-/opsx:explain --finding CONC-02
+openspec-finding-explain --finding CONC-02
 
 # 所有 Blocker
-/opsx:explain --all-blockers
+openspec-finding-explain --all-blockers
 
 # 面向非技术人员
-/opsx:explain --finding SEC-01 --audience non-tech
+openspec-finding-explain --finding SEC-01 --audience non-tech
 
 # 批量生成（包括 Major）
-/opsx:explain --all --severity Blocker,Major
+openspec-finding-explain --all --severity Blocker,Major
 ```

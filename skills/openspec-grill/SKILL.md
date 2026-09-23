@@ -117,7 +117,7 @@ done
 | 领域术语 | `CONTEXT.md`（项目根，跨变更复用） |
 | 重大权衡决策 | `docs/adr/NNNN-<slug>.md`（项目根） |
 | 未决问题 | discussion-log.md 或带入 explore 继续 |
-| 切片边界线索 | tasks.md 任务拆分（规则见 skill `openspec-propose` 的 `shared/task-slicing.md`，生成 tasks 时加载） |
+| 切片边界线索 | tasks.md 任务拆分（规则见 `../openspec-propose/shared/task-slicing.md`，生成 tasks 时加载） |
 
 ## 铁律
 

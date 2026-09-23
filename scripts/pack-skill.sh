@@ -28,13 +28,19 @@ pack_skill() {
   local skill=$1
   local output_dir=${2:-$DIST_DIR}
 
-  local skill_src="/Users/macbook/.claude/skills/${skill}"
+  # 统一转成绝对路径：下面要 cd 进 $output_dir/tmp 再执行 tar，
+  # 相对路径在切换目录后无法解析，-o 传相对路径时打包必然失败。
+  if [[ "$output_dir" != /* ]]; then
+    output_dir="$PWD/$output_dir"
+  fi
+
+  local skill_src="$PROJECT_ROOT/skills/${skill}"
   local temp_dir="$output_dir/tmp/${skill}"
   local output_file="$output_dir/${skill}.tar.gz"
 
   # 检查 skill 是否存在
   if [ ! -d "$skill_src" ]; then
-    echo "❌ 错误: Skill '$skill' 不存在于 /Users/macbook/.claude/skills/"
+    echo "❌ 错误: Skill '$skill' 不存在于 $PROJECT_ROOT/skills/"
     return 1
   fi
 
@@ -47,27 +53,9 @@ pack_skill() {
   echo "   📋 复制 skill 文件..."
   cp -r "$skill_src" "$temp_dir/"
 
-  # 3. 分析并复制依赖的 shared/ 文件
-  echo "   🔍 分析 shared 依赖..."
-  local shared_files=$(grep -r "shared/workflow/" "$temp_dir/" 2>/dev/null | \
-    sed -n 's/.*shared\/workflow\/\([^)]*\.md\).*/\1/p' | \
-    sort -u)
-
-  if [ -n "$shared_files" ]; then
-    echo "   📚 复制 shared 模块:"
-    mkdir -p "$temp_dir/shared/workflow"
-
-    while IFS= read -r file; do
-      if [ -f "$PROJECT_ROOT/shared/workflow/$file" ]; then
-        cp "$PROJECT_ROOT/shared/workflow/$file" "$temp_dir/shared/workflow/"
-        echo "      ✓ $file"
-      else
-        echo "      ⚠️  未找到: $file"
-      fi
-    done <<< "$shared_files"
-  else
-    echo "   ℹ️  无 shared 依赖"
-  fi
+  # 3. skill 已自包含：引用的 shared/ roles/ hooks/ 资产都在 skill 目录内部，
+  #    引用一律写成相对 skill 目录的形式，因此不需要再复制任何外部模块。
+  echo "   ℹ️  skill 自包含，无需复制外部模块"
 
   # 4. 创建 README
   cat > "$temp_dir/README.md" <<EOF
@@ -84,18 +72,11 @@ tar -xzf ${skill}.tar.gz -C ~/.claude/skills/
 
 ## 包含内容
 
-- ${skill}/          # Skill 主目录
-$([ -n "$shared_files" ] && echo "- shared/workflow/   # 依赖的知识模块")
+- ${skill}/          # Skill 主目录（含其 shared/ roles/ hooks/ 资产）
 
-## 依赖的 shared 模块
+## 说明
 
-$(if [ -n "$shared_files" ]; then
-  while IFS= read -r file; do
-    echo "- shared/workflow/$file"
-  done <<< "$shared_files"
-else
-  echo "无"
-fi)
+本 skill 自包含：引用的资产都在 skill 目录内部，解压后可直接使用。
 
 ---
 由 pack-skill.sh 自动生成

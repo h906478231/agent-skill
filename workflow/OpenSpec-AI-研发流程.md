@@ -1,10 +1,10 @@
 # OpenSpec + AI Agent 研发流程
 
-> **编排更新**：必要判定直接内置于 coordinator 与 workflow，不额外加载编排 skill。下文 grill → explore 的线性示例仅展示能力关系，不是必跑顺序；L2/L3 检查决策充分性，已有有效共识不重复访谈。事实待查用 explore，无阻断未知直接 propose/update。使用与恢复说明见 [按状态编排](../docs/opencode/orchestration.md)。
+> **编排更新**：必要判定直接内置于 workflow 与 `skills/openspec-technical-review/shared/phases.md`，不额外加载编排 skill。下文 grill → explore 的线性示例仅展示能力关系，不是必跑顺序；L2/L3 检查决策充分性，已有有效共识不重复访谈。事实待查用 explore，无阻断未知直接 propose/update。使用与恢复说明见 [云舟自动化循环规范](devops-automation-loop-yunzhou.md)。
 
 > **📖 文档说明**  
 > 本文档是面向**人类阅读**的完整汇总版本，包含流程说明、部署指南、FAQ 等。  
-> **AI skills 使用的是模块化版本**，分布于 [`shared/workflow/`](../shared/workflow/)（流程级规则，如门禁分级、任务切片）与各 skill 的 `shared/` 目录（如 `skills/openspec-explore/shared/` 的第一性原理/交叉验证/Seam 决策，`skills/openspec-technical-review/shared/` 的门禁裁决/TDD 纪律）。  
+> **AI skills 使用的是模块化版本**，分布于各 skill 的 `shared/` 目录：门禁分级与 Phase 定义见 `skills/openspec-technical-review/shared/`（`gate-levels.md`、`phases.md`、`gate-policy.md`），第一性原理/交叉验证/Seam 决策见 `skills/openspec-explore/shared/`，门禁裁决与 TDD 纪律见 `skills/openspec-technical-review/shared/`，任务切片等编排规则内联在 `claude/commands/opsx/` 的命令文件中。  
 > 如需修改流程规则，请编辑对应模块，本文档定期同步更新。
 
 > 以 OpenSpec 作为研发流程的核心控制器（需求澄清、方案设计、变更生命周期），在进入代码实现前增加 **Technical Review Gate（技术评审门禁）**，由 AI Agent 模拟架构/并发/性能/数据库/安全评审角色。
@@ -133,6 +133,62 @@
 
 ---
 
+## 🔧 命令与 Skill 的对应关系
+
+本文档使用 `/opsx:xxx` 斜杠命令形式是为了简化表述和提升用户体验。这种形式仅在 **Claude Code** 等支持自定义命令的环境中可用。
+
+**如果你使用的 coding agent 不支持斜杠命令**（如 Cursor、Windsurf、其他 AI 编程助手），可以直接加载对应的 skill 或明确指示 agent 按流程执行。
+
+### 命令-Skill 对照表
+
+| 斜杠命令 | 对应 Skill | 说明 |
+|---------|-----------|------|
+| `/opsx:grill <change>` | `openspec-grill` | Grill 访谈（决策树分轮访谈） |
+| `/opsx:explore <change>` | `openspec-explore` | Phase 1-2：需求澄清 + 方案探索 |
+| `/opsx:overview <change>` | `openspec-change-overview` | 生成变更总览（文档地图、字段台账、条件矩阵） |
+| `/opsx:propose <change>` | `openspec-propose` | 任务拆分（由 explore 自动调用） |
+| `/opsx:review <change>` | `openspec-technical-review` | Phase 3-4：技术评审门禁 |
+| `/opsx:apply <change>` | `openspec-apply-change` | Phase 5：代码实施 |
+| `/opsx:quality <change>` | `openspec-code-quality` | Phase 5.5：代码质量评审 |
+| `/opsx:verify <change>` | `openspec-verify-change` | Phase 6：验证 |
+| `/opsx:explain <change>` | `openspec-finding-explain` | Finding 详细解析（按需生成） |
+| `/opsx:archive <change>` | `openspec-archive-change` | 变更归档 |
+
+### 三种使用方式
+
+#### 方式 1：斜杠命令（Claude Code）
+
+```bash
+/opsx:explore user-nickname-field
+```
+
+#### 方式 2：Skill 工具调用（支持 Skill 工具的 agent）
+
+在对话中直接说：
+
+```
+请使用 skill openspec-explore 对 user-nickname-field 进行需求澄清和方案探索
+```
+
+或使用 Skill 工具：
+
+```
+Skill(skill: "openspec-explore", args: "user-nickname-field")
+```
+
+#### 方式 3：明确指示流程步骤（通用方式）
+
+```
+请按照 OpenSpec Phase 1-2 的要求对 user-nickname-field 变更：
+1. 完成第一性原理分析，输出到 openspec/changes/user-nickname-field/proposal.md
+2. 完成候选方案交叉验证矩阵，输出到 openspec/changes/user-nickname-field/design.md
+3. 确定测试 Seam 决策
+```
+
+**推荐**：优先使用方式 1（Claude Code）或方式 2（其他 agent），它们会自动加载完整的流程规则。
+
+---
+
 ## 📋 开发者速查
 
 > 💡 这是最实用的部分，可以直接复制粘贴命令
@@ -164,13 +220,13 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 
 ```bash
 # ── Grill 访谈（仅未决项；L2/L3 检查共识充分性）─────────
-/openspec:grill <change-name>
+/opsx:grill <change-name>
 #   → 决策树分轮访谈：消除隐含假设，frontier 清空 + 用户确认才结束
 #   → CONTEXT.md（领域术语，统一语言）+ docs/adr/（重大权衡决策）
 #      ※ 项目级资产，跨变更复用，不随变更归档
 
 # ── Phase 1-2：需求澄清 + 方案探索 ──────────────────────
-/openspec:explore <change-name>
+/opsx:explore <change-name>
 #   → openspec/changes/<change-name>/proposal.md
 #      ※ 必含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证）
 #   → openspec/changes/<change-name>/design.md
@@ -179,14 +235,14 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   → discussion-log.md（子agent讨论结论回流，见skill openspec-discussion-sync）
 
 # ── 生成变更总览（可选但推荐）──────────────────────────
-/openspec:overview <change-name>
+/opsx:overview <change-name>
 #   → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
 #   一页看懂流程、字段变更与规则条件是否遗漏
 #   标 ⚠️ 未落地 的条目视同 Blocker
 
 # ── 任务拆分：垂直切片 + 阻塞 DAG ─────────────────────
 #   tasks.md 按 tracer-bullet 垂直切片组织（规则：skills/openspec-propose/shared/task-slicing.md，
-#   由 /openspec:propose 生成 tasks 时自动加载）
+#   由 /opsx:propose 生成 tasks 时自动加载）
 #   每个切片端到端可演示，Blocked by 显式声明，frontier 可并行
 #   发布前三问（粒度/阻塞边/合并拆分）由用户确认后定稿
 
@@ -194,13 +250,13 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 # 根据上面的决策树判断：L0 / L1 / L2 / L3
 
 # ── Phase 3-4：技术评审门禁 ──────────────────────────
-/openspec:review <change-name>
+/opsx:review <change-name>
 #   → review/{architecture,concurrency,performance,database,security}.md
 #      ※ 五角色独立评审，交叉验证同一方案（多维度互证）
 #   → review-summary.md（门禁裁决 + 跨维度冲突检测）
 
 # 若 BLOCKED → 回改 design.md + 填「评审意见闭环记录」，然后按牵连关系重走
-/openspec:review <change-name> --roles concurrency,database
+/opsx:review <change-name> --roles concurrency,database
 
 # ── 人工门禁：硬门禁 ──────────────────────────────────
 # 审阅 review-summary.md，认可后在末尾写入：
@@ -208,28 +264,28 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   复核（L3必填）: 李四  2026-08-26
 
 # ── Phase 5：代码实施 ────────────────────────────────
-/openspec:apply <change-name>
+/opsx:apply <change-name>
 #   参考 review-summary.md 的「涉及代码模块」和「建议修复」
 #   按已评审通过的设计实现，不重新设计
 #   ※ 按切片实施 + TDD 纪律：只在声明的 Seam 测试，red before green
 #     （规则：skills/openspec-apply-change/shared/tdd-discipline.md）
 
 # ── Phase 5.5：代码质量评审 ──────────────────────────
-/openspec:quality <change-name>
+/opsx:quality <change-name>
 #   → review/code-quality.md
 #   查 diff 的重复率/可读性/死代码/复杂度/设计偏离
 #   未闭环 Blocker 不得归档
 
 # ── Phase 6：验证 ──────────────────────────────────
-/openspec:overview <change-name>     # 先刷新条件矩阵
-/openspec:verify <change-name>
+/opsx:overview <change-name>     # 先刷新条件矩阵
+/opsx:verify <change-name>
 #   → 三维校验（Completeness / Correctness / Coherence）
 #      ※ Coherence 维度：实现与设计交叉核对
 #   → 再逐条核对 overview.md 的条件矩阵，⚠️ 未落地项视同 Blocker
 #   → 补充人工核对清单（回溯第一性原理 / 方案选择一致性 / 可测试性 / 运维成本）
 
 # ── 收口 ─────────────────────────────────────────────
-/openspec:archive <change-name>
+/opsx:archive <change-name>
 #   变更归档，能力沉淀进 specs
 #   评审/讨论/总览产物随变更整体归档到 changes/archive/<name>/
 ```
@@ -251,7 +307,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 | ARCH-01 | 架构 | 计数真值源不明 | 改为DB为唯一真值源 | §3.2 一致性设计 | R1 |
 
 # 3. 重走门禁（只跑被修改的维度）
-/openspec:review <change-name> --roles architecture,database
+/opsx:review <change-name> --roles architecture,database
 ```
 
 ---
@@ -287,10 +343,10 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 
 ```bash
 # 修复后重跑
-/openspec:verify <change-name>
+/opsx:verify <change-name>
 
 # 如果修复过程改了设计 → 重走对应维度的门禁
-/openspec:review <change-name> --roles <维度>
+/opsx:review <change-name> --roles <维度>
 ```
 
 ---
@@ -298,17 +354,17 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #### 场景4：复杂finding需要详细解析
 
 ```bash
-# 单个finding
-/openspec:explain --finding CONC-02
+# 单个 finding 详细解析
+/opsx:explain <change-name> --finding CONC-02
 
-# 所有Blocker
-/openspec:explain --all-blockers
+# 批量展开所有 Blocker
+/opsx:explain <change-name> --all-blockers
 
-# 面向非技术人员
-/openspec:explain --finding SEC-01 --audience non-tech
+# 面向非技术人员（如产品经理）
+/opsx:explain <change-name> --finding SEC-01 --audience non-tech
 ```
 
-**产出**：`review/finding-details/<ID>.md`，包含完整业务场景、代码示例、实施步骤、FAQ。
+**产出**：`review/finding-details/<ID>.md`，包含完整业务场景、代码示例、算法细节、实施步骤、测试用例、FAQ。
 
 ---
 
@@ -353,17 +409,17 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 
 **A**: 不会。
 
-门禁只能拦正常路径（`/openspec:apply`），拦不住"直接让Agent用Edit/Write改代码"。
+门禁只能拦正常路径（`/opsx:apply`），拦不住"直接让Agent用Edit/Write改代码"。
 
 **真正的兜底**：PR review与CI。
 </details>
 
 <details>
-<summary><strong>Q4: /openspec:review 提示缺 design.md？</strong></summary>
+<summary><strong>Q4: /opsx:review 提示缺 design.md？</strong></summary>
 
 **A**: 门禁前置校验要求 proposal.md 与 design.md 都存在且design含推荐方案。
 
-先回 `/openspec:explore` 补齐 —— 这正是「方案未确定不开始编码」。
+先回 `/opsx:explore` 补齐 —— 这正是「方案未确定不开始编码」。
 </details>
 
 <details>
@@ -390,7 +446,7 @@ BLOCKED必须先闭环Blocker并重走门禁 → 变成READY → 才能签字 �
 <details>
 <summary><strong>Q7: proposal/design/spec/tasks四份文档太散，怎么确认规则条件没遗漏？</strong></summary>
 
-**A**: 跑 `/openspec:overview <change>`。
+**A**: 跑 `/opsx:overview <change>`。
 
 「规则条件可追溯矩阵」把四类来源（proposal验收条件、spec scenario、design约束、review的「有条件通过」）合成一张表。
 
@@ -427,7 +483,7 @@ Phase 6验证时会回溯检查实现是否解决了「底层问题」而非「�
 
 **写不出具体触发场景的Blocker会被自动降级为Major。**
 
-如仍看不懂，用 `/openspec:explain --finding <ID>` 生成详细解析。
+如仍看不懂，使用 `/opsx:explain <change-name> --finding <ID>` 生成详细解析。
 </details>
 
 <details>
@@ -485,7 +541,7 @@ OpenSpec Explore
       ├─ tasks.md 任务拆分：垂直切片 + 阻塞 DAG（openspec-propose 的 shared/task-slicing.md）
       │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户三问确认后定稿
       │
-      ├─ /openspec:overview → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
+      ├─ /opsx:overview → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
       ▼
    【分级判定】L0 豁免 ──────────────────────────┐
       │ L1/L2/L3                                │
@@ -504,7 +560,7 @@ OpenSpec Explore
       │                                                        │
       ├─ BLOCKED ─→ 回改 design.md（留闭环记录）─→ 重走门禁 ⟲     │
       │                                                        │
-      ├─【可选】/openspec:explain --finding <ID>                    │
+      ├─【可选】/opsx:explain                                   │
       │         → review/finding-details/<ID>.md（详细解析）     │
       │                                                        │
       ▼ READY_FOR_HUMAN_APPROVAL                               │
@@ -514,10 +570,10 @@ OpenSpec Explore
 OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/测试）
       │  参考 review-summary.md 的"涉及代码模块"和"建议修复"      │
       ▼
-代码质量评审（Phase 5.5）→ /openspec:quality → review/code-quality.md
+代码质量评审（Phase 5.5）→ /opsx:quality → review/code-quality.md
       │  查 diff 的重复率/可读性/死代码/复杂度/设计偏离；未闭环 Blocker 不得归档
       ▼
-验证（Phase 6）→ /openspec:verify 三维校验 + 条件核对（用 overview.md 条件矩阵）+ 项目自有测试
+验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（用 overview.md 条件矩阵）+ 项目自有测试
       │  ※ 交叉验证 III：实现与设计交叉核对（Coherence 一致性校验）
       ▼
 OpenSpec Archive → specs 沉淀能力；评审与讨论产物随变更进 changes/archive/
@@ -530,19 +586,19 @@ OpenSpec Archive → specs 沉淀能力；评审与讨论产物随变更进 chan
 | 阶段 | 入口 | 做什么 | 产物 | 是否改代码 |
 |------|------|--------|------|-----------|
 | Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查共识充分性，已有决策不重复访谈；沉淀术语与决策 | 共识 + `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
-| Phase 1 需求澄清 | `/openspec:explore` | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
-| Phase 2 方案探索 | `/openspec:explore` | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块） | 否 |
+| Phase 1 需求澄清 | `/opsx:explore` | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
+| Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块） | 否 |
 | （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
-| 变更总览 | `/openspec:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵 | `overview.md`（派生视图，勿手改） | 否 |
-| 任务拆分 | `/openspec:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前三问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
+| 变更总览 | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵 | `overview.md`（派生视图，勿手改） | 否 |
+| 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前三问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 分级判定 | 人工（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `review-summary.md` | 否 |
-| Phase 3 技术评审门禁 | `/openspec:review` | 专项 Agent 并行评审已确定方案；**五角色多维度交叉验证** | `review/*.md` | 否 |
+| Phase 3 技术评审门禁 | `/opsx:review` | 专项 Agent 并行评审已确定方案；**五角色多维度交叉验证** | `review/*.md` | 否 |
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
-| Phase 5 代码实现 | `/openspec:apply` | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律** | 代码 + `tasks.md` 勾选 | 是 |
-| Phase 5.5 代码质量评审 | `/openspec:quality` | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
-| Phase 6 验证 | `/openspec:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
-| 收口 | `/openspec:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
+| Phase 5 代码实现 | `/opsx:apply` | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律** | 代码 + `tasks.md` 勾选 | 是 |
+| Phase 5.5 代码质量评审 | `/opsx:quality` | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
+| Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
+| 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 
 ---
 
@@ -565,7 +621,7 @@ Coding Agent    = 代码执行者（Claude / Codex / GPT），只实现已评审
 
 ### 前置强化：Grill 访谈（存在未决决策时）
 
-`/openspec:grill` 用**决策树分轮访谈**消除隐含假设：每个决策分支都被问到、每轮问题附推荐答案、frontier 清空且用户确认共识才结束。事实查找是 agent 的职责（派子 agent 查代码与环境），业务决策是用户的职责。
+`/opsx:grill` 用**决策树分轮访谈**消除隐含假设：每个决策分支都被问到、每轮问题附推荐答案、frontier 清空且用户确认共识才结束。事实查找是 agent 的职责（派子 agent 查代码与环境），业务决策是用户的职责。
 
 访谈同步沉淀两类**项目级资产**（跨变更复用，不随变更归档）：
 
@@ -678,7 +734,7 @@ tasks.md 不按技术层水平拆分（「先做所有表，再做所有接口�
 - 宽重构例外：expand → 分批 migrate → contract，批批保 CI 绿
 - **发布前三问**（粒度 / 阻塞边 / 合并拆分）由用户确认后 tasks.md 定稿
 
-格式与规则唯一事实源：[`skills/openspec-propose/shared/task-slicing.md`](../skills/openspec-propose/shared/task-slicing.md)（`/openspec:propose` 生成 tasks artifact 时自动加载）。tasks.md 保持 checkbox 兼容，`/openspec:apply` 与 `/openspec:verify` 的进度解析不受影响。
+格式与规则唯一事实源：[`skills/openspec-propose/shared/task-slicing.md`](../skills/openspec-propose/shared/task-slicing.md)（`/opsx:propose` 生成 tasks artifact 时自动加载）。tasks.md 保持 checkbox 兼容，`/opsx:apply` 与 `/opsx:verify` 的进度解析不受影响。
 
 | 等级 | 要求 |
 |------|------|
@@ -757,7 +813,7 @@ ID | 严重级别 | 影响业务功能 | 位置 | 涉及代码模块 | 一句话
 | 任一维度 `verdict = 打回` **或** 有未闭环Blocker | 🚫 BLOCKED | 回改design.md + 填闭环记录 + 重走门禁 |
 | 全部 `通过/有条件通过` **且** 无未闭环Blocker | ✅ READY_FOR_HUMAN_APPROVAL | 人工签字确认 |
 
-⚠️ **人工确认是硬门禁**：人工在 `review-summary.md` 写入 `Technical Review Approved` 前，禁止 `/openspec:apply`。
+⚠️ **人工确认是硬门禁**：人工在 `review-summary.md` 写入 `Technical Review Approved` 前，禁止 `/opsx:apply`。
 
 完整判定表与边界情形见 `skills/openspec-technical-review/shared/gate-policy.md`。
 
@@ -823,19 +879,17 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 ### 按需生成详细解析文档
 
-**skill：openspec-finding-explain**
-
 对于复杂的 finding，可以按需生成详细解析文档：
 
 ```bash
-# 单个 finding
-/openspec:explain --finding CONC-02
+# 单个 finding 详细解析
+/opsx:explain <change-name> --finding CONC-02
 
-# 所有 Blocker
-/openspec:explain --all-blockers
+# 批量展开所有 Blocker
+/opsx:explain <change-name> --all-blockers
 
 # 面向非技术人员
-/openspec:explain --finding SEC-01 --audience non-tech
+/opsx:explain <change-name> --finding SEC-01 --audience non-tech
 ```
 
 **产出**：`review/finding-details/<ID>.md`，包含完整业务场景、代码示例、实施步骤、FAQ。
@@ -850,7 +904,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 ## 📐 Phase 5: 代码实施
 
-**入口**：`/openspec:apply <change-name>`
+**入口**：`/opsx:apply <change-name>`
 
 **前置条件**：
 - `review-summary.md` 已有人工签字 `Technical Review Approved`
@@ -863,7 +917,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - 只在 design.md「测试 Seam 决策」区块声明的公共边界写测试；未声明的边界先问
 - red before green；一次一个切片，切片内一次一个行为（一个失败测试 → 最小实现 → 下一个）
 - 每完成一个任务项：跑单个测试文件 + 类型检查；全部完成：跑完整测试套件
-- 重构不进 red-green 循环，留给 `/openspec:quality`（Phase 5.5）
+- 重构不进 red-green 循环，留给 `/opsx:quality`（Phase 5.5）
 - 规则唯一事实源：`skills/openspec-apply-change/shared/tdd-discipline.md`
 
 **产出**：
@@ -874,7 +928,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 ## 📐 Phase 5.5: 代码质量评审
 
-**入口**：`/openspec:quality <change-name>`
+**入口**：`/opsx:quality <change-name>`
 
 **做什么**：
 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离。
@@ -892,7 +946,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 ### 核心流程
 
-**入口**：`/openspec:verify <change-name>`
+**入口**：`/opsx:verify <change-name>`
 
 **三维校验**：
 - **Completeness**：`tasks.md` 勾选是否完整、spec 中的 requirement 是否都已实现
@@ -908,11 +962,11 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 ### 门禁特有的补充：条件核对
 
-`/openspec:verify` 不认识 `review-summary.md`（那是门禁产物，非 OpenSpec 原生 artifact），因此它**不会**核对「有条件通过」的条件。
+`/opsx:verify` 不认识 `review-summary.md`（那是门禁产物，非 OpenSpec 原生 artifact），因此它**不会**核对「有条件通过」的条件。
 
 **必须单独做**：
 
-1. 先跑一次 `/openspec:overview <change>` 刷新「规则条件可追溯矩阵」
+1. 先跑一次 `/opsx:overview <change>` 刷新「规则条件可追溯矩阵」
 2. 再逐条核对矩阵中每项是否真的实现
 
 矩阵已把 `proposal` 验收条件、`spec` scenario、`design` 约束、`review-summary` 的「有条件通过」四类来源合并到一张表。
@@ -946,7 +1000,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 ## Phase 6 交叉核对清单
 
-在 `/openspec:verify` 的标准三维校验基础上，补充以下人工核对项（这些是 `/openspec:verify` 不检查的）：
+在 `/opsx:verify` 的标准三维校验基础上，补充以下人工核对项（这些是 `/opsx:verify` 不检查的）：
 
 ### 1. 回溯第一性原理（设计 → 需求）
 - [ ] 实现是否解决了 `proposal.md` 中识别的「底层问题」而非「表面需求」
@@ -1088,8 +1142,8 @@ git check-ignore -v openspec/changes/*/review-summary.md openspec/changes/*/revi
 
 | 防线 | 覆盖范围 | 拦不住什么 |
 |------|---------|-----------|
-| ① `hooks/check-review-approval.sh`（PreToolUse/Bash） | Bash 执行 `openspec apply` / `openspec apply` | **`/openspec:apply` 斜杠命令与 skill 调用** —— 它们不产生 Bash 命令，PreToolUse(Bash) 永不触发 |
-| ② apply skill / command 的前置校验 | `/openspec:apply` 与 `openspec-apply-change` 两条路径 | 提示词级约束，可能被用户明确指令覆盖 |
+| ① `skills/openspec-technical-review/hooks/check-review-approval.sh`（PreToolUse/Bash） | Bash 执行 `openspec apply` / `openspec apply` | **`/opsx:apply` 斜杠命令与 skill 调用** —— 它们不产生 Bash 命令，PreToolUse(Bash) 永不触发 |
+| ② apply skill / command 的前置校验 | `/opsx:apply` 与 `openspec-apply-change` 两条路径 | 提示词级约束，可能被用户明确指令覆盖 |
 | ③ 人工签字 + PR review | 最终把关 | 签字人不看就签 |
 
 **始终存在的绕过路径**：直接让 Agent 用 Edit/Write 改代码，完全不经过任何 apply 入口 —— 三道防线全部看不到。
@@ -1188,8 +1242,8 @@ jq --version
 ### 操作命令
 
 ```bash
-/openspec:review <change>                          # 全量重走
-/openspec:review <change> --roles security         # 增量重走，其余沿用上轮 review/<role>.md
+/opsx:review <change>                          # 全量重走
+/opsx:review <change> --roles security         # 增量重走，其余沿用上轮 review/<role>.md
 ```
 
 **裁决始终对全部纳入维度求值**：沿用维度若仍有未闭环 Blocker，门禁仍 `BLOCKED`。
@@ -1218,5 +1272,3 @@ jq --version
 
 - **快速上手指南**：[quickstart-guide.md](quickstart-guide.md)（新手必读）
 - **文档导航页**：[README.md](README.md)（三个场景入口）
-- **技术评审改进总结**：[../docs/technical-review-improvement-summary.md](../docs/technical-review-improvement-summary.md)
-- **业务映射说明**：[../docs/technical-review-business-mapping.md](../docs/technical-review-business-mapping.md)

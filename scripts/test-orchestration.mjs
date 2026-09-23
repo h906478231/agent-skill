@@ -1,4 +1,4 @@
-import { readFile, access } from 'node:fs/promises'
+import { readFile, access, readdir } from 'node:fs/promises'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -12,20 +12,45 @@ const route = (action = 'apply', extra = {}) => done({ action, gateLevel: 'L1', 
 
 test('入口不再加载独立编排 skill，必要判定内置', async () => {
   const removedSkill = 'openspec-orchestration'
+  assert.ok(!source.includes(removedSkill), 'workflow 不应引用已废弃的编排 skill')
+
+  // 入口清单动态收集，避免硬编码路径随时间失效
+  // （历史上曾指向 .opencode/agents/*.md 等从未提交的文件，导致本测试长期假红）。
+  const [workflows, commands, agents, skillDirs] = await Promise.all([
+    readdir(new URL('../workflow/', import.meta.url)).then((fs) => fs.filter((f) => f.endsWith('.workflow.js'))),
+    readdir(new URL('../claude/commands/opsx/', import.meta.url)).then((fs) => fs.filter((f) => f.endsWith('.md'))),
+    readdir(new URL('../claude/agents/', import.meta.url)).then((fs) => fs.filter((f) => f.endsWith('.md'))),
+    readdir(new URL('../skills/', import.meta.url)),
+  ])
+
+  // skills/ 下只有真正含 SKILL.md 的目录才是 skill，其余（空目录残留）跳过
+  const skillFiles = []
+  for (const dir of skillDirs) {
+    const rel = `../skills/${dir}/SKILL.md`
+    try {
+      await access(new URL(rel, import.meta.url))
+      skillFiles.push(rel)
+    } catch {
+      continue
+    }
+  }
+
   const entries = [
-    '../.opencode/agents/yunzhou-coordinator.md', '../.opencode/agents/coder.md',
-    '../.opencode/agents/reviewer.md', './yunzhou-opencode.sh',
+    ...workflows.map((f) => `../workflow/${f}`),
+    ...commands.map((f) => `../claude/commands/opsx/${f}`),
+    ...agents.map((f) => `../claude/agents/${f}`),
+    ...skillFiles,
   ]
-  assert.ok(!source.includes(removedSkill))
+
   for (const entry of entries) {
     const text = await readFile(new URL(entry, import.meta.url), 'utf8')
-    assert.ok(!text.includes(removedSkill), entry)
+    assert.ok(!text.includes(removedSkill), `${entry} 不应引用已废弃的编排 skill`)
   }
+
+  // 独立编排 skill 必须已下线，其职责改为内置于 workflow
   await assert.rejects(access(new URL(`../skills/${removedSkill}/SKILL.md`, import.meta.url)), { code: 'ENOENT' })
-  const coordinator = await readFile(new URL(entries[0], import.meta.url), 'utf8')
   for (const rule of ['L0', 'L1', 'L2', 'L3', 'needs_decision', 'discussion-log.md', '禁止代签']) {
     assert.ok(source.includes(rule), `workflow 缺少规则：${rule}`)
-    assert.ok(coordinator.includes(rule), `coordinator 缺少规则：${rule}`)
   }
 })
 

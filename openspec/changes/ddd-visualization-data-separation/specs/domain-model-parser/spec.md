@@ -4,7 +4,7 @@
 
 ### Requirement: Parse domain-model.md structure
 
-系统必须能够解析 `domain-model.md` 文件，提取领域事件、领域命令、Policy 和聚合的结构化数据。
+系统SHALL能够解析 `domain-model.md` 文件，提取领域事件、领域命令、Policy 和聚合的结构化数据。
 
 #### Scenario: 成功解析标准格式的 domain-model.md
 
@@ -33,7 +33,7 @@
 
 ### Requirement: 处理事件和命令的数组格式
 
-系统必须将 Markdown 中的事件和命令编号字符串转换为数组格式。
+系统SHALL将 Markdown 中的事件和命令编号字符串转换为数组格式。
 
 #### Scenario: Policy 的监听事件转为数组
 
@@ -52,7 +52,7 @@
 
 ### Requirement: 错误处理和提示
 
-系统必须在解析失败时提供清晰的错误提示，指出 `domain-model.md` 中的格式问题。
+系统SHALL在解析失败时提供清晰的错误提示，指出 `domain-model.md` 中的格式问题。
 
 #### Scenario: domain-model.md 文件不存在
 
@@ -76,7 +76,7 @@
 
 ### Requirement: 支持多子域格式
 
-系统必须支持解析包含多个子域的 `domain-model.md` 文件。
+系统SHALL支持解析包含多个子域的 `domain-model.md` 文件。
 
 #### Scenario: 单子域文档
 
@@ -90,7 +90,7 @@
 
 ### Requirement: 保留原始业务语义
 
-系统必须保留 `domain-model.md` 中的业务含义、前置条件、不变量等描述性字段。
+系统SHALL保留 `domain-model.md` 中的业务含义、前置条件、不变量等描述性字段。
 
 #### Scenario: 保留事件的业务含义
 

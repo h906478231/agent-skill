@@ -33,9 +33,13 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 openspec-technical-review/
 ├── SKILL.md                          # 本文件：门禁编排流程
 ├── shared/                           # 共用规则的唯一事实源，roles / 命令 / workflow 一律引用不复制
-│   ├── finding-format.md             #   finding 七字段 + 三条硬规则 + verdict + 输出骨架
-│   ├── closed-loop-verification.md   #   重走门禁时如何验证上轮 Blocker 真的闭环
+│   ├── finding-format.md             #   finding 七字段 + 五条硬规则 + verdict + 输出骨架
+│   ├── gate-levels.md                #   L0–L3 门禁适用范围分级与升级信号
 │   ├── gate-policy.md                #   裁决判定 / 重走范围 / 牵连关系 / 驳回与 risk accepted
+│   ├── mvp-review-standard.md        #   MVP 方案下只检查阻断性问题的评审标准
+│   ├── phases.md                     #   全流程 Phase 定义与各阶段需加载的规则
+│   ├── phase6-verification.md        #   Phase 6 门禁侧的条件核对与增强交叉核对清单
+│   ├── closed-loop-verification.md   #   重走门禁时如何验证上轮 Blocker 真的闭环
 │   └── apply-gate-check.md           #   apply 前的人工签字校验（apply skill 与 command 共用）
 ├── roles/                            # 五个角色：只保留角色定位 + 审查清单 + 本维度差异
 │   ├── architecture.md  concurrency.md  performance.md  database.md  security.md
@@ -95,7 +99,7 @@ done
    - 读取 `design.md` 的"推荐方案"或"Decisions"部分
    - 判断是否为 **MVP 方案**（标志：明确说明"优先复用现有能力"/"最小化实现"/"快速验证"）
    - 如果是 MVP，告知用户：**技术评审将使用 MVP 标准，只检查阻断性问题**
-5. 判定评审范围：参照 [门禁分级标准](../../shared/workflow/gate-levels.md) 向用户确认跑哪些维度。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动五角色。
+5. 判定评审范围：参照 [门禁分级标准](shared/gate-levels.md) 向用户确认跑哪些维度。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动五角色。
 6. 在 `changeRoot` 下创建 `review/` 目录。
 
 ## 执行步骤
@@ -123,7 +127,7 @@ done
 5. **若 `design.md` 末尾存在「## 评审意见闭环记录」区块**（说明这是重走门禁）：把该区块一并放进 prompt，并要求子 agent 先按 `<SKILL_DIR>/shared/closed-loop-verification.md` 做上轮闭环验证、再做本轮审查。子 agent 是全新上下文，没有上轮记忆 —— 不给该区块，它要么重复报同一问题，要么完全漏掉验证；
 6. 「把结论写入 `review/<role>.md`」。
 
-finding 字段、三条硬规则（白话 / 可复现触发场景 / 不修的后果）与维度结论取值，统一见 `shared/finding-format.md`，此处不重复。
+finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一句话白话 / 触发场景可复现 / 不修的后果）与维度结论取值，统一见 `shared/finding-format.md`，此处不重复。
 
 > 若当前环境支持 Pi Workflow，可改用 `technical-review-gate.workflow.js` 一次性并行 fan-out（`args = { change, roles, skillDir }`；`skillDir` 省略时脚本会让子 agent 自行探测，显式传入更省一次探测）。二者产出一致。
 >
@@ -149,7 +153,7 @@ finding 字段、三条硬规则（白话 / 可复现触发场景 / 不修的后
    | quota_usage 表 | 表结构 + 索引 | CONC-03 | 小（加字段和索引） |
    | staging_batch 表 | 表结构 + 状态机 | CONC-06 | 大（新增状态机逻辑） |
    ```
-4. **执行误报检测**：按 `shared/false-positive-detection.md` 规则检测可能的误报或过度建议。生成"疑似误报检测"区块，列出需要人工复核的 finding。
+4. **执行误报检测**：按 `shared/gate-policy.md` 第 4 节「不认可评审结论：驳回与 risk accepted」的规则检测可能的误报或过度建议（判据之一见 `shared/finding-format.md` 硬规则 4：写不出可复现触发场景的问题降级为 Major）。生成"疑似误报检测"区块，列出需要人工复核的 finding。
 5. **门禁裁决**：判定规则见 `shared/gate-policy.md`。**注意**：在计算裁决时，应考虑误报检测建议降级后的级别（如果用户选择应用自动降级）。
 6. **各维度结论一览表**：维度 | 结论 | Blocker 数 | Major 数 | Minor 数 | 本轮重跑/沿用上轮。
 7. **疑似误报检测**：列出可能的误报、过度建议、跨维度矛盾等，供人工复核。包含"自动降级建议"和"需人工判断"两类。
@@ -191,7 +195,7 @@ finding 字段、三条硬规则（白话 / 可复现触发场景 / 不修的后
   - Phase 2 候选方案交叉验证 → 确保方案选择有依据
   - **Phase 3 五维度交叉验证（当前阶段）** → 确保方案无盲区、发现跨维度冲突
 - 本门禁：`/opsx:review`（本 skill）产出 `review/*.md` + `review-summary.md`，停在人工确认。
-- 下游：人工批准后 `/opsx:apply` 编码 → `/opsx:quality` 实现层代码质量评审 → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）三维校验 → `openspec archive`。完整流程见 [研发流程 Phases 定义](../../shared/workflow/phases.md)。
+- 下游：人工批准后 `/opsx:apply` 编码 → `/opsx:quality` 实现层代码质量评审 → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）三维校验 → `openspec archive`。完整流程见 [研发流程 Phases 定义](shared/phases.md)。
 - 角色分工：OpenSpec = 流程与设计文档中心；本门禁 = AI 评审编排；Coding Agent = 代码执行者。
 
 ## 交叉验证机制说明

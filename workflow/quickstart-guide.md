@@ -79,7 +79,7 @@ Q3: 命中以下任一？
 ### Step 2: 需求澄清 + 方案探索
 
 ```bash
-/openspec:explore add-user-nickname
+/opsx:explore add-user-nickname
 ```
 
 **AI会问你问题**（你需要回答）：
@@ -98,7 +98,7 @@ Q3: 命中以下任一？
 ### Step 3: 技术评审门禁
 
 ```bash
-/openspec:review add-user-nickname
+/opsx:review add-user-nickname
 ```
 
 **AI自动并行评审**（L1只跑2个维度）：
@@ -183,7 +183,7 @@ Technical Review Approved: 你的名字  2026-08-23
 | DB-01 | database | nickname 未加索引 | 增加索引：idx_nickname | §3.1 数据库设计 | R1 |
 ```
 
-3. 重新跑门禁：`/openspec:review add-user-nickname --roles database`（只重跑被修改的维度）
+3. 重新跑门禁：`/opsx:review add-user-nickname --roles database`（只重跑被修改的维度）
 
 ---
 
@@ -192,7 +192,7 @@ Technical Review Approved: 你的名字  2026-08-23
 **前置条件**：`review-summary.md` 已有人工签字
 
 ```bash
-/openspec:apply add-user-nickname
+/opsx:apply add-user-nickname
 ```
 
 **AI会做**：
@@ -208,7 +208,7 @@ Technical Review Approved: 你的名字  2026-08-23
 ### Step 6: 代码质量评审（可选但推荐）
 
 ```bash
-/openspec:quality add-user-nickname
+/opsx:quality add-user-nickname
 ```
 
 **检查项**：
@@ -227,7 +227,7 @@ Technical Review Approved: 你的名字  2026-08-23
 ### Step 7: 验证
 
 ```bash
-/openspec:verify add-user-nickname
+/opsx:verify add-user-nickname
 ```
 
 **三维校验**：
@@ -238,14 +238,14 @@ Technical Review Approved: 你的名字  2026-08-23
 **另外逐条核对条件**（如果 Step 4 有"有条件通过"）：
 - 检查 C-01 的长度校验是否真的实现了
 
-**有 CRITICAL 问题？** → 修复后重跑 `/openspec:verify`
+**有 CRITICAL 问题？** → 修复后重跑 `/opsx:verify`
 
 ---
 
 ### Step 8: 归档
 
 ```bash
-/openspec:archive add-user-nickname
+/opsx:archive add-user-nickname
 ```
 
 **做了什么**：
@@ -289,17 +289,17 @@ Technical Review Approved: 你的名字  2026-08-23
 
 ### Q3: 门禁跑完了但我直接让Agent改代码，会被拦吗？
 
-**A**: 不会。门禁只能拦正常路径（`/openspec:apply`），拦不住"直接让Agent用Edit改代码"。
+**A**: 不会。门禁只能拦正常路径（`/opsx:apply`），拦不住"直接让Agent用Edit改代码"。
 
 **兜底靠什么**：PR review + CI。
 
 ---
 
-### Q4: `/openspec:review` 提示缺 design.md？
+### Q4: `/opsx:review` 提示缺 design.md？
 
 **A**: 门禁前置校验要求 proposal.md 和 design.md 都存在。
 
-**解决**：先回 `/openspec:explore` 补齐设计文档。
+**解决**：先回 `/opsx:explore` 补齐设计文档。
 
 ---
 
@@ -329,7 +329,7 @@ Technical Review Approved: 你的名字  2026-08-23
 **A**: 跑一次：
 
 ```bash
-/openspec:overview add-user-nickname
+/opsx:overview add-user-nickname
 ```
 
 **产出**：`overview.md`，包含：
@@ -352,7 +352,7 @@ Technical Review Approved: 你的名字  2026-08-23
 如果仍然看不懂，可以生成详细解析：
 
 ```bash
-/openspec:explain --finding DB-01
+/opsx:explain <change-name> --finding DB-01
 ```
 
 产出 `review/finding-details/DB-01.md`（完整业务场景 + 代码示例 + 实施指南）。
@@ -363,15 +363,15 @@ Technical Review Approved: 你的名字  2026-08-23
 
 ### 想了解完整流程？
 
-→ [OpenSpec-AI-研发流程.md](OpenSpec-AI-研发流程.md)（717行完整文档）
+→ [OpenSpec-AI-研发流程.md](OpenSpec-AI-研发流程.md)（1222 行完整文档）
 
 ### 想了解新架构（方案设计）？
 
-→ [OpenSpec 工作流对比](../docs/openspec-workflow-comparison.md)
+→ OpenSpec 工作流对比（原 `docs/openspec-workflow-comparison.md` 已不在仓库中）
 
 ### 想在团队推广？
 
-→ [团队分享会演讲稿](../docs/team-sharing-speech.md)（15分钟PPT）
+→ [团队分享会演讲稿](演讲-从一问一答到工程化工作流.md)（20–30分钟讲稿）
 
 ---
 

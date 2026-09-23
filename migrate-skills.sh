@@ -1,9 +1,10 @@
 #!/bin/bash
-# Migrate skills and shared directories to Claude Code
+# Migrate skills and workflows to Claude Code
 
 set -e
 
-REPO=/Users/macbook/Documents/ideaProject/agent-skills
+# 以脚本自身位置推算仓库根目录，不写死个人绝对路径
+REPO="$(cd "$(dirname "$0")" && pwd)"
 DEST_BASE="$HOME/.cc-switch"
 CLAUDE_BASE="$HOME/.claude"
 
@@ -16,18 +17,7 @@ mkdir -p "$CLAUDE_BASE/workflows"
 echo "Starting migration from: $REPO"
 echo "Destination: $DEST_BASE"
 echo ""
-
-# 1. Migrate root-level shared directory
-if [ -d "$REPO/shared" ]; then
-  echo "Migrating root shared directory..."
-  rm -rf "$DEST_BASE/shared"
-  cp -R "$REPO/shared" "$DEST_BASE/shared"
-  ln -sfn "$DEST_BASE/shared" "$CLAUDE_BASE/shared"
-  echo "✓ Root shared directory migrated"
-  echo ""
-fi
-
-# 2. Migrate individual skills
+# 1. Migrate individual skills
 count=0
 echo "Migrating skills..."
 for skill_dir in "$REPO/skills"/*/; do
@@ -38,6 +28,12 @@ for skill_dir in "$REPO/skills"/*/; do
   # Skip hidden directories (like .DS_Store)
   [[ "$skill_name" == .* ]] && continue
 
+  # 跳过没有 SKILL.md 的目录：这类残留目录不是有效 skill，装到目标目录会被扫描器误判
+  if [ ! -f "$skill_dir/SKILL.md" ]; then
+    echo "  - $skill_name (跳过：缺少 SKILL.md)"
+    continue
+  fi
+
   echo "  → $skill_name"
   rm -rf "$DEST_BASE/skills/$skill_name"
   cp -R "$skill_dir" "$DEST_BASE/skills/$skill_name"
@@ -46,7 +42,7 @@ for skill_dir in "$REPO/skills"/*/; do
   ((count++))
 done
 
-# 3. Migrate workflows
+# 2. Migrate workflows
 workflow_count=0
 if [ -d "$REPO/workflow" ]; then
   echo ""
@@ -66,7 +62,6 @@ fi
 
 echo ""
 echo "✓ Migration complete!"
-echo "  - 1 shared directory"
 echo "  - $count skills"
 echo "  - $workflow_count workflows"
 echo ""

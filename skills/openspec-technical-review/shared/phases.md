@@ -18,7 +18,7 @@
 | 人工门禁 | 人工                               | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply`                    | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**（规则见 `../../openspec-apply-change/shared/tdd-discipline.md`） | 代码 + `tasks.md` 勾选 | 是 |
 | Phase 5.5 代码质量评审 | `/opsx:quality`                  | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
-| Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
+| Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对**（门禁侧的条件核对与增强交叉核对清单见 `phase6-verification.md`） | 校验报告（对话内） | 修复项 |
 | 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 
 ## 全景流程图
@@ -38,7 +38,7 @@ OpenSpec Explore
       ▼
 技术方案确认（design.md 含推荐方案）
       │
-      ├─ tasks.md 任务拆分：垂直切片 + 阻塞 DAG（openspec-propose 的 shared/task-slicing.md）
+      ├─ tasks.md 任务拆分：垂直切片 + 阻塞 DAG（`../../openspec-propose/shared/task-slicing.md`）
       │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户三问确认后定稿
       │
       ├─ /opsx:overview → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
@@ -64,7 +64,7 @@ OpenSpec Explore
       ▼                                                        │
       ◄────────────────────────────────────────────────────────┘
 OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/测试）
-      │  ※ 按切片实施 + TDD 纪律：只在声明的 Seam 测试，red before green（openspec-apply-change 的 shared/tdd-discipline.md）
+      │  ※ 按切片实施 + TDD 纪律：只在声明的 Seam 测试，red before green（`../../openspec-apply-change/shared/tdd-discipline.md`）
       ▼
 代码质量评审（Phase 5.5）→ /opsx:quality → review/code-quality.md
       │  查 diff 的重复率/可读性/死代码/复杂度/设计偏离；未闭环 Blocker 不得归档

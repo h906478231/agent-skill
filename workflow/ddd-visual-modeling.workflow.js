@@ -306,10 +306,13 @@ const copyThemesResult = await agent(
     }
 );
 
+let themesCopied = true;
 if (copyThemesResult && copyThemesResult.includes('SUCCESS')) {
     log(`✅ 已复制主题配置: ${themesOutputPath}`);
 } else {
-    log(`⚠️  主题配置复制可能失败，将使用内置默认主题`);
+    // 主题缺失不阻断交付：页面会回退到内置默认主题，但必须在结果里如实记录
+    themesCopied = false;
+    log(`⚠️  主题配置复制失败，页面将使用内置默认主题`);
 }
 
 // 4.4 复制 HTML 模板
@@ -322,17 +325,30 @@ const copyHtmlResult = await agent(
     }
 );
 
+let htmlCopied = false;
 if (copyHtmlResult && copyHtmlResult.includes('SKIPPED')) {
+    htmlCopied = true;
     log(`ℹ️  HTML 文件已存在，跳过复制: ${outputHtmlPath}`);
 } else if (copyHtmlResult && copyHtmlResult.includes('SUCCESS')) {
+    htmlCopied = true;
     log(`✅ 已复制 HTML 模板: ${outputHtmlPath}`);
 } else {
-    log(`⚠️  HTML 模板复制可能失败，但不影响主流程`);
+    log(`❌ HTML 模板复制失败`);
 }
 
 // ============================================
 // 完成
 // ============================================
+
+// HTML 是本次交付的主产物：复制失败说明产物不完整，必须失败关闭。
+// 只打一行警告就返回 success 会让调用方拿到一个打不开的产物，属静默失败。
+if (!htmlCopied) {
+    return {
+        success: false,
+        error: `HTML 模板复制失败，产物不完整：${outputHtmlPath}`,
+        outputJsonPath: outputJsonPath
+    };
+}
 log('');
 log('🎉 可视化文件生成完成！');
 log('');
@@ -366,6 +382,7 @@ return {
     success: true,
     outputJsonPath: outputJsonPath,
     outputHtmlPath: outputHtmlPath,
+    themesCopied: themesCopied,
     stats: {
         commands: Object.keys(modelData.commands).length,
         events: Object.keys(modelData.events).length,

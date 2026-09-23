@@ -6,7 +6,7 @@
   "main": "yunzhou-mcp-server.js",
   "scripts": {
     "start": "node yunzhou-mcp-server.js",
-    "test": "node test-mcp-server.js"
+    "test": "node --check yunzhou-mcp-server.js"
   },
   "keywords": [
     "yunzhou",

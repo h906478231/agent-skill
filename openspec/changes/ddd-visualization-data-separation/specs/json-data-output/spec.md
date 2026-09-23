@@ -4,7 +4,7 @@
 
 ### Requirement: 输出标准化的 ddd-model.json 格式
 
-系统必须输出符合标准 JSON Schema 的 `ddd-model.json` 文件，包含 commands、events、aggregates、policies 四个顶层对象。
+系统SHALL输出符合标准 JSON Schema 的 `ddd-model.json` 文件，包含 commands、events、aggregates、policies 四个顶层对象。
 
 #### Scenario: 标准 JSON 结构
 
@@ -33,7 +33,7 @@
 
 ### Requirement: 数据完整性校验
 
-系统必须在输出前校验数据的完整性和一致性。
+系统SHALL在输出前校验数据的完整性和一致性。
 
 #### Scenario: 引用一致性检查
 
@@ -57,7 +57,7 @@
 
 ### Requirement: 文件输出路径配置
 
-系统必须支持配置 `ddd-model.json` 的输出路径。
+系统SHALL支持配置 `ddd-model.json` 的输出路径。
 
 #### Scenario: 默认输出路径
 
@@ -76,7 +76,7 @@
 
 ### Requirement: JSON 格式化和可读性
 
-系统必须输出格式化的、易读的 JSON 文件。
+系统SHALL输出格式化的、易读的 JSON 文件。
 
 #### Scenario: 缩进和换行
 
@@ -95,7 +95,7 @@
 
 ### Requirement: 增量更新支持
 
-系统必须支持在已有 `ddd-model.json` 的基础上进行增量更新。
+系统SHALL支持在已有 `ddd-model.json` 的基础上进行增量更新。
 
 #### Scenario: 检测已有文件
 
@@ -109,7 +109,7 @@
 
 ### Requirement: Git 友好性
 
-系统输出的 JSON 文件必须便于 Git diff 和版本管理。
+系统输出的 JSON 文件SHALL便于 Git diff 和版本管理。
 
 #### Scenario: 稳定的键排序
 

@@ -94,8 +94,11 @@ if (!Number.isSafeInteger(input.taskId) || input.taskId <= 0 || !['discuss', 'in
   return { status: STATUS.BLOCKED, reason: '需要显式 taskId 和有效 intent；默认 intent=plan，不自动编码' }
 }
 
+// 调用方可显式传 codeRepo 覆盖项目配置；未传时由 Fetch 阶段按任务匹配项目配置确定。
+// 参数必须真正下发 —— 否则向导里"调用时指定 codeRepo"的提示落不到实处。
+const requestedRepo = typeof input.codeRepo === 'string' && input.codeRepo.trim() ? input.codeRepo.trim() : null;
 const fetched = await run('Fetch',
-  '只读拉取指定云舟任务及配置。通过 codeRepo 参数或匹配项目配置确定仓库，核实任务所属项目与仓库；无法确认则 blocked。返回 task、codeRepo（已验证绝对路径）。不自动挑选另一个任务，不打印密钥或完整配置。')
+  `只读拉取指定云舟任务及配置。${requestedRepo ? `调用方已指定代码仓库 ${requestedRepo}，以它为准并核实任务确实属于该项目；` : '调用方未指定代码仓库，按任务匹配项目配置确定；'}无法确认则 blocked。返回 task、codeRepo（已验证绝对路径）。不自动挑选另一个任务，不打印密钥或完整配置。`)
 if (fetched.status !== STATUS.DONE || !fetched.task || fetched.task.id !== input.taskId
   || typeof fetched.codeRepo !== 'string' || !fetched.codeRepo.startsWith('/')) {
   return { status: STATUS.BLOCKED, reason: '任务与仓库未确认', result: fetched }

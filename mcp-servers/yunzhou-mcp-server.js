@@ -9,6 +9,7 @@
  * - yunzhou_list_tasks: 列出清单任务
  * - yunzhou_add_comment: 添加任务评论
  * - yunzhou_update_task: 更新任务状态
+ * - yunzhou_get_config: 读取云舟配置（返回前自动过滤敏感字段）
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
@@ -17,13 +18,14 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 
-const execAsync = promisify(exec)
+// 用 execFile（参数以数组传递、不经过 shell）替代 exec，避免外部可控参数被 shell 解析造成命令注入
+const execFileAsync = promisify(execFile)
 
 // 创建 MCP 服务器
 const server = new Server(
@@ -195,11 +197,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
     }
   } catch (error) {
+    // 错误堆栈只写 stderr 日志（stdio MCP 约定使用 console.error），不返回给模型，避免泄露内部路径等实现细节
+    console.error(`[yunzhou-mcp] 执行失败: ${error.message}`)
+    console.error(error.stack)
     return {
       content: [
         {
           type: 'text',
-          text: `执行失败: ${error.message}\n\n堆栈:\n${error.stack}`
+          text: `执行失败: ${error.message}`
         }
       ],
       isError: true
@@ -213,11 +218,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function handleFetchTask(args) {
   const { task_id, profile = 'default' } = args
 
-  console.error(`[yunzhou-mcp] 拉取任务 #${task_id}`)
+  // 数值型参数显式校验：task_id 必须是正整数，非法值直接返回错误响应，不进入命令行
+  const taskId = Number(task_id)
+  if (!Number.isInteger(taskId) || taskId <= 0) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `非法的任务 ID: ${task_id}（应为正整数）`
+        }
+      ],
+      isError: true
+    }
+  }
 
-  const { stdout, stderr } = await execAsync(
-    `flows-cli task get --task-id ${task_id} --profile ${profile} --json`
-  )
+  console.error(`[yunzhou-mcp] 拉取任务 #${taskId}`)
+
+  let result
+  try {
+    // 参数以数组传递，外部输入不会被 shell 解释为命令
+    result = await execFileAsync('flows-cli', [
+      'task', 'get',
+      '--task-id', String(taskId),
+      '--profile', String(profile),
+      '--json'
+    ])
+  } catch (error) {
+    // execFile 失败时子进程 stderr 挂在错误对象上，先保留原有 stderr 日志，再抛给上层统一返回错误响应
+    if (error.stderr) {
+      console.error(`[yunzhou-mcp] stderr: ${error.stderr}`)
+    }
+    throw error
+  }
+
+  const { stdout, stderr } = result
 
   if (stderr) {
     console.error(`[yunzhou-mcp] stderr: ${stderr}`)
@@ -264,17 +298,52 @@ async function handleFetchTask(args) {
   }
 }
 
+// 列表任务返回数量限制，与 yunzhou_list_tasks 工具 schema 中的 minimum/maximum 保持一致，避免出现魔法值
+const MIN_TASK_LIMIT = 1
+const MAX_TASK_LIMIT = 100
+
 /**
  * 列出清单任务
  */
 async function handleListTasks(args) {
   const { column_id, completion = 'open', limit = 10, profile = 'default' } = args
 
+  // 数值型参数显式校验：limit 必须是 1~100 的整数（与工具 schema 的 minimum/maximum 一致），非法值直接返回错误响应
+  const taskLimit = Number(limit)
+  if (!Number.isInteger(taskLimit) || taskLimit < MIN_TASK_LIMIT || taskLimit > MAX_TASK_LIMIT) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `非法的 limit: ${limit}（应为 ${MIN_TASK_LIMIT}~${MAX_TASK_LIMIT} 之间的整数）`
+        }
+      ],
+      isError: true
+    }
+  }
+
   console.error(`[yunzhou-mcp] 列出清单任务 (column: ${column_id})`)
 
-  const { stdout, stderr } = await execAsync(
-    `flows-cli task list --column-id ${column_id} --completion ${completion} --limit ${limit} --profile ${profile} --json`
-  )
+  let result
+  try {
+    // 参数以数组传递，外部输入不会被 shell 解释为命令
+    result = await execFileAsync('flows-cli', [
+      'task', 'list',
+      '--column-id', String(column_id),
+      '--completion', String(completion),
+      '--limit', String(taskLimit),
+      '--profile', String(profile),
+      '--json'
+    ])
+  } catch (error) {
+    // execFile 失败时子进程 stderr 挂在错误对象上，先保留原有 stderr 日志，再抛给上层统一返回错误响应
+    if (error.stderr) {
+      console.error(`[yunzhou-mcp] stderr: ${error.stderr}`)
+    }
+    throw error
+  }
+
+  const { stdout, stderr } = result
 
   if (stderr) {
     console.error(`[yunzhou-mcp] stderr: ${stderr}`)
@@ -322,24 +391,53 @@ async function handleListTasks(args) {
 async function handleAddComment(args) {
   const { task_id, content, external_key, profile = 'default' } = args
 
-  console.error(`[yunzhou-mcp] 添加评论到任务 #${task_id}`)
+  // 数值型参数显式校验：task_id 必须是正整数，非法值直接返回错误响应，不进入命令行
+  const taskId = Number(task_id)
+  if (!Number.isInteger(taskId) || taskId <= 0) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `非法的任务 ID: ${task_id}（应为正整数）`
+        }
+      ],
+      isError: true
+    }
+  }
+
+  console.error(`[yunzhou-mcp] 添加评论到任务 #${taskId}`)
 
   // 写入临时文件
   const tmpDir = os.tmpdir()
-  const tmpFile = path.join(tmpDir, `yunzhou-comment-${task_id}-${Date.now()}.md`)
+  // taskId 已归一化为整数，拼接出的文件名不会包含路径分隔符，避免路径穿越
+  const tmpFile = path.join(tmpDir, `yunzhou-comment-${taskId}-${Date.now()}.md`)
   await fs.writeFile(tmpFile, content, 'utf-8')
 
   try {
-    const cmd = [
-      'flows-cli task comment add',
-      `--task-id ${task_id}`,
-      `--content-file "${tmpFile}"`,
-      external_key ? `--external-key "${external_key}"` : '',
-      `--profile ${profile}`,
-      '--json'
-    ].filter(Boolean).join(' ')
+    // 参数以数组传递，不再经过 shell，因此临时文件路径和外键都不需要手工加引号
+    const cliArgs = [
+      'task', 'comment', 'add',
+      '--task-id', String(taskId),
+      '--content-file', tmpFile
+    ]
+    // external_key 为可选参数，仅在显式传入时追加，保持与原命令参数顺序和语义一致
+    if (external_key) {
+      cliArgs.push('--external-key', String(external_key))
+    }
+    cliArgs.push('--profile', String(profile), '--json')
 
-    const { stdout, stderr } = await execAsync(cmd)
+    let result
+    try {
+      result = await execFileAsync('flows-cli', cliArgs)
+    } catch (error) {
+      // execFile 失败时子进程 stderr 挂在错误对象上，先保留原有 stderr 日志，再抛给上层统一返回错误响应
+      if (error.stderr) {
+        console.error(`[yunzhou-mcp] stderr: ${error.stderr}`)
+      }
+      throw error
+    }
+
+    const { stdout, stderr } = result
 
     if (stderr) {
       console.error(`[yunzhou-mcp] stderr: ${stderr}`)
@@ -383,11 +481,26 @@ async function handleAddComment(args) {
 async function handleUpdateTask(args) {
   const { task_id, completed, profile = 'default' } = args
 
-  console.error(`[yunzhou-mcp] 更新任务 #${task_id}`)
+  // 数值型参数显式校验：task_id 必须是正整数，非法值直接返回错误响应，不进入命令行
+  const taskId = Number(task_id)
+  if (!Number.isInteger(taskId) || taskId <= 0) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `非法的任务 ID: ${task_id}（应为正整数）`
+        }
+      ],
+      isError: true
+    }
+  }
+
+  console.error(`[yunzhou-mcp] 更新任务 #${taskId}`)
 
   const params = []
   if (completed !== undefined) {
-    params.push(`--completed ${completed}`)
+    // 保持原命令的字符串化语义（true/false 原样透传），不做布尔归一化，避免改变调用方传入的取值
+    params.push('--completed', String(completed))
   }
 
   if (params.length === 0) {
@@ -402,15 +515,27 @@ async function handleUpdateTask(args) {
     }
   }
 
-  const cmd = [
-    'flows-cli task update',
-    `--task-id ${task_id}`,
+  const cliArgs = [
+    'task', 'update',
+    '--task-id', String(taskId),
     ...params,
-    `--profile ${profile}`,
+    '--profile', String(profile),
     '--json'
-  ].join(' ')
+  ]
 
-  const { stdout, stderr } = await execAsync(cmd)
+  let result
+  try {
+    // 参数以数组传递，外部输入不会被 shell 解释为命令
+    result = await execFileAsync('flows-cli', cliArgs)
+  } catch (error) {
+    // execFile 失败时子进程 stderr 挂在错误对象上，先保留原有 stderr 日志，再抛给上层统一返回错误响应
+    if (error.stderr) {
+      console.error(`[yunzhou-mcp] stderr: ${error.stderr}`)
+    }
+    throw error
+  }
+
+  const { stdout, stderr } = result
 
   if (stderr) {
     console.error(`[yunzhou-mcp] stderr: ${stderr}`)
@@ -441,6 +566,38 @@ async function handleUpdateTask(args) {
 }
 
 /**
+ * 匹配疑似凭据的字段名（不区分大小写）
+ * 采用黑名单式键名匹配做兜底，因为配置结构可能变化，白名单式过滤容易失效
+ */
+const SENSITIVE_FIELD_PATTERN = /token|secret|password|passwd|credential|cookie|auth|apikey|api_key/i
+
+/**
+ * 递归过滤对象/数组中的敏感字段
+ *
+ * @param {*} value 待过滤的任意 JSON 值
+ * @returns {*} 过滤后的副本；命中敏感键名的字段会整条丢弃，其余结构保持不变
+ */
+function filterSensitiveFields(value) {
+  if (Array.isArray(value)) {
+    return value.map(filterSensitiveFields)
+  }
+
+  if (value !== null && typeof value === 'object') {
+    const filtered = {}
+    for (const [key, item] of Object.entries(value)) {
+      // 命中敏感键名则整条丢弃，避免令牌、密钥等凭据进入模型上下文
+      if (SENSITIVE_FIELD_PATTERN.test(key)) {
+        continue
+      }
+      filtered[key] = filterSensitiveFields(item)
+    }
+    return filtered
+  }
+
+  return value
+}
+
+/**
  * 读取配置文件
  */
 async function handleGetConfig(args) {
@@ -453,6 +610,11 @@ async function handleGetConfig(args) {
   try {
     const content = await fs.readFile(configPath, 'utf-8')
     const config = JSON.parse(content)
+
+    // 防御性过滤：返回给模型前递归剔除键名疑似凭据的字段。
+    // 原因：~/.yunzhou/config.json 目前虽只有普通配置，但 CLI 后续版本可能把 token/secret 等凭据写入同一文件，
+    // 模型上下文不应包含这类敏感信息，因此在这里做统一兜底。
+    const safeConfig = filterSensitiveFields(config)
 
     if (project_name) {
       const project = config.projects?.find(p => p.name === project_name)
@@ -471,7 +633,7 @@ async function handleGetConfig(args) {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(project, null, 2)
+            text: JSON.stringify(filterSensitiveFields(project), null, 2)
           }
         ]
       }
@@ -481,7 +643,7 @@ async function handleGetConfig(args) {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(config, null, 2)
+          text: JSON.stringify(safeConfig, null, 2)
         }
       ]
     }
