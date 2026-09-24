@@ -107,11 +107,12 @@ npx skills remove --skill ddd-aggregate
 `openspec-verify-change` `openspec-propose` `openspec-apply-change`
 `openspec-update-change` `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
-### OpenSpec 流程增强（6 个）
+### OpenSpec 流程增强（7 个）
 
 | skill                      | 作用 | 命令 |
 |---|---|---|
 | `openspec-grill`               | Phase 1 决策树分轮访谈：消除隐含假设，沉淀 CONTEXT.md 领域术语与 ADR（项目级资产） | `/opsx:grill` |
+| `openspec-grill-policy`        | Grill 门禁规则事实源与检查工具：判定表、模板、`grill-check.js` / `create-grill.js`，含 install.sh 与门禁操作手册 | 由主 agent 加载 |
 | `openspec-technical-review`    | 编码前多维度技术评审门禁（含 `shared/` 规则事实源、roles、hook、workflow） | `/opsx:review` |
 | `openspec-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵 | `/opsx:overview` |
 | `openspec-code-quality`    | 实现层代码质量评审：对 diff 查重复率 / 可读性 / 死代码 / 复杂度 / 设计偏离 | `/opsx:quality` |

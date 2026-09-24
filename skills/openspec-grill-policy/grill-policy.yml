@@ -1,0 +1,347 @@
+# Lokra OpenSpec Grill 门禁规则
+#
+# 本文件定义什么情况下变更必须经过 openspec-grill 访谈
+# 最后更新：2026-09-23
+
+# ============================================================================
+# 强制 Grill 的变更类型
+# ============================================================================
+
+mandatory_grill:
+  # 按风险等级强制
+  risk_level:
+    - L3  # 核心变更：认证、授权、会话隔离、数据隔离
+    - L2  # 跨域变更：跨模块协议、HTTP契约、数据库schema
+
+  # 按变更属性强制
+  change_attributes:
+    - breaking: true          # 任何 BREAKING 变更
+    - new_module: true        # 新增独立模块
+    - security_sensitive: true # 安全敏感变更
+    - data_migration: true    # 涉及数据迁移
+
+  # 按影响范围强制
+  impact_scope:
+    - external_api: true      # 对外API变更
+    - protocol_change: true   # 协议变更
+    - authentication: true    # 认证/授权变更
+    - data_model: true        # 核心数据模型变更
+
+# ============================================================================
+# Grill 门禁检查点
+# ============================================================================
+
+grill_gate_criteria:
+  # 必须满足的条件（任一不满足则拒绝放行）
+  required:
+    - name: "discussion_log_exists"
+      description: "存在 grill-<name>/discussion-log.md"
+      blocking: true
+
+    - name: "grill_summary_exists"
+      description: "discussion-log.md 包含「Grill总结」章节"
+      blocking: true
+
+    - name: "critical_questions_answered"
+      description: "所有关键决策问题（Q1-QN）都有用户回答"
+      blocking: true
+
+    - name: "high_risk_assumptions_verified"
+      description: "所有 HIGH 风险假设都有验证计划或已验证"
+      blocking: true
+
+    - name: "context_md_updated"
+      description: "新术语已同步到 CONTEXT.md"
+      blocking: false  # 建议但不阻塞
+
+    - name: "adr_created_if_needed"
+      description: "重大决策已创建 ADR（如适用）"
+      blocking: false  # 建议但不阻塞
+
+  # Grill 决策状态
+  valid_decisions:
+    - "✓ 通过"           # 无条件放行
+    - "⚠️ 附加条件通过"  # 修复指定问题后放行
+    - "✗ 拒绝"           # 阻塞，回到 explore 修改
+
+# ============================================================================
+# Grill 产出要求
+# ============================================================================
+
+grill_outputs:
+  # discussion-log.md 必须包含的章节
+  required_sections:
+    - "## Grill总结"
+    - "### ✓ 已验证的假设"
+    - "### ✗ 未验证的假设"  # 或 ⚠️ 已识别但未完全解决的问题
+    - "### 建议行动"
+    - "### Grill门禁决策"
+
+  # Grill总结必须包含的字段
+  decision_fields:
+    - "状态"     # ✓ 通过 / ✗ 拒绝 / ⚠️ 附加条件通过
+    - "签字"     # 执行人
+    - "日期"     # YYYY-MM-DD
+    - "决策"     # 具体说明
+
+  # 风险等级标注（用于假设验证）
+  risk_levels:
+    - "🔴 HIGH"     # 安全、数据一致性、核心功能
+    - "🟡 MEDIUM"   # 用户体验、性能、可维护性
+    - "🟢 LOW"      # 优化、边缘场景
+
+# ============================================================================
+# 可选 Grill 的场景（建议但不强制）
+# ============================================================================
+
+optional_grill:
+  # L1 级别变更可选择性使用 Grill
+  - level: L1
+    when: "变更涉及多个子系统交互"
+
+  - level: L1
+    when: "变更包含重要性能假设"
+
+  # L0 级别通常不需要 Grill
+  - level: L0
+    description: "文档、配置变更通常不需要 Grill"
+
+# ============================================================================
+# Grill 访谈流程
+# ============================================================================
+
+grill_process:
+  # 标准访谈步骤
+  steps:
+    - step: 1
+      name: "前置加载"
+      actions:
+        - "读取 CONTEXT.md（统一语言）"
+        - "读取相关 ADR（已定大决策）"
+        - "读取现有 proposal/design（补盲区）"
+
+    - step: 2
+      name: "建决策树"
+      actions:
+        - "展开业务边界、状态生命周期、权限隔离"
+        - "展开一致性并发、容量性能、运维失败"
+
+    - step: 3
+      name: "frontier 分轮提问"
+      actions:
+        - "一轮只问 frontier 上的问题"
+        - "每个问题附推荐答案"
+        - "执行领域语言压力测试"
+        - "停下等答案，禁止自问自答"
+
+    - step: 4
+      name: "职责划分"
+      actions:
+        - "事实问题：agent 自己查（派子agent）"
+        - "决策问题：必须问用户"
+
+    - step: 5
+      name: "同步沉淀"
+      actions:
+        - "术语敲定 → 立即更新 CONTEXT.md"
+        - "重大决策 → 提议记 ADR"
+
+    - step: 6
+      name: "结束条件"
+      actions:
+        - "本次范围内的阻断 frontier 清空"
+        - "用户确认共识"
+        - "输出共识摘要"
+
+  # 结束后产出对接
+  output_mapping:
+    - from: "共识（根问题、约束、必要性）"
+      to: "proposal.md「第一性原理分析」区块"
+
+    - from: "领域术语"
+      to: "CONTEXT.md（项目根）"
+
+    - from: "重大权衡决策"
+      to: "docs/adr/NNNN-<slug>.md"
+
+    - from: "未决问题"
+      to: "discussion-log.md 或带入 explore 继续"
+
+# ============================================================================
+# 监控与度量
+# ============================================================================
+
+metrics:
+  # Grill 健康度指标
+  health_indicators:
+    - name: "grill_completion_rate"
+      description: "完成 Grill 的变更比例"
+      target: ">= 80%"  # L2/L3 变更的 80% 应完成 Grill
+
+    - name: "high_risk_assumption_coverage"
+      description: "HIGH 风险假设验证覆盖率"
+      target: "100%"
+
+    - name: "context_md_update_rate"
+      description: "新术语同步到 CONTEXT.md 的比例"
+      target: ">= 90%"
+
+    - name: "adr_creation_rate"
+      description: "重大决策创建 ADR 的比例"
+      target: ">= 70%"
+
+  # 定期审查
+  review_frequency:
+    - "每月审查 Grill 门禁执行情况"
+    - "每季度更新 grill-policy.yml"
+
+# ============================================================================
+# 示例场景
+# ============================================================================
+
+examples:
+  # 场景1: 必须 Grill
+  - scenario: "add-agent-streaming-replies"
+    level: "L2"
+    breaking: true
+    grill_required: true
+    reason: "跨运行时、HTTP 协议、用户可见协议变更"
+    actual: "未完成，只有1轮访谈"
+    consequence: "5个假设未验证（H1-H5）"
+
+  # 场景2: 优秀 Grill 示例
+  - scenario: "grill-business-operations-agent"
+    level: "L3"
+    breaking: true
+    grill_required: true
+    reason: "新增独立模块、ISV 接入、MCP 协议"
+    actual: "完成9轮访谈，产出 ADR-0003"
+    outcome: "✓ 通过（标杆案例）"
+
+  # 场景3: 不需要 Grill
+  - scenario: "cleanup-agent-documentation"
+    level: "L0"
+    breaking: false
+    grill_required: false
+    reason: "纯文档整理"
+    actual: "直接 explore → propose"
+
+  # 场景4: 建议但不强制 Grill
+  - scenario: "optimize-agent-material-integration"
+    level: "L1"
+    breaking: false
+    grill_required: false
+    suggestion: "建议 Grill（涉及安全投影和错误处理）"
+
+# ============================================================================
+# 执行检查清单
+# ============================================================================
+
+checklist:
+  # 变更开始前
+  before_start:
+    - "[ ] 确认风险等级（L0/L1/L2/L3）"
+    - "[ ] 确认是否 BREAKING"
+    - "[ ] 根据 mandatory_grill 判断是否需要 Grill"
+    - "[ ] 如需 Grill，创建 grill-<name>/ 目录"
+
+  # Grill 访谈中
+  during_grill:
+    - "[ ] 记录每轮访谈到 discussion-log.md"
+    - "[ ] 识别的假设标注风险等级"
+    - "[ ] 新术语立即同步到 CONTEXT.md"
+    - "[ ] 重大决策考虑是否需要 ADR"
+
+  # Grill 结束时
+  at_completion:
+    - "[ ] 补充「Grill总结」章节"
+    - "[ ] 列出 ✓ 已验证的假设"
+    - "[ ] 列出 ✗ 未验证的假设（含风险等级）"
+    - "[ ] 给出建议行动（阻塞 vs 不阻塞）"
+    - "[ ] 做出 Grill 门禁决策"
+    - "[ ] 签字和日期"
+
+  # 放行前
+  before_approve:
+    - "[ ] 所有 HIGH 风险假设有验证计划"
+    - "[ ] 所有阻塞问题已解决"
+    - "[ ] discussion-log.md 完整"
+    - "[ ] CONTEXT.md 已更新（如有新术语）"
+
+# ============================================================================
+# 违规处理
+# ============================================================================
+
+violation_handling:
+  # L2/L3 跳过 Grill 的处理
+  - violation: "L2/L3 变更跳过 Grill"
+    action: "事后补充 Grill 总结"
+    example: "grill-agent-streaming-replies"
+
+  # Grill 未完成就实施
+  - violation: "Grill 第一轮未完成就授权实施"
+    action: "事后识别遗漏假设，补充验证计划"
+    risk: "可能遗漏关键风险"
+
+  # discussion-log.md 缺失总结
+  - violation: "discussion-log.md 无「Grill总结」"
+    action: "补充总结章节"
+    deadline: "实施前必须补充"
+
+# ============================================================================
+# 工具集成
+# ============================================================================
+
+tool_integration:
+  # CLI 命令（未来可实现）
+  commands:
+    - name: "openspec grill check <change-name>"
+      description: "检查变更是否需要 Grill"
+
+    - name: "openspec grill validate <change-name>"
+      description: "验证 Grill 产出是否完整"
+
+    - name: "openspec grill report"
+      description: "生成 Grill 健康度报告"
+
+  # CI 集成点
+  ci_hooks:
+    - hook: "pre-propose"
+      check: "如果 L2/L3，检查是否有 grill-<name>/"
+
+    - hook: "pre-merge"
+      check: "如果有 grill-<name>/，检查是否有 Grill 总结"
+
+# ============================================================================
+# 参考资料
+# ============================================================================
+
+references:
+  - name: "OpenSpec 工作流选择指南"
+    path: "docs/openspec-workflow-guide.md"
+    description: "什么时候用 explore vs grill"
+
+  - name: "openspec-grill skill"
+    path: "~/.claude/skills/openspec-grill/SKILL.md"
+    description: "Grill 访谈的详细流程"
+
+  - name: "CONTEXT.md"
+    path: "CONTEXT.md"
+    description: "项目级术语表"
+
+  - name: "ADR 目录"
+    path: "docs/adr/"
+    description: "重大架构决策记录"
+
+# ============================================================================
+# 版本历史
+# ============================================================================
+
+version_history:
+  - version: "1.0"
+    date: "2026-09-23"
+    changes:
+      - "初始版本"
+      - "定义强制 Grill 规则"
+      - "定义 Grill 门禁检查点"
+      - "补充示例和检查清单"
