@@ -489,11 +489,11 @@ Phase 6验证时会回溯检查实现是否解决了「底层问题」而非「�
 <details>
 <summary><strong>Q11: 子agent讨论完的结论怎么不丢？</strong></summary>
 
-**A**: 按skill `openspec-discussion-sync`：
+**A**: OpenSpec 流程内的探索、调研、方案讨论按skill `openspec-discussion-sync`：
 
 子agent返回固定五段（结论/依据/建议落点/未决问题/弃案），主agent必须把每条建议落点落到artifact或记为「未采纳 + 理由」，并追加 `discussion-log.md`。
 
-结束本轮前有防丢自检。
+结束本轮前有防丢自检。独立 DDD 建模遵循自身 agent 的回流与落盘规则；技术评审门禁沿用 `review/<role>.md` 及评审闭环，不重复追加讨论日志。
 </details>
 
 <details>

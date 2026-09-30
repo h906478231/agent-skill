@@ -1,13 +1,13 @@
 ---
 name: openspec-discussion-sync
-description: 子 agent 讨论结论回流主 agent 的契约与落盘规则。规定子 agent 必须返回结论/依据/建议落点/未决问题/弃案五段，主 agent 必须把每条建议落点落到 artifact 或记为未采纳，并追加 discussion-log.md。用于探索、建模、方案对比等任何调起子 agent 的场景，防止讨论结论只在对话里出现一次就丢失。
+description: OpenSpec 流程内子 agent 讨论结论回流主 agent 的契约与落盘规则。规定子 agent 必须返回结论/依据/建议落点/未决问题/弃案五段，主 agent 必须把每条建议落点落到 artifact 或记为未采纳，并追加 discussion-log.md。用于 OpenSpec 流程内的探索、调研、方案讨论；独立 DDD 建模遵循自身 agent 的回流规则，技术评审门禁沿用既有评审闭环。
 ---
 
 # 子 agent 讨论回流（Discussion Sync）
 
 ## 解决什么问题
 
-技术评审门禁的子 agent 有明确落盘约定（写 `review/<role>.md`），所以结论跑不掉。但探索、建模、方案对比类的子 agent **只返回自由文本** —— 主 agent 在对话里复述一遍，这一轮就散了。后果有三个：
+技术评审门禁的子 agent 有明确落盘约定（写 `review/<role>.md`），所以结论跑不掉。但 OpenSpec 流程内的探索、调研、方案讨论子 agent **只返回自由文本** —— 主 agent 在对话里复述一遍，这一轮就散了。后果有三个：
 
 1. 子 agent 给的「建议改 design 第 3 节」没人执行，也没人记它被否了；
 2. 未决问题散在多轮对话里，用户被反复打断，或者干脆没人问；
@@ -17,7 +17,7 @@ description: 子 agent 讨论结论回流主 agent 的契约与落盘规则。�
 
 ## 一、子 agent 的 handoff 契约
 
-**所有被主 agent 调起的子 agent，返回内容的最后必须是这五段，段名固定、一段不能少。** 该段无内容就写「无」，不允许省略段落 —— 省略和「确实没有」必须能区分开。
+**本 skill 适用的 OpenSpec 探索、调研、方案讨论子 agent，返回内容的最后必须是这五段，段名固定、一段不能少。** 该段无内容就写「无」，不允许省略段落 —— 省略和「确实没有」必须能区分开。
 
 ```markdown
 ## 结论
@@ -86,7 +86,7 @@ description: 子 agent 讨论结论回流主 agent 的契约与落盘规则。�
 
 ## 四、下一轮上下文注入
 
-启动**任何**新子 agent 时，prompt 中必须附带 `discussion-log.md` 的既有内容（至少包含「结论」列与「未采纳记录」「弃案」）。
+启动**本 skill 适用范围内**的新子 agent 时，prompt 中必须附带 `discussion-log.md` 的既有内容（至少包含「结论」列与「未采纳记录」「弃案」）。
 
 理由与门禁给子 agent 附「评审意见闭环记录」完全一致：子 agent 是全新上下文，不给历史，它必然重复劳动或推翻已定结论。
 
@@ -98,6 +98,6 @@ description: 子 agent 讨论结论回流主 agent 的契约与落盘规则。�
 
 ## 适用范围
 
-- **适用**：探索、领域建模、方案对比、调研类子 agent —— 即返回自由文本、没有既定落盘约定的场景。
+- **适用**：OpenSpec 流程内的探索、调研、方案讨论子 agent —— 返回自由文本、没有既定落盘约定，结论回流到 OpenSpec artifacts。
+- **不适用**：独立 DDD 建模遵循自身 agent 的回流规则、用户模式与 `ddd-artifact-contract`，不依赖本 skill，不要求 OpenSpec change 或 `discussion-log.md`。
 - **不重复适用**：技术评审门禁的五个角色子 agent 已有 `review/<role>.md` 落盘约定与闭环记录机制，走那套即可，不必再写一份 `discussion-log.md`。
-- 相关：`claude/agents/ddd-architect-claude.md` 作为建模主控 agent，调度建模子 agent 时按本 skill 执行。
