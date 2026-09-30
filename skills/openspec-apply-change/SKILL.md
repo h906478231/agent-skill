@@ -78,12 +78,17 @@ Implement tasks from an OpenSpec change.
 
    **TDD 实施纪律（写第一个测试之前，读取 `shared/tdd-discipline.md` 并遵守）** —— 本 skill 目录下的规则文件（相对本 SKILL.md 解析，装了 openspec-apply-change 就一定存在）；读不到时用 Glob 搜 `**/openspec-apply-change/shared/tdd-discipline.md`。要点：只在 design.md「测试 Seam 决策」区块（或口头确认后回记到切片 `Seam:` 行）声明的公共边界写测试，未声明的边界先问；red before green；一次一个切片、切片内一次一个行为（一个失败测试 → 最小实现 → 下一个）；每完成一个任务项跑单个测试文件 + 类型检查，全部完成跑一次完整测试套件；重构不进 red-green 循环，留给 `/opsx:quality`。
 
+   **切片新鲜证据（本仓自加，非上游原文）** —— 切片声明了 `Evidence:` 行时，勾选任务前必须先写证据：读取本 skill 的 `shared/slice-evidence.md`（相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-apply-change/shared/slice-evidence.md`）并遵守。要点：运行任务相关的单个测试文件 + 类型检查 / 编译（按项目约定选命令）→ 用 `node <GATE> fingerprint <changeRoot>` 取实现指纹（`<GATE>` = `../openspec-technical-review/scripts/implementation-gate.mjs`）→ 创建或更新 `evidence/slice-<id>.md` → `Result: PASS` 后才勾选。未运行的命令不得写 PASS。
+
    For each pending task:
    - Show which task is being worked on
    - Make the code changes required
    - Keep changes minimal and focused
-   - Mark task complete in the tasks file: `- [ ]` → `- [x]`
+   - Run the task's single test file + type check / compile, then update the slice evidence record (when the slice declares `Evidence:`)
+   - Mark task complete in the tasks file: `- [ ]` → `- [x]` —— only after the evidence shows `Result: PASS`
    - Continue to next task
+
+   All tasks done → run the full test suite once and refresh every slice's evidence fingerprint (see `shared/slice-evidence.md`「生成时机」), so earlier slices are not left stale by later ones.
 
    **Pause if:**
    - Task is unclear → ask for clarification
@@ -96,7 +101,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest the implementation-stage checks — `/opsx:quality` (Phase 5.5) then `/opsx:verify` (Phase 6); do not suggest archive before both pass
+   - If all done: suggest the implementation-stage checks — `/opsx:quality` (Phase 5.5, dual-axis review) then `/opsx:verify` (Phase 6); do not suggest archive before both pass
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -153,6 +158,7 @@ What would you like to do?
 **Guardrails**
 - **Never implement before the Technical Review Gate is signed off** (Step 2) when the project uses it — no exceptions, no signing on the user's behalf
 - **Follow the TDD discipline in `shared/tdd-discipline.md`** (Step 7) — seam-first, red before green, refactoring is deferred to `/opsx:quality`, never on the red-green path
+- **证据先于勾选**（本仓自加）—— 切片声明了 `Evidence:` 时，按 `shared/slice-evidence.md` 先记录绑定当前实现指纹的验证证据再勾选；不伪造结果、不为历史变更补造证据
 - **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5，产出 `review/code-quality.md`）与 `/opsx:verify`（Phase 6，三维校验 + 评审条件核对）；任一未通过或存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序与门禁口径的唯一事实源见 `../openspec-technical-review/shared/phases.md`
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)

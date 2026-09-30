@@ -40,10 +40,12 @@ openspec-technical-review/
 │   ├── phases.md                     #   全流程 Phase 定义与各阶段需加载的规则
 │   ├── phase6-verification.md        #   Phase 6 门禁侧的条件核对与增强交叉核对清单
 │   ├── closed-loop-verification.md   #   重走门禁时如何验证上轮 Blocker 真的闭环
-│   └── apply-gate-check.md           #   apply 前的人工签字校验（apply skill 与 command 共用）
+│   ├── apply-gate-check.md           #   apply 前的人工签字校验（apply skill 与 command 共用）
+│   └── implementation-gate-check.md  #   verify / archive 对双轴评审与切片证据的核对口径
 ├── roles/                            # 五个角色：只保留角色定位 + 审查清单 + 本维度差异
 │   ├── architecture.md  concurrency.md  performance.md  database.md  security.md
 ├── hooks/check-review-approval.sh    # PreToolUse 门禁 hook（拦截未签字的 openspec apply）
+├── scripts/implementation-gate.mjs   # 实现阶段确定性校验：实现指纹 / 评审基线 / 双轴评审 / 切片证据 / 归档阻断
 ├── agents/openai.yaml                # skill 接口描述
 └── technical-review-gate.workflow.js # Pi Workflow：并行 fan-out 五角色 + 结构化汇总
 ```
@@ -201,7 +203,7 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
   - Phase 2 候选方案交叉验证 → 确保方案选择有依据
   - **Phase 3 多维度交叉验证（当前阶段，维度数按分级）** → 确保方案无盲区、发现跨维度冲突
 - 本门禁：`/opsx:review`（本 skill）产出 `review/*.md` + `review-summary.md`，停在人工确认。
-- 下游：人工批准后 `/opsx:apply` 编码 → `/opsx:quality` 实现层代码质量评审 → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）三维校验 → `openspec archive`。完整流程见 [研发流程 Phases 定义](shared/phases.md)。
+- 下游：人工批准后 `/opsx:apply` 编码（切片证据先于勾选）→ `/opsx:quality` 实现后双轴独立评审 → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）三维校验 → `openspec archive`。完整流程见 [研发流程 Phases 定义](shared/phases.md)。
 - 角色分工：OpenSpec = 流程与设计文档中心；本门禁 = AI 评审编排；Coding Agent = 代码执行者。
 
 ## 交叉验证机制说明

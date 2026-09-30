@@ -1,107 +1,111 @@
 ---
 name: openspec-code-quality
-description: OpenSpec 实现层代码质量评审（Phase 5.5）。在 openspec apply 编码完成之后、verify 校验之前，对本次变更的 git diff 做重复率、可读性、死代码、复杂度热点与设计偏离五项审查，产出 review/code-quality.md。只报告不改代码，修复走 tasks 勾选。填补设计层评审维度不覆盖实现代码的空档。
+description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec apply 编码完成之后、verify 校验之前，以同一固定代码基线并行调度 Standards Review（重复/复用、可读性、死代码、复杂度、测试可维护性、项目约定）与 Spec Fidelity Review（需求、场景、任务、设计决策、Seam 的实现忠实度）两个互不读取对方报告的评审 agent，分别产出 review/standards.md 与 review/spec-fidelity.md，再汇总为 review/code-review-summary.md 并按任一轴未闭环 Blocker 阻断归档。只报告不改代码，修复走 tasks 勾选。
 ---
 
-# 实现层代码质量评审（Code Quality Review）
+# 实现后双轴独立评审（Standards + Spec Fidelity）
 
 ## 定位
 
-技术评审门禁纳入范围的各维度（架构/并发/性能/数据库/安全）审的是 **`design.md` 里的方案**，`/opsx:verify` 查的是 **Completeness / Correctness / Coherence 三维一致性**。两者都不看**实现出来的代码本身写得怎么样**。本 skill 补这个空档。
+技术评审门禁纳入范围的各维度（架构/并发/性能/数据库/安全）审的是 **`design.md` 里的方案**，`/opsx:verify` 做的是**最终验收**。两者都不逐行看**实现出来的代码**。本 skill 补这个空档，并把实现后评审拆成两个独立的轴：
 
 ```
-/opsx:apply（编码）──> 【/opsx:quality 本 skill】──> /opsx:verify ──> openspec archive
+/opsx:apply（编码 + 切片证据）──> 【/opsx:quality 本 skill】──> /opsx:verify ──> /opsx:archive
+                                    ├─ Standards Review      → review/standards.md
+                                    ├─ Spec Fidelity Review  → review/spec-fidelity.md
+                                    └─ 汇总裁决              → review/code-review-summary.md
 ```
 
-- **输入**：本次变更实际产生的 `git diff`，不是设计文档。
-- **输出**：`openspec/changes/<name>/review/code-quality.md`。
-- **不改代码**。
+- **输入**：同一固定基线下本次变更的完整 diff + 变更 artifacts。
+- **输出**：两份独立原始报告 + 一份只做索引与裁决的汇总。
+- **不改代码**，不执行 push、PR、部署或外部任务回写。
+
+两个轴的职责边界、与 Technical Review / Verify 的去重、基线与报告格式、裁决规则的**唯一事实源**是 `shared/dual-axis-review.md`，本文件只写编排步骤，不重复规则。
 
 ## 与内置 `/simplify` 的区别
 
 | | `/simplify` | 本 skill |
 |---|---|---|
 | 动作 | 直接编辑代码 | 只报告 + 分级 + 留痕 |
-| 范围 | 当前关注的代码 | 本次变更的完整 diff |
-| 产物 | 代码改动 | `review/code-quality.md` |
+| 范围 | 当前关注的代码 | 本次变更在固定基线下的完整 diff |
+| 产物 | 代码改动 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` |
 | 修复路径 | 就地改完 | 回 `tasks.md` 加勾选项再改 |
 
 保持「评审与实现分离」：评审只出结论，修复动作有据可查、可被验收。想直接改可以另行用 `/simplify`，但那不构成本门禁的闭环证据。
 
 ## 适用范围分级
 
-沿用 [门禁分级标准](../openspec-technical-review/shared/gate-levels.md)：**L0（纯文案/配置/注释/纯测试补充）豁免；L1 及以上都跑** —— 单 agent，成本低。分级定义与判定口诀不在本文件重复，以该事实源为准。
+沿用 [门禁分级标准](../openspec-technical-review/shared/gate-levels.md)：**L0（纯文案/配置/注释/纯测试补充）豁免；L1 及以上两轴都跑**。两轴并行，墙钟接近较慢的一轴。
+
+## 路径约定
+
+- `<SKILL_DIR>` = 本 SKILL.md 所在目录。skills 根目录随 agent 而不同（Claude Code `~/.claude/skills/`、Codex `~/.codex/skills/`、opencode `~/.config/opencode/skills/`、Cursor `~/.cursor/skills/`、项目级 `.claude/skills/`、直接使用本仓时的 `skills/`），**不要写死绝对路径**；解析不到时用 Glob 搜 `**/openspec-code-quality/SKILL.md`。
+- `<GATE>` = `<SKILL_DIR>/../openspec-technical-review/scripts/implementation-gate.mjs`（确定性校验脚本，需 Node.js ≥ 16）；解析不到时 Glob 搜 `**/openspec-technical-review/scripts/implementation-gate.mjs`。
+- 子 agent 是纯文本上下文，**启动前必须把 `<SKILL_DIR>` 解析成绝对路径写进 prompt**。
 
 ## 前置
 
 1. 解析变更名，`openspec status --change "<name>" --json` 取 `changeRoot`。
-2. 取本次变更的 diff。按可用性依次尝试：
-   ```bash
-   git diff --stat
-   git diff
-   ```
-   若变更已提交，用变更起点到 HEAD 的范围（`git log` 定位起点 commit）。**diff 为空则中止**，提示先完成 `/opsx:apply`。
-3. 读取 `design.md` 与 `tasks.md` —— 第 5 项「与设计的偏离」需要它们作对照。
+2. 确认有 diff：`git status --short` 与 `git diff --stat`（变更已提交时用变更起点到 HEAD 的范围，`git log` 定位起点 commit）。**diff 为空则中止**，提示先完成 `/opsx:apply`。
+3. 在 `changeRoot` 下创建 `review/` 目录。
 
-## finding 格式
+## 执行步骤
 
-**完全沿用** 兄弟 skill `openspec-technical-review` 的 `../openspec-technical-review/shared/finding-format.md`：10 个字段（`ID | 严重级别 | 影响业务功能 | 位置 | 涉及代码模块 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复 | 闭环状态`）、五条硬规则、`通过 / 有条件通过 / 打回` 三值结论。
+### Step 1 — 固定基线（只做一次）
 
-> **路径解析**：所有 skill 平铺在同一个 skills 根目录下，因此相对本 SKILL.md 的路径恒为 `../openspec-technical-review/shared/finding-format.md`。**不要写死绝对路径** —— skills 根目录随 agent 而不同（Claude Code `~/.claude/skills/`、Codex `~/.codex/skills/`、opencode `~/.config/opencode/skills/`、Cursor `~/.cursor/skills/`、项目级 `.claude/skills/`、直接使用本仓时的 `skills/`）。相对路径读不到时，用 Glob 搜 `**/openspec-technical-review/shared/finding-format.md`。
+```bash
+node <GATE> baseline <changeRoot> [--base <变更起点 commit>]
+```
 
-本维度参数：
+把输出的「## 评审基线」区块原样保存，Step 2 两个子 agent 与 Step 3 汇总都使用**同一块**。从此刻到两份原始报告写完，不得修改实现代码。
 
-- finding ID 前缀：`CQ-`
-- 「位置」写 `文件路径:行号`，必须指到具体行，不接受「XXX 类里」这种粒度。
-- **「触发场景」在本维度的含义放宽**：质量问题往往不在运行时爆炸，而是在**维护时**出事。允许写维护场景 —— 例如「下次改这段折扣规则时要同步改 3 处，漏一处就出现两套算法并存」。但仍必须具体到「改什么会漏什么」，写不出的 Blocker 照样降级 Major。
+### Step 2 — 并行调度两个隔离的评审 agent
 
-## 审查清单
+用 **Agent 工具**在同一条消息里启动两个子 agent（并行）：
 
-### 1. 重复率
+| 评审轴 | 角色提示词 | 输出 |
+|--------|-----------|------|
+| Standards Review | `roles/standards.md` | `review/standards.md` |
+| Spec Fidelity Review | `roles/spec-fidelity.md` | `review/spec-fidelity.md` |
 
-- **本次改动内部的复制粘贴**：diff 内出现结构近似的代码块（阈值参考：连续 5 行以上高度相似）。
-- **应复用而未复用**：新写的工具方法在既有工具类/基础能力里已经有了。**这一项必须实际搜索仓库确认**，不能凭印象 —— 搜同名方法、搜相同关键逻辑。
-- **同一逻辑多层重复实现**：同一条校验/转换在 Controller、Service、Mapper 各写一遍。
+每个子 agent 的 prompt 包含且只包含：
 
-### 2. 可读性
+1. `<SKILL_DIR>` 的绝对路径，并说明「下文所有 `<SKILL_DIR>/...` 路径都替换为该值」；
+2. 对应角色文件全文（其中已声明必读的共用规则，子 agent 自行读取）；
+3. Step 1 的基线区块，并要求「报告开头原样粘贴，评审范围以 `Base Commit` 到工作区为准」；
+4. `changeRoot` 与 artifacts 路径；
+5. **重跑时**：本轴上一轮报告路径，要求先做上轮闭环验证；
+6. 明确禁止读取另一轴的原始报告与 `review/code-review-summary.md`。
 
-- **命名**：是否表意；有无 `data` / `info` / `temp` / `list1` 这类无信息量命名；缩写是否是团队公认的。
-- **函数长度与嵌套深度**：过长函数、深层 if 嵌套（参考阈值：嵌套 ≥4 层）。
-- **魔法值**：字面量数字/字符串直接出现在逻辑中，未提取为常量或枚举（项目已有「禁止魔法值」约定）。
-- **注释**：注释是否为中文；是否解释「为什么」而不是复述「做了什么」；有无与代码已不一致的过期注释。
-- **异常处理**：catch 块是否打印堆栈；有无吞异常（空 catch、只 `return null`）；异常信息是否包含定位所需的上下文。
+环境不支持子 agent 时，按「Standards → Spec Fidelity」顺序执行，并在汇总「执行方式」列标注 `顺序执行（独立性降级）`（规则见 `shared/dual-axis-review.md`「独立性」）。
 
-### 3. 死代码与未使用
+### Step 3 — 汇总与裁决
 
-新增但无调用方的方法 / 字段 / 常量 / 参数；被注释掉的代码块；引入但未使用的依赖。
+读取两份原始报告，按 `shared/dual-axis-review.md`「汇总报告」骨架写入 `review/code-review-summary.md`：基线区块 → 两轴状态 → 未闭环 Blocker 索引 → 同位置关联（可选） → `Code Review Verdict: PASSED / BLOCKED`。汇总只引用 finding ID 与原始报告路径，**不复制、不改写、不删除**原始 finding。
 
-### 4. 复杂度热点
+### Step 4 — 命令级校验
 
-圈复杂度过高的方法；条件分支组合爆炸；难以单测的构造（静态调用链、隐藏依赖、构造函数里干活）。
+```bash
+node <GATE> review <changeRoot>
+```
 
-### 5. 与设计的偏离
-
-对照 `design.md`，实现是否引入了设计未提及的**新依赖 / 新表 / 新接口 / 新配置项**。有偏离不等于错，但**必须回记到 `design.md`**，否则下一轮评审与归档后的 spec 都会与真实实现脱节。
-
-## 输出
-
-写入 `<changeRoot>/review/code-quality.md`，结构：
-
-1. **摘要**：三句话说清「代码质量如何 / 能不能进 verify / 卡在哪」。
-2. **审查范围**：diff 涉及的文件数与行数，起止 commit 或工作区状态。
-3. **Findings 表**：完整遵循 `finding-format.md` 的字段定义，按严重级别降序。
-4. **重复率专项**：重复块清单 —— `位置A ↔ 位置B | 相似行数 | 建议抽取到哪里`。
-5. **与设计的偏离清单**：`偏离项 | 设计中有无 | 建议：回记 design / 撤销实现`。
-6. 末尾结论行：`代码质量评审结论：通过 / 有条件通过 / 打回`。
+- 退出码 `0`：裁决 `PASSED` 且报告结构完整，可进入 `/opsx:verify`。
+- 退出码 `1` 且 `issues` 非空：报告结构有问题（缺文件、基线不一致、finding 不可定位、结论与 Blocker 矛盾、汇总自述裁决不符），修正后重跑本步骤。
+- 退出码 `1` 且 `verdict = BLOCKED`：向用户列出各轴 `openBlockers`，按下方「裁决与闭环」处理。
+- `warnings` 中的基线陈旧提醒：评审后代码又变了，判断是否重跑双轴。
 
 ## 裁决与闭环
 
-- 判定规则沿用兄弟 skill 的 `../openspec-technical-review/shared/gate-policy.md`（路径解析同上，不写死绝对路径）。
-- **存在未闭环 Blocker 时不得 `openspec archive`**。
+- 裁决规则见 `shared/dual-axis-review.md`「裁决规则」：**任一轴存在未闭环 Blocker 即 `BLOCKED`，不得 `/opsx:archive`**。
 - 「有条件通过」的每个条件必须映射到 `tasks.md` 的一个勾选项，**映射不到视同 Blocker**。
-- 修复后重跑本命令，对上轮 Blocker 逐条核实：**要指到具体行确认改动已落地**，只看提交说明不算闭环。
-- 误报或知情接受：按 `gate-policy.md` 的驳回 / risk accepted 留痕格式记录在 `review/code-quality.md`，写明决策人与理由，不改代码就不重跑。
+- 修复即改代码：修复后**重新生成基线、两轴都重跑**，对上轮 Blocker 逐条核实 —— 要指到具体行确认已落地，只看提交说明不算闭环。
+- 误报或知情接受：按 `../openspec-technical-review/shared/gate-policy.md` 第 4 节的驳回 / risk accepted 格式记录在**对应轴的原始报告**，写明决策人与理由，不改代码就不重跑。
+
+## 兼容
+
+- 历史变更已产出的 `review/code-quality.md` 继续按原规则被 `/opsx:archive` 识别，**不要求补跑双轴**。
+- 本 skill 不追溯改写任何历史 archive。
 
 ## 产物的 git 归属
 
-与门禁产物同策略：`review/code-quality.md` 提交 git，随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。
+与门禁产物同策略：三份报告提交 git，随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。

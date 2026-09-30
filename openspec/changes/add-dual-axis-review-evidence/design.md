@@ -157,6 +157,16 @@ Apply 按现有 TDD 纪律完成一个切片后：
 - Standards Review 和 Spec Fidelity Review 是否分别由独立 sub-agent 执行，还是允许同一编排器启动两个隔离上下文？
 - 项目自定义测试命令是否需要在 `design.md` 或项目配置中声明，还是只记录实际执行命令？
 
+### 实现期决议（apply 阶段回记）
+
+| 问题 | 决议 | 依据 |
+|------|------|------|
+| fingerprint 口径 | 由 `skills/openspec-technical-review/scripts/implementation-gate.mjs` 计算仓库级 `git-tree:<sha>`（排除规划目录的工作区 git tree 哈希），证据与评审基线共用；不复用 DevOps Route 的 `fingerprint` | Route 指纹由模型汇报、表示决策与产物状态，不是代码内容的函数，无法证明证据对应当前代码。详见 `docs/adr/0002-implementation-fingerprint-git-tree.md` |
+| 两轴的执行方式 | 默认两个独立子 agent 并行；环境不支持子 agent 时允许同一编排器顺序执行，但汇总「执行方式」列必须标注「顺序执行（独立性降级）」 | 同一上下文无法真正隔离，降级必须对签收人可见，而不是静默当作独立 |
+| 项目测试命令 | 不新增配置字段；命令按项目自身约定（本 design「测试 Seam 决策」、README / CLAUDE.md / CI）选择，证据只记录实际执行的命令与真实结果 | 与 Phase 6「项目自有的验证动作本仓不做约定」一致，避免为跨项目 skill 仓写死构建命令 |
+
+补充：命令级 Seam 的确定性部分由上述脚本承担（`baseline` / `review` / `fingerprint` / `evidence` / `archive` 子命令），四个 `/opsx` 入口在执行中调用它；命令级验证（tasks 1.4 / 2.4 / 3.4）即在临时 git 仓库中构造真实变更目录，通过该脚本的命令行入口观察报告、证据与归档判定，见 `scripts/test-implementation-gate.mjs`。
+
 ## 测试 Seam 决策
 
 | Seam | 类型 | 覆盖的行为 |

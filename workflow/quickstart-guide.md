@@ -211,16 +211,13 @@ Technical Review Approved: 你的名字  2026-08-23
 /opsx:quality add-user-nickname
 ```
 
-**检查项**：
-- 重复代码
-- 可读性问题
-- 死代码
-- 复杂度过高
-- 设计偏离
+**两个独立评审轴**（同一固定基线，并行执行、互不读取对方报告）：
+- Standards Review：重复代码、可读性、死代码、复杂度、测试可维护性、项目约定
+- Spec Fidelity Review：需求/场景是否实现、任务是否真完成、是否偏离设计
 
-**产出**：`review/code-quality.md`（只报告，不改代码）
+**产出**：`review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md`（只报告，不改代码）
 
-如果有 **未闭环 Blocker**，必须修复后才能归档。
+任一轴有 **未闭环 Blocker**，必须修复后才能归档。
 
 ---
 

@@ -72,6 +72,12 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
        - Add CRITICAL issue: "Requirement not found: <requirement name>"
        - Recommendation: "Implement requirement X: <description>"
 
+   **切片证据与双轴评审闭环（本仓自加，非上游原文）**：
+   - 完整规则见 skill `openspec-technical-review` 的 `shared/implementation-gate-check.md`（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-technical-review/shared/implementation-gate-check.md`），**先读取该文件并按其「Verify」一节执行**
+   - 运行该 skill 的 `scripts/implementation-gate.mjs evidence <changeRoot>` 与 `review <changeRoot>`
+   - 缺失 / 不完整 / 失败 / 过期的切片证据，双轴评审 `BLOCKED` 或报告不完整 → CRITICAL；证据过期按 `changedSinceEvidence` 决定重跑或登记豁免
+   - 脚本返回「不适用」时把理由原样写进报告，不得把缺证据静默当作通过；历史变更不追溯补证据
+
 6. **Verify Correctness**
 
    **Requirement Implementation Mapping**:
@@ -121,6 +127,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    | Completeness | X/Y tasks, N reqs|
    | Correctness  | M/N reqs covered |
    | Coherence    | Followed/Issues  |
+   | Evidence     | N/M slices fresh (or 不适用: reason) |
+   | Review       | PASSED/BLOCKED (or 不适用: reason)   |
    ```
 
    **Issues by Priority**:
@@ -128,6 +136,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    1. **CRITICAL** (Must fix before archive):
       - Incomplete tasks
       - Missing requirement implementations
+      - Missing / incomplete / failed / stale slice evidence; dual-axis review BLOCKED or incomplete (本仓自加)
       - Each with specific, actionable recommendation
 
    2. **WARNING** (Should fix):
@@ -205,7 +214,7 @@ Use clear markdown with:
 | Phase 1 | 第一性原理分析 | 解决错误的问题 | `/opsx:explore` |
 | Phase 2 | 候选方案交叉验证 | 方案选择无依据 | `/opsx:explore` |
 | Phase 3 | 多维度交叉验证（维度数按分级） | 方案存在盲区 | `/opsx:review` |
-| Phase 5.5 | 实现层代码质量评审 | 重复率/可读性/死代码/复杂度热点/设计偏离 | `/opsx:quality` |
+| Phase 5.5 | 实现后双轴独立评审（Standards + Spec Fidelity） | 工程规范问题 / 实现偏离需求与设计 | `/opsx:quality` |
 | Phase 6 | 实现与设计交叉验证（当前阶段） | 实现偏离设计意图 | `/opsx:verify` + 人工核对 |
 
 参考完整质量保障体系：`workflow/OpenSpec-AI-研发流程.md`

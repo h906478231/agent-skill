@@ -269,12 +269,16 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   按已评审通过的设计实现，不重新设计
 #   ※ 按切片实施 + TDD 纪律：只在声明的 Seam 测试，red before green
 #     （规则：skills/openspec-apply-change/shared/tdd-discipline.md）
+#   ※ 证据先于勾选：每个切片写 evidence/slice-<id>.md，绑定实现指纹
+#     （规则：skills/openspec-apply-change/shared/slice-evidence.md）
 
-# ── Phase 5.5：代码质量评审 ──────────────────────────
+# ── Phase 5.5：双轴独立评审 ──────────────────────────
 /opsx:quality <change-name>
-#   → review/code-quality.md
-#   查 diff 的重复率/可读性/死代码/复杂度/设计偏离
-#   未闭环 Blocker 不得归档
+#   同一固定基线，两个子 agent 并行、互不读取对方报告：
+#   → review/standards.md       Standards Review：重复/可读性/死代码/复杂度/测试可维护性/项目约定
+#   → review/spec-fidelity.md   Spec Fidelity Review：需求/场景/任务/设计决策/Seam 的实现忠实度
+#   → review/code-review-summary.md  汇总裁决：任一轴未闭环 Blocker 即 BLOCKED，不得归档
+#   （规则：skills/openspec-code-quality/shared/dual-axis-review.md）
 
 # ── Phase 6：验证 ──────────────────────────────────
 /opsx:overview <change-name>     # 先刷新条件矩阵
@@ -282,12 +286,14 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   → 三维校验（Completeness / Correctness / Coherence）
 #      ※ Coherence 维度：实现与设计交叉核对
 #   → 再逐条核对 overview.md 的条件矩阵，⚠️ 未落地项视同 Blocker
+#   → 切片证据新鲜度 + 双轴裁决核对：缺失/过期证据、评审 BLOCKED 均为 CRITICAL
 #   → 补充人工核对清单（回溯第一性原理 / 方案选择一致性 / 可测试性 / 运维成本）
 
 # ── 收口 ─────────────────────────────────────────────
 /opsx:archive <change-name>
+#   归档前置阻断：双轴评审 Blocker、缺失/过期切片证据时拒绝归档
 #   变更归档，能力沉淀进 specs
-#   评审/讨论/总览产物随变更整体归档到 changes/archive/<name>/
+#   评审/证据/讨论/总览产物随变更整体归档到 changes/archive/<name>/
 ```
 
 ---
@@ -570,13 +576,13 @@ OpenSpec Explore
 OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/测试）
       │  参考 review-summary.md 的"涉及代码模块"和"建议修复"      │
       ▼
-代码质量评审（Phase 5.5）→ /opsx:quality → review/code-quality.md
-      │  查 diff 的重复率/可读性/死代码/复杂度/设计偏离；未闭环 Blocker 不得归档
+双轴独立评审（Phase 5.5）→ /opsx:quality → review/standards.md + review/spec-fidelity.md + review/code-review-summary.md
+      │  同一固定基线、两轴并行互不读取；任一轴未闭环 Blocker 不得归档
       ▼
-验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（用 overview.md 条件矩阵）+ 项目自有测试
+验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（用 overview.md 条件矩阵）+ 项目自有测试 + 切片证据新鲜度
       │  ※ 交叉验证 III：实现与设计交叉核对（Coherence 一致性校验）
       ▼
-OpenSpec Archive → specs 沉淀能力；评审与讨论产物随变更进 changes/archive/
+OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据与讨论产物随变更进 changes/archive/
 ```
 
 ---
@@ -595,8 +601,8 @@ OpenSpec Archive → specs 沉淀能力；评审与讨论产物随变更进 chan
 | Phase 3 技术评审门禁 | `/opsx:review` | 专项 Agent 并行评审已确定方案；**多角色多维度交叉验证（角色数按分级）** | `review/*.md` | 否 |
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
-| Phase 5 代码实现 | `/opsx:apply` | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律** | 代码 + `tasks.md` 勾选 | 是 |
-| Phase 5.5 代码质量评审 | `/opsx:quality` | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
+| Phase 5 代码实现 | `/opsx:apply` | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**；**证据先于勾选** | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
+| Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
 | 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 
@@ -920,25 +926,37 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - 重构不进 red-green 循环，留给 `/opsx:quality`（Phase 5.5）
 - 规则唯一事实源：`skills/openspec-apply-change/shared/tdd-discipline.md`
 
+**切片新鲜证据（证据先于勾选）**：
+- 切片声明了 `Evidence: evidence/slice-<id>.md` 时，每个任务项勾选前：跑验证命令 → 取实现指纹 → 写入 / 更新证据 → `Result: PASS` 后才勾选
+- 证据记录行为、Seam、实现指纹、变更文件、验证命令与结果、覆盖的验收行为、剩余风险；命令按项目自身约定选择，只记实际执行的结果
+- 全部切片完成跑完整测试套件时，同步刷新各切片证据指纹
+- 规则唯一事实源：`skills/openspec-apply-change/shared/slice-evidence.md`
+
 **产出**：
 - 代码（Controller/Service/Repository/SQL/测试）
+- `evidence/slice-<id>.md`（每个切片一份）
 - `tasks.md` 勾选
 
 ---
 
-## 📐 Phase 5.5: 代码质量评审
+## 📐 Phase 5.5: 双轴独立评审
 
 **入口**：`/opsx:quality <change-name>`
 
 **做什么**：
-对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离。
+先生成一次固定基线（base commit + 实现指纹 + 评审范围），再用两个子 agent 并行评审同一基线，互不读取对方报告：
+- **Standards Review**：代码写得合不合格 —— 重复/复用、可读性、死代码、复杂度、测试可维护性、项目约定（不重审编码前已评审的方案）
+- **Spec Fidelity Review**：实现是否忠实于需求与设计 —— 需求与场景覆盖、任务真实完成、设计决策偏离、范围外行为、Seam 一致性（不评代码风格）
 
-**产出**：
-- `review/code-quality.md`（只报告，不改代码）
+**产出**（只报告，不改代码）：
+- `review/standards.md`、`review/spec-fidelity.md`：两份独立原始报告
+- `review/code-review-summary.md`：只做索引与裁决，不改写原始 finding
 
 **要求**：
-- 未闭环 Blocker 不得归档
-- 修复走 `tasks.md` 勾选
+- 任一轴存在未闭环 Blocker 即 `BLOCKED`，不得归档
+- 修复走 `tasks.md` 勾选；修复后重新生成基线、两轴都重跑
+- 规则唯一事实源：`skills/openspec-code-quality/shared/dual-axis-review.md`
+- 历史变更已有的 `review/code-quality.md` 继续有效，不要求补跑双轴
 
 ---
 
@@ -952,6 +970,8 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - **Completeness**：`tasks.md` 勾选是否完整、spec 中的 requirement 是否都已实现
 - **Correctness**：requirement ↔ 代码实现映射、scenario 是否被覆盖
 - **Coherence**：**实现是否偏离 `design.md` 的既定决策**、代码风格与项目模式是否一致
+
+**切片证据与双轴评审核对**：缺失 / 不完整 / 失败 / 过期的切片证据、双轴评审 `BLOCKED` 均为 CRITICAL；与本切片行为无关的变化可按豁免格式登记，无法判断即按过期重跑（口径见 `skills/openspec-technical-review/shared/implementation-gate-check.md`）。
 
 **产出**：
 校验报告（对话内），按 CRITICAL / WARNING / SUGGESTION 分级。
@@ -1095,11 +1115,15 @@ Technical Review Approved: 张三  2026-08-26
 |------|---------|-----------|----------------|
 | `review/<role>.md` | 是 | `openspec/changes/archive/<name>/review/` | 否 |
 | `review-summary.md`（含签字行） | 是 | `openspec/changes/archive/<name>/` | 否 |
-| `review/code-quality.md` | 是 | 同上 | 否 |
+| `review/code-quality.md`（历史变更） | 是 | 同上 | 否 |
+| `review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md` | 是 | 同上 | 否 |
+| `evidence/slice-<id>.md` | 是 | 同上 | 否 |
 | `discussion-log.md` | 是 | 同上 | 否 |
 | `overview.md` | 是 | 同上 | 否 |
 
 `openspec archive` 把整个 `changes/<name>/` 目录搬到 `changes/archive/<name>/`，上述文件**自动随之归档，不需要额外操作，也不要在归档前手工删除**。
+
+**双轴评审与切片证据的两条边界**：一是**不追溯**——只对按新规则创建的变更生效（`tasks.md` 切片声明了 `Evidence:`，或已生成双轴评审产物），历史变更与历史 archive 不补造证据、不补跑双轴；二是**不外发**——证据与评审动作只在本地读写变更目录，不自动执行 git push、创建 PR、部署、发布或云舟等外部任务回写，这些动作需另行授权。
 
 ---
 

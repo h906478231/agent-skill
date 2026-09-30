@@ -22,6 +22,10 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 
 条件既然映射到了 `tasks.md` 的勾选项，此处即核对这些任务是否真的完成而非只是打了勾。
 
+## 切片证据与双轴评审核对
+
+`/opsx:verify` 在三维校验中运行 `scripts/implementation-gate.mjs` 的 `evidence` 与 `review` 子命令：缺失 / 不完整 / 失败 / 过期的切片证据与双轴评审 `BLOCKED` 均为 CRITICAL，不适用时写明理由。处理口径的唯一事实源见 `implementation-gate-check.md`，此处不重复。
+
 ## 增强交叉核对清单
 
 在 `/opsx:verify` 的标准三维校验基础上，补充以下人工核对项（这些是 `/opsx:verify` 不检查的）：

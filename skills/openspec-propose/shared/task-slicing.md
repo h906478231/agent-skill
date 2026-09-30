@@ -25,6 +25,7 @@
 ## Slice 01: 用户可以创建订单（端到端）
 Blocked by: 无（可立即开始）
 Seam: POST /orders（HTTP API，见 design.md「测试 Seam 决策」）
+Evidence: evidence/slice-01.md
 
 - [ ] T1.1 订单表 schema 与迁移脚本
 - [ ] T1.2 POST /orders 接口实现
@@ -33,6 +34,7 @@ Seam: POST /orders（HTTP API，见 design.md「测试 Seam 决策」）
 ## Slice 02: 用户可以支付订单
 Blocked by: Slice 01
 Seam: POST /orders/{id}/payment
+Evidence: evidence/slice-02.md
 
 - [ ] T2.1 支付状态机与幂等键
 - [ ] T2.2 支付接口与集成测试
@@ -42,6 +44,8 @@ Seam: POST /orders/{id}/payment
 
 - `Blocked by:` 必写，无依赖时写「无（可立即开始）」
 - `Seam:` 行引用 design.md「测试 Seam 决策」区块声明的公共边界（L2/L3 变更必写）
+- `Evidence:` 行指向该切片的新鲜证据记录，路径固定为 `evidence/slice-<id>.md`（相对变更目录，`<id>` 取标题编号）；生成 tasks 时就写上，证据文件由 apply 在勾选前生成。模板、生成时机与新鲜度规则见 `../../openspec-apply-change/shared/slice-evidence.md`
+- `Blocked by:` / `Seam:` / `Evidence:` 都写在 checkbox 之外，不得塞进 `- [ ]` 行
 - 任务项编号在切片内递增，勾选状态是唯一进度事实源
 
 ## 阻塞边与 frontier
@@ -80,4 +84,5 @@ Seam: POST /orders/{id}/payment
 
 - 切片的 `Seam:` 行 ← design.md「测试 Seam 决策」区块（`../../openspec-explore/shared/seam-decisions.md`）
 - apply 按切片 red-green 实施 ← `../../openspec-apply-change/shared/tdd-discipline.md`
+- 切片的 `Evidence:` 行 → apply 勾选前生成的证据记录（`../../openspec-apply-change/shared/slice-evidence.md`），verify / archive 据此核对新鲜度
 - grill 访谈（skill `openspec-grill`）确认的共识是切片拆分的输入：未消除的隐含假设会直接变成错误的切片边界

@@ -16,10 +16,10 @@
 | Phase 3 技术评审门禁 | `/opsx:review`                   | 专项 Agent 并行评审已确定方案；**多角色多维度交叉验证（角色数按分级）** | `review/*.md` | 否 |
 | Phase 4 评审确认 | 同上（汇总）                           | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工                               | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
-| Phase 5 代码实现 | `/opsx:apply`                    | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**（规则见 `../../openspec-apply-change/shared/tdd-discipline.md`） | 代码 + `tasks.md` 勾选 | 是 |
-| Phase 5.5 代码质量评审 | `/opsx:quality`                  | 对本次 diff 查重复率/可读性/死代码/复杂度/设计偏离 | `review/code-quality.md` | 否（只报告） |
-| Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对**（门禁侧的条件核对与增强交叉核对清单见 `phase6-verification.md`） | 校验报告（对话内） | 修复项 |
-| 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs（delta→main 由 skill `openspec-sync-specs` / `/opsx:sync` 执行，archive 调用；主 spec 有差异却跳过同步时需用户显式确认原因）；**归档前置校验**：签字缺失 / 未闭环 Blocker / verify 未通过时拒绝归档；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
+| Phase 5 代码实现 | `/opsx:apply`                    | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**（规则见 `../../openspec-apply-change/shared/tdd-discipline.md`）；**证据先于勾选**：每个切片记录绑定实现指纹的新鲜证据（规则见 `../../openspec-apply-change/shared/slice-evidence.md`） | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
+| Phase 5.5 双轴独立评审 | `/opsx:quality`                  | 同一固定基线并行跑 Standards Review（工程规范）与 Spec Fidelity Review（规格忠实度），互不读取对方报告，汇总按任一轴未闭环 Blocker 阻断（规则见 `../../openspec-code-quality/shared/dual-axis-review.md`） | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
+| Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + **切片证据新鲜度与双轴裁决核对**（见 `implementation-gate-check.md`）；**实现与设计交叉核对**（门禁侧的条件核对与增强交叉核对清单见 `phase6-verification.md`） | 校验报告（对话内） | 修复项 |
+| 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs（delta→main 由 skill `openspec-sync-specs` / `/opsx:sync` 执行，archive 调用；主 spec 有差异却跳过同步时需用户显式确认原因）；**归档前置校验**：签字缺失 / 未闭环 Blocker / verify 未通过 / 双轴评审 Blocker / 切片证据缺失或过期时拒绝归档；评审、证据与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 
 ## 全景流程图
 
@@ -65,15 +65,24 @@ OpenSpec Explore
       ◄────────────────────────────────────────────────────────┘
 OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/测试）
       │  ※ 按切片实施 + TDD 纪律：只在声明的 Seam 测试，red before green（`../../openspec-apply-change/shared/tdd-discipline.md`）
+      │  ※ 证据先于勾选：evidence/slice-<id>.md 绑定实现指纹（`../../openspec-apply-change/shared/slice-evidence.md`）
       ▼
-代码质量评审（Phase 5.5）→ /opsx:quality → review/code-quality.md
-      │  查 diff 的重复率/可读性/死代码/复杂度/设计偏离；未闭环 Blocker 不得归档
+双轴独立评审（Phase 5.5）→ /opsx:quality（同一固定基线，两轴并行、互不读取）
+      │  Standards Review      → review/standards.md
+      │  Spec Fidelity Review  → review/spec-fidelity.md
+      │  汇总裁决              → review/code-review-summary.md；任一轴未闭环 Blocker 不得归档
       ▼
 验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（用 overview.md 条件矩阵）+ 项目自有测试
       │  ※ 交叉验证 III：实现与设计交叉核对（Coherence 一致性校验）
+      │  ※ 切片证据新鲜度 + 双轴裁决核对（`implementation-gate-check.md`）
       ▼
-OpenSpec Archive → specs 沉淀能力；评审与讨论产物随变更进 changes/archive/
+OpenSpec Archive → 归档前置阻断（`implementation-gate.mjs archive`）→ specs 沉淀能力；评审、证据与讨论产物随变更进 changes/archive/
 ```
+
+## 实现阶段证据与双轴评审的边界
+
+- **不追溯**：切片证据与双轴评审只对按新规则创建的变更生效（`tasks.md` 切片声明了 `Evidence:`，或已生成双轴评审产物）；历史变更与历史 archive 不补造证据、不补跑双轴，校验脚本返回「不适用」及理由。
+- **不外发**：Apply / Quality / Verify / Archive 的证据与评审动作都只在本地读写变更目录，**不自动执行 git push、创建 PR、部署、发布或云舟等外部任务回写**；这些动作需用户另行授权。
 
 ## 核心原则
 

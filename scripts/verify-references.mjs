@@ -11,6 +11,8 @@
  * 2. 只校验仓库自有的资产引用，不校验运行期产物路径（openspec/changes/**、review/*.md 等）。
  * 3. 支持本仓约定的四种写法：裸 `shared/x.md`、相对当前文件 `../x/shared/x.md`、
  *    `<SKILL_DIR>/shared/x.md`、跨 skill 定位用的 glob 前缀写法。
+ * 4. 同时校验 skill 自带的可执行脚本引用 `scripts/*.mjs`（如门禁校验脚本）；
+ *    不校验 `.js`，因为部分说明引用的是安装到使用者项目里的脚本（如 grill-check.js）。
  */
 
 import { readFile, readdir } from 'node:fs/promises'
@@ -25,12 +27,15 @@ const SKILLS_DIR = path.join(ROOT, 'skills')
 /** 需要校验的资产目录：只有这几个目录下的 .md 才是规则事实源。 */
 const ASSET_DIRS = ['shared', 'roles', 'hooks']
 
+/** skill 自带脚本的引用写法：只认 scripts/ 下的 .mjs。 */
+const SCRIPT_REF = String.raw`scripts/[A-Za-z0-9._/-]+\.mjs`
+
 /**
  * 引用提取正则。
- * 结构：前缀（<SKILL_DIR>/ 、glob 前缀或若干 ../）+ 可选 skill 名 + 资产目录 + 文件名。
+ * 结构：前缀（<SKILL_DIR>/ 、glob 前缀或若干 ../）+ 可选 skill 名 + 资产目录 + 文件名（或 scripts/*.mjs）。
  */
 const REF_PATTERN = new RegExp(
-  String.raw`((?:<SKILL_DIR>/|\*\*/|(?:\.\.?/)*)(?:[A-Za-z0-9._-]+/)?(?:${ASSET_DIRS.join('|')})/[A-Za-z0-9._/-]+\.md)`,
+  String.raw`((?:<SKILL_DIR>/|\*\*/|(?:\.\.?/)*)(?:[A-Za-z0-9._-]+/)?(?:(?:${ASSET_DIRS.join('|')})/[A-Za-z0-9._/-]+\.md|${SCRIPT_REF}))`,
   'g',
 )
 
