@@ -1,0 +1,23 @@
+第三方组件声明（openspec-change-overview/vendor）
+
+本目录中的第三方文件是上游发布包的原样副本，没有修改源码。升级时同步更新本文件的版本、来源与校验和。
+
+1. elkjs 0.12.0
+   文件：elk.bundled.js（编译产物：ELK 的 Java 源码经 GWT 编译为 JavaScript）
+   许可证：EPL-2.0（上游声明为 EPL-2.0 OR GPL-3.0-or-later，本 skill 按 EPL-2.0 使用并分发），原文见 elk.LICENSE.md
+   发布包：https://registry.npmjs.org/elkjs/-/elkjs-0.12.0.tgz 中的 lib/elk.bundled.js
+   源码：https://github.com/kieler/elkjs（npm 记录的 gitHead：ff5771d7165445c42c408bb8a090c8035272218c）
+         布局算法源码：https://github.com/eclipse/elk（elkjs 的次版本号与 ELK 一致，对应 ELK 0.12 系列）
+   sha256(elk.bundled.js)：1222e44f953ce7746af23801e723708f8e6f436b8b377a6a5fc7552f34a307b3
+   sha256(elk.LICENSE.md)：637e81f4a1b6b4079535c499fca05e238cf7605c1ff5b76d60d7da7ce96700c9
+
+2. js-yaml 5.4.2
+   文件：js-yaml.mjs
+   许可证：MIT，原文见 js-yaml.LICENSE
+   发布包：https://registry.npmjs.org/js-yaml/-/js-yaml-5.4.2.tgz 中的 dist/js-yaml.mjs
+   源码：https://github.com/nodeca/js-yaml（tag 5.4.2）
+   sha256(js-yaml.mjs)：86ac62558d7cd103ff5f5a10a885ebecc04c23ca2f1487522864b49221edc25c
+   sha256(js-yaml.LICENSE)：a07bc24468b9654ce76a547d47a2db282d07733b715db4c73a98bd63961f9550
+
+3. package.json
+   本 skill 自写，不是第三方文件：声明 vendor 目录为 CommonJS，保证 elk.bundled.js（UMD 包）在任何安装位置都能被 createRequire 加载。

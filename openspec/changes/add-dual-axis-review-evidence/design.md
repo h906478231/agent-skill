@@ -4,6 +4,68 @@
 
 本变更属于流程和产物层的横切增强，目标是保留现有 OpenSpec 事实源和命令入口，在 Quality、Apply、Verify、Archive 之间增加明确的报告和证据契约。
 
+
+## 可视化判定
+
+- 状态变动：未命中（本变更不新增或修改状态机）
+- 流程变动：命中 → flows: implementation-acceptance（实现完成到归档的验收流程）
+
+```change-model
+version: 1
+flows:
+  - id: implementation-acceptance
+    name: 实现后验收
+    steps:
+      - { id: S1, name: 完成切片编码 }
+      - id: S2
+        name: 记录切片证据
+        diff: added
+        scenarios: [slice-fresh-evidence/A slice is completed before task checkboxes are marked]
+      - { id: S3, name: 勾选任务 }
+      - { id: S4, name: 运行代码质量评审, diff: removed }
+      - id: S5
+        name: 固定评审基线
+        diff: added
+        scenarios: [dual-axis-review/Both review axes receive the same baseline]
+      - id: S6
+        name: Standards Review
+        diff: added
+        scenarios: [dual-axis-review/Standards Review finds an implementation quality issue, dual-axis-review/Review axes do not anchor on each other]
+      - id: S7
+        name: Spec Fidelity Review
+        diff: added
+        scenarios: [dual-axis-review/A required scenario is not implemented, dual-axis-review/Review axes do not anchor on each other]
+      - id: S8
+        name: 汇总双轴裁决
+        kind: decision
+        diff: added
+        scenarios: [dual-axis-review/Both reports are generated, dual-axis-review/One axis has an open Blocker]
+      - id: S9
+        name: 运行 verify 并校验切片证据
+        diff: changed
+        before: { name: 运行 verify }
+        scenarios: [slice-fresh-evidence/Evidence is missing, slice-fresh-evidence/Evidence is stale after code changes, slice-fresh-evidence/Evidence is current]
+      - id: S10
+        name: 校验评审结论与证据后归档
+        diff: changed
+        before: { name: 归档 }
+        scenarios: [slice-fresh-evidence/Archive is attempted with unresolved evidence, slice-fresh-evidence/Archive is attempted after all checks pass]
+    edges:
+      - { from: S1, to: S3, diff: removed }
+      - { from: S1, to: S2, diff: added }
+      - { from: S2, to: S3, diff: added }
+      - { from: S3, to: S4, diff: removed }
+      - { from: S4, to: S9, diff: removed }
+      - { from: S3, to: S5, diff: added }
+      - { from: S5, to: S6, diff: added }
+      - { from: S5, to: S7, diff: added }
+      - { from: S6, to: S8, diff: added }
+      - { from: S7, to: S8, diff: added }
+      - { from: S8, to: S9, label: 无 Blocker, diff: added }
+      - { from: S8, to: S1, label: 有 Blocker, diff: added }
+      - { from: S9, to: S10 }
+```
+
 ## Goals / Non-Goals
 
 **Goals:**

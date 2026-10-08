@@ -35,6 +35,8 @@ Implement tasks from an OpenSpec change.
 
    **STE 检查（BLOCKING，本仓自加，非上游原文）** —— 开始任何任务前，先运行 `openspec status --change "<name>" --json` 取 `changeRoot`（Step 3 运行同一命令，可复用结果），再运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Apply」列处理结果（存在阻断项时停止，不开始任何任务）；找不到脚本时输出「STE 检查已跳过：未找到 openspec-ste（<原因>）」后继续，不得静默跳过。
 
+   **变更模型检查（BLOCKING，本仓自加，非上游原文）** —— STE 检查放行后、开始任何任务前运行 `node <CM> check <changeRoot>`（`<CM>` = `../openspec-change-overview/scripts/change-model.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-change-overview/scripts/change-model.mjs`），退出码按 `../openspec-ste/shared/gate-check.md` 的「Apply」列处理，与 STE 检查相同；存在阻断项时逐项列出（`design.md:行号`、规则、`text`、`detail`）并**停止**，不开始任何任务；修正方式见 `../openspec-change-overview/shared/change-model.md`「6 项检查」。找不到脚本时输出「变更模型检查已跳过：未找到 openspec-change-overview（<原因>）」后继续，不得静默跳过。
+
 3. **Check status to understand the schema**
    ```bash
    openspec status --change "<name>" --json

@@ -17,7 +17,7 @@ description: 为一个 OpenSpec 变更生成单页总览 overview.md，把分散
 ## 铁律
 
 - **overview.md 是派生视图，不是事实源**。事实源永远是 `proposal.md` / `design.md` / `specs/*/spec.md` / `tasks.md` / `review-summary.md`。
-- **整体重新生成，禁止手改**。发现内容不对，改事实源再重跑本命令。手改会造成两处不一致，且下次重跑被覆盖。
+- **整体重新生成，禁止手改**。发现内容不对，改事实源再重跑本命令。手改会造成两处不一致，且下次重跑被覆盖。`overview.html` 与第 2 块标记之间的 Mermaid 同样只由脚本生成。
 - 生成的文件头必须带这段声明：
 
   ```markdown
@@ -51,7 +51,28 @@ description: 为一个 OpenSpec 变更生成单页总览 overview.md，把分散
 
 ### 2. 端到端运行流程
 
-用 ASCII 画出这次变更后的实际执行路径（时序图或状态机，取更贴切的一种）。必须标注：
+先判断 `design.md` 是否有变更模型（`change-model` 代码块，格式见 [shared/change-model.md](shared/change-model.md)）。下文 `<CM>` = `scripts/change-model.mjs`（相对本 SKILL.md）。
+
+**有变更模型时**：图由脚本确定性生成，不手画。
+
+1. 运行 `node <CM> render <changeRoot>`，写入 `<changeRoot>/overview.html`（变更前 / 对比 / 变更后三个视图共用并集布局，可点击查看触发条件、guard、旧值与 Scenario）。
+   - 退出码 `1`：变更模型存在阻断项。**停止**，逐项列出 `blocking`（`design.md:行号`、规则、`text`、`detail`），不写 overview.md；建议 `/opsx:update` 修正后重跑。
+   - 退出码 `2`：原样报告错误并停止，不得当作通过。
+2. 运行 `node <CM> mermaid <changeRoot>`，把输出**原样**插入第 2 块的固定标记之间，一个字符都不改；标记之后附 `overview.html` 链接：
+
+   ```markdown
+   <!-- change-model:begin -->
+   <mermaid 子命令的输出>
+   <!-- change-model:end -->
+
+   交互式对比视图：[overview.html](overview.html)
+   ```
+
+3. 图下方用列表补充下面四项标注中图里没有的内容（变更模型只描述状态、迁移与步骤）。
+
+**没有变更模型时**：保持现有行为，用 ASCII 画出这次变更后的实际执行路径（时序图或状态机，取更贴切的一种），不运行 `render`，不创建 `overview.html`。
+
+两种情况都必须标注：
 
 - 每一步的**输入与输出**；
 - **同步 / 异步边界**（哪一步之后调用方就返回了）；
@@ -115,10 +136,32 @@ design 里没写失败分支的，画成 `?` 并在第 5 块记为未决问题 �
 | 门禁产出 `review-summary.md` 后 | 把「有条件通过」的条件并入第 4 块矩阵 |
 | `/opsx:verify` 之前 | 用第 4 块逐条核对条件是否都已落地 |
 
-每次都整体重新生成。文件头的「依据轮次」要更新为当前门禁轮次。
+每次都整体重新生成。文件头的「依据轮次」要更新为当前门禁轮次。有变更模型时同时重新运行 `render` 与 `mermaid`：`design.md` 改了而 `overview.html` 没重跑，两者就会不一致。
+
+## 目录与第三方许可证
+
+```
+openspec-change-overview/
+├── SKILL.md
+├── shared/change-model.md          # 变更模型格式、6 项检查与卡点处理（唯一事实源）
+├── shared/phase3-gate.md
+├── scripts/change-model.mjs        # check / layout / render / mermaid，Node.js ≥ 16，无需 npm install
+├── assets/overview-template.html   # overview.html 模板（CSS + 原生 JavaScript，无外部资源）
+└── vendor/
+    ├── elk.bundled.js              # elkjs 0.12.0 原样分发，许可证 EPL-2.0（上游为 EPL-2.0 OR GPL-3.0-or-later，按 EPL-2.0 使用）
+    ├── elk.LICENSE.md              # elkjs 许可证原文
+    ├── package.json                # 声明 vendor 目录为 CommonJS，保证 elkjs（UMD 包）在任何安装位置都能被 createRequire 加载
+    ├── NOTICE                      # 第三方组件的版本、发布包来源、源码地址与 sha256
+    ├── js-yaml.mjs                 # js-yaml 5.4.2 原样分发，许可证 MIT
+    └── js-yaml.LICENSE             # js-yaml 许可证原文
+```
+
+- vendor 中的第三方文件不修改源码；升级版本视为 skill 版本变化（布局结果可能改变）。
+- 分发本 skill 时必须保留 `NOTICE`、`elk.LICENSE.md` 与 `js-yaml.LICENSE`。elkjs 是编译产物，EPL-2.0 要求告知取得源码的方式，见 `vendor/NOTICE`。
 
 ## 与其他环节的关系
 
 - 上游：`/opsx:explore`、`/opsx:propose` 产出事实源。
 - 下游：`/opsx:review` 评审者用它对齐；`/opsx:verify` 用第 4 块做条件核对。
-- 产物提交 git，随 `openspec archive` 归档到 `changes/archive/<name>/`。
+- 下游：讲解视频读取 `node <CM> layout <changeRoot>` 输出的布局 JSON，与 `overview.html` 画面一致。
+- 产物（`overview.md`，有变更模型时还有 `overview.html`）提交 git，随 `openspec archive` 归档到 `changes/archive/<name>/`。

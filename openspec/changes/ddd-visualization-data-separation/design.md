@@ -45,6 +45,59 @@ Phase 4: 模板替换生成完整 HTML (agent 调用)
 - **前端工程师**：期望视图和数据分离，可以独立调整 HTML 模板
 - **系统维护者**：期望降低 token 消耗和执行时间
 
+
+## 可视化判定
+
+- 状态变动：未命中（本变更不新增或修改状态机）
+- 流程变动：命中 → flows: visual-modeling（四个 agent 阶段改为读取 domain-model.md 的三个阶段）
+
+```change-model
+version: 1
+flows:
+  - id: visual-modeling
+    name: 生成事件风暴可视化
+    steps:
+      - { id: P1, name: 代码与文档分析, diff: removed }
+      - { id: P2, name: DDD 建模, diff: removed }
+      - { id: P3, name: 数据校验, diff: removed }
+      - { id: P4, name: 模板替换生成 HTML, diff: removed }
+      - id: N1
+        name: 查找 domain-model.md
+        kind: decision
+        diff: added
+        scenarios: [ddd-visual-modeling-workflow/检测 domain-model.md 存在, ddd-visual-modeling-workflow/支持自定义 domain-model.md 路径]
+      - id: N2
+        name: 提示先完成 DDD 建模
+        diff: added
+        scenarios: [ddd-visual-modeling-workflow/domain-model.md 不存在时的提示]
+      - id: N3
+        name: 解析 domain-model.md
+        diff: added
+        scenarios: [ddd-visual-modeling-workflow/阶段 1 - 解析 domain-model.md]
+      - id: N4
+        name: 转换为 JSON 并校验
+        kind: decision
+        diff: added
+        scenarios: [ddd-visual-modeling-workflow/阶段 2 - 转换为 JSON, ddd-visual-modeling-workflow/JSON 校验失败]
+      - id: N5
+        name: 写入 JSON 与静态模板
+        diff: added
+        scenarios: [ddd-visual-modeling-workflow/阶段 3 - 生成输出文件, ddd-visual-modeling-workflow/静态模板复制]
+      - id: N6
+        name: 报告校验错误
+        diff: added
+        scenarios: [ddd-visual-modeling-workflow/JSON 校验失败]
+    edges:
+      - { from: P1, to: P2, diff: removed }
+      - { from: P2, to: P3, diff: removed }
+      - { from: P3, to: P4, diff: removed }
+      - { from: N1, to: N3, label: 存在, diff: added }
+      - { from: N1, to: N2, label: 不存在, diff: added }
+      - { from: N3, to: N4, diff: added }
+      - { from: N4, to: N5, label: 通过, diff: added }
+      - { from: N4, to: N6, label: 失败, diff: added }
+```
+
 ## Goals / Non-Goals
 
 ### Goals

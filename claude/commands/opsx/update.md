@@ -64,6 +64,8 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
 
    **STE 检查（本仓自加，非上游原文）** —— 修改产物后运行 `node <STE> check <changeRoot>`（`<STE>` = skill `openspec-ste` 的 `scripts/ste-lint.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按该 skill 的 `shared/gate-check.md` 的「Update」列处理结果；找不到脚本时在输出中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
 
+   **变更模型检查（本仓自加，非上游原文）** —— STE 检查之后（没有写入修改时不运行）运行 `node <CM> check <changeRoot>`（`<CM>` = skill `openspec-change-overview` 的 `scripts/change-model.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-change-overview/scripts/change-model.mjs`），退出码按 skill `openspec-ste` 的 `shared/gate-check.md` 的「Update」列处理，与 STE 检查相同；阻断项的修正与其他修改一样经用户确认后写入，重跑到退出码 `0`；修正方式见 skill `openspec-change-overview` 的 `shared/change-model.md`「6 项检查」。找不到脚本时在输出中写明「变更模型检查已跳过：未找到 openspec-change-overview（<原因>）」，不得静默跳过。
+
 6. **Point to the next step (guidance only - NEVER act on it)**
    - Artifacts still missing -> suggest `/opsx:propose` to create them.
    - Change already implemented (tasks checked off / already applied) -> the code may no longer match the revised plan; suggest `/opsx:apply` to carry the delta into code.
