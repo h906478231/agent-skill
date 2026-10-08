@@ -29,6 +29,8 @@ Implement tasks from an OpenSpec change.
 
    Bash 侧的 `PreToolUse` hook 看不到 `/opsx:apply` 这条斜杠命令路径 —— 本步骤是该路径上唯一的检查点，不得跳过。
 
+   **STE 检查（BLOCKING，本仓自加，非上游原文）** —— 开始任何任务前，先运行 `openspec status --change "<name>" --json` 取 `changeRoot`（Step 3 运行同一命令，可复用结果），再运行 `node <STE> check <changeRoot>`（`<STE>` = skill `openspec-ste` 的 `scripts/ste-lint.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按该 skill 的 `shared/gate-check.md` 的「Apply」列处理结果（存在阻断项时停止，不开始任何任务）；找不到脚本时输出「STE 检查已跳过：未找到 openspec-ste（<原因>）」后继续，不得静默跳过。
+
 3. **Check status to understand the schema**
    ```bash
    openspec status --change "<name>" --json
@@ -153,6 +155,7 @@ What would you like to do?
 
 **Guardrails**
 - **技术评审门禁未签字前，绝不写任何实现代码**（Step 2）—— 无例外，不代签
+- **STE 检查存在阻断项时不开始任何任务**（Step 2，本仓自加）—— 修正产物走 `/opsx:update`，不在 apply 中顺手改
 - **遵守 skill `openspec-apply-change` 自己的 `shared/tdd-discipline.md` TDD 纪律**（Step 7）—— seam-first、red before green、重构留给 `/opsx:quality`
 - **证据先于勾选**（本仓自加）—— 切片声明了 `Evidence:` 时，按该 skill 的 `shared/slice-evidence.md` 先记录绑定当前实现指纹的验证证据再勾选；不伪造结果、不为历史变更补造证据
 - **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5）与 `/opsx:verify`（Phase 6）；任一未通过或存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序见 skill `openspec-technical-review` 的 `shared/phases.md`

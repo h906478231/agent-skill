@@ -5,7 +5,7 @@
 ## 目录结构
 
 ```
-skills/          跨 agent 通用能力（39 个），SKILL.md 标准格式
+skills/          跨 agent 通用能力（40 个），SKILL.md 标准格式
 claude/          Claude Code 专用资产（command / subagent），其他 agent 不支持
 workflow/        云舟编排脚本（`.workflow.js`）与研发流程文档
 mcp-servers/     云舟平台 MCP 集成服务器
@@ -28,7 +28,7 @@ docs/            接入与使用文档
 
 ### 一键安装（推荐）
 
-安装所有 39 个 skills 到支持的 AI 编码工具：
+安装所有 40 个 skills 到支持的 AI 编码工具：
 
 ```bash
 npx skills add h906478231/agent-skill -g -a '*'
@@ -107,7 +107,7 @@ npx skills remove --skill ddd-aggregate
 `openspec-verify-change` `openspec-propose` `openspec-apply-change`
 `openspec-update-change` `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
-### OpenSpec 流程增强（7 个）
+### OpenSpec 流程增强（8 个）
 
 | skill                      | 作用 | 命令 |
 |---|---|---|
@@ -118,6 +118,7 @@ npx skills remove --skill ddd-aggregate
 | `openspec-code-quality`    | 实现后双轴独立评审：同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断 | `/opsx:quality` |
 | `openspec-discussion-sync` | OpenSpec 流程内子 agent 讨论结论回流契约与落盘规则 | 无（由主 agent 加载） |
 | `openspec-finding-explain` | 为单个 finding 生成业务场景解析文档，解释它对业务意味着什么 | `/opsx:explain` |
+| `openspec-ste` | 中文 STE 检查：propose / update / apply / verify 四个卡点阻断禁用别名、非受控通用词与模糊词；含 Claude Code Stop hook（需手动注册） | 无（由四个卡点调用） |
 
 ### 其他（2 个）
 
@@ -148,7 +149,7 @@ npx skills remove --skill ddd-aggregate
 
 `skills/openspec-{explore,propose,apply-change,update-change,sync-specs,archive-change,verify-change,ff-change}/SKILL.md` 与 `claude/commands/opsx/{explore,propose,apply,update,sync,archive,verify,ff}.md` 是 OpenSpec CLI 生成的上游副本（skill 侧 frontmatter 标 `generatedBy`，命令侧没有该字段），两两高度重复。**这部分刻意不做去重** —— 改动会在上游升级时产生冲突。
 
-唯一例外是 apply 的技术评审门禁校验块（本仓自加，非上游原文），已抽到 `skills/openspec-technical-review/shared/apply-gate-check.md`，两处改为引用。
+唯一例外是 apply 的技术评审门禁校验块（本仓自加，非上游原文），已抽到 `skills/openspec-technical-review/shared/apply-gate-check.md`，两处改为引用。propose / update / apply / verify 中的 STE 检查块同理（本仓自加），处理口径抽到 `skills/openspec-ste/shared/gate-check.md`，各处只保留一行引用。
 
 本仓自建资产（6 个 `openspec-*` 流程增强 skill 与 `review`/`overview`/`quality`/`grill` 四个命令）则严格遵守单一事实源，命令文件均为薄壳。
 

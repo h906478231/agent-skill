@@ -83,6 +83,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - 缺失 / 不完整 / 失败 / 过期的切片证据，双轴评审 `BLOCKED` 或报告不完整 → CRITICAL；证据过期按 `changedSinceEvidence` 决定重跑或登记豁免
    - 脚本返回「不适用」时把理由原样写进报告，不得把缺证据静默当作通过；历史变更不追溯补证据
 
+   **STE 检查（本仓自加，非上游原文）** —— 运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Verify」列记录结果（每个阻断项记为 CRITICAL）；找不到脚本时在报告中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
+
 6. **Verify Correctness**
 
    **Requirement Implementation Mapping**:
@@ -134,6 +136,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    | Coherence    | Followed/Issues  |
    | Evidence     | N/M slices fresh (or 不适用: reason) |
    | Review       | PASSED/BLOCKED (or 不适用: reason)   |
+   | STE          | PASS/BLOCKED/ERROR (or 已跳过: reason) |
    ```
 
    **Issues by Priority**:
@@ -142,6 +145,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
       - Incomplete tasks
       - Missing requirement implementations
       - Missing / incomplete / failed / stale slice evidence; dual-axis review BLOCKED or incomplete (本仓自加)
+      - STE check blocking findings, one CRITICAL per finding; STE check exit code 2 (environment error) as one CRITICAL (本仓自加)
       - Each with specific, actionable recommendation
 
    2. **WARNING** (Should fix):

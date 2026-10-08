@@ -66,6 +66,8 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
      openspec instructions <artifact-id> --change "<name>" --json
      ```
 
+   **STE 检查（本仓自加，非上游原文）** —— 修改产物后运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Update」列处理结果；找不到脚本时在输出中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
+
 6. **Point to the next step (guidance only - NEVER act on it)**
    - Artifacts still missing -> suggest `/opsx:propose` to create them.
    - Change already implemented (tasks checked off / already applied) -> the code may no longer match the revised plan; suggest `/opsx:apply` to carry the delta into code.
