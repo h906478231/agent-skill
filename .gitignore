@@ -6,3 +6,6 @@ node_modules/
 skills/skills-rebuild/
 claude/claude-rebuild/
 /.idea/
+
+# OpenSpec 目录整体不进 git（仓库决策）：变更规划产物、评审报告、证据，以及讲解视频的分镜、字幕、音频、视频与 Manim 缓存
+/openspec
