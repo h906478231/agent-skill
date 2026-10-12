@@ -26,11 +26,12 @@
   "license": "Apache-2.0",
   "author": "tigger",
   "scripts": {
-    "test": "npm run verify && npm run test:orchestration && npm run test:migration && npm run test:gate && npm run test:ste && npm run test:change-model",
+    "test": "npm run verify && npm run test:orchestration && npm run test:migration && npm run test:gate && npm run test:ste && npm run test:change-model && npm run test:video",
     "test:orchestration": "node --test scripts/test-orchestration.mjs",
     "test:gate": "node --test scripts/test-implementation-gate.mjs",
     "test:ste": "node --test scripts/test-ste-lint.mjs",
     "test:change-model": "node --test scripts/test-change-model.mjs",
+    "test:video": "node --test scripts/test-explainer-video.mjs",
     "test:migration": "node --test scripts/test-migration.mjs",
     "pack": "bash scripts/pack-skill.sh",
     "verify": "node scripts/verify-references.mjs"

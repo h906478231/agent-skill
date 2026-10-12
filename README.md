@@ -5,7 +5,7 @@
 ## 目录结构
 
 ```
-skills/          跨 agent 通用能力（40 个），SKILL.md 标准格式
+skills/          跨 agent 通用能力（41 个），SKILL.md 标准格式
 claude/          Claude Code 专用资产（command / subagent），其他 agent 不支持
 workflow/        云舟编排脚本（`.workflow.js`）与研发流程文档
 mcp-servers/     云舟平台 MCP 集成服务器
@@ -28,7 +28,7 @@ docs/            接入与使用文档
 
 ### 一键安装（推荐）
 
-安装所有 40 个 skills 到支持的 AI 编码工具：
+安装所有 41 个 skills 到支持的 AI 编码工具：
 
 ```bash
 npx skills add h906478231/agent-skill -g -a '*'
@@ -107,7 +107,7 @@ npx skills remove --skill ddd-aggregate
 `openspec-verify-change` `openspec-propose` `openspec-apply-change`
 `openspec-update-change` `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
-### OpenSpec 流程增强（8 个）
+### OpenSpec 流程增强（9 个）
 
 | skill                      | 作用 | 命令 |
 |---|---|---|
@@ -119,6 +119,7 @@ npx skills remove --skill ddd-aggregate
 | `openspec-discussion-sync` | OpenSpec 流程内子 agent 讨论结论回流契约与落盘规则 | 无（由主 agent 加载） |
 | `openspec-finding-explain` | 为单个 finding 生成业务场景解析文档，解释它对业务意味着什么 | `/opsx:explain` |
 | `openspec-ste` | 中文 STE 检查：propose / update / apply / verify 四个卡点阻断禁用别名、非受控通用词与模糊词；含 Claude Code Stop hook（需手动注册） | 无（由四个卡点调用） |
+| `openspec-explainer-video` | 按人工要求为含变更模型的变更生成讲解视频：AI 编写分镜，人工签署后用 Manim 渲染配音与中文硬字幕；默认离线 TTS，不进入默认流程。依赖由 `video.mjs doctor` 给出安装指引 | `/opsx:video` |
 
 ### 其他（2 个）
 
@@ -138,7 +139,7 @@ npx skills remove --skill ddd-aggregate
 
 | 资产 | 说明 | 手动安装位置 |
 |---|---|---|
-| `commands/opsx/` | opsx 命令组（12 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
+| `commands/opsx/` | opsx 命令组（14 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
 | `agents/ddd-modeler.md` | DDD 建模 subagent | `~/.claude/agents/` |
 | `agents/ddd-architect-claude.md` | DDD 主控 subagent（含子 agent 结论回流规则） | `~/.claude/agents/` |
 | `agents/ddd-architect.md` | 同上能力的 opencode 形态（`mode: primary` + permission 白名单） | 按目标 agent 的 agents 目录放置 |

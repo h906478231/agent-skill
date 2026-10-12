@@ -29,11 +29,15 @@ The renderer SHALL run the change-model check first and SHALL NOT write any outp
 
 ### Requirement: The renderer SHALL output layout JSON for downstream consumers
 
-The renderer SHALL provide a `layout` subcommand that prints one JSON object with, for each machine and flow, the coordinates and size of each node, the route points of each edge, the diff marker, the `before` values, the `causes` links and the scenario references. The explainer video SHALL consume this JSON.
+The renderer SHALL provide a `layout` subcommand that prints one JSON object with, for each machine and flow, the coordinates and size of each node, the route points of each edge, the diff marker, the `before` values, the `causes` links and the scenario references. For each node and each edge, the JSON SHALL also contain `lines` and `beforeLines`: the current text and the before text, wrapped with the same rule and the same maximum width that the renderer uses to size the node or the edge label. An element without text SHALL have an empty list. The explainer video SHALL consume this JSON and SHALL draw text from these lines without wrapping it again.
 
 #### Scenario: Layout JSON contains diff data
 - **WHEN** the `layout` subcommand runs on a model where `T3` is changed
 - **THEN** the JSON entry for `T3` contains `diff: changed`, its route points and its `before` values
+
+#### Scenario: Long English word in an edge label
+- **WHEN** the trigger of `T1` is `refundCompensationCallbackReceived` (34 half-width characters, wider than the 140-pixel label limit)
+- **THEN** the `lines` of `T1` are `refundCompensatio` and `nCallbackReceived`, and the label box of `T1` is two lines high
 
 ### Requirement: overview.html SHALL be a single offline file
 

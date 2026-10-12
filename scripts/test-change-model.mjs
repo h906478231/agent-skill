@@ -362,6 +362,33 @@ test('layout：并集布局包含删除与新增的元素，每个元素只有�
   assert.equal(machine.edges.filter(edge => edge.id === 'T3').length, 1)
 })
 
+test('layout：节点与连线标签输出按布局规则折好的当前与变更前文字行，超长英文词逐字拆开', t => {
+  const f = fixture(t)
+  const model = baseModel()
+  // 34 个半角字符 × 8px = 272px，超过连线标签单行上限 140px，每行最多 17 个字符。
+  model.machines[0].transitions[0].trigger = 'refundCompensationCallbackReceived'
+  model.machines[0].states[1] = { id: 'PAID', name: '已支付', diff: 'changed', before: { name: '已付款' } }
+  // 41 个半角字符 × 8px = 328px，超过节点文字单行上限 168px，每行最多 21 个字符。
+  model.flows[0].steps[0].name = 'receiveCancellationRequestFromCustomerApp'
+  f.design(model)
+  const result = f.run(['layout', f.changeRoot])
+  assert.equal(result.code, 0, result.out + result.err)
+  const layout = result.json()
+  const machine = layout.machines[0]
+  const t1 = machine.edges.find(edge => edge.id === 'T1')
+  assert.deepEqual(t1.lines, ['refundCompensatio', 'nCallbackReceived'])
+  assert.deepEqual(t1.beforeLines, ['refundCompensatio', 'nCallbackReceived'])
+  // 标签框按两行留高（行高 18px），视频按 lines 绘制即可放进框内。
+  assert.equal(t1.labelBox.height, 36)
+  const paid = machine.nodes.find(node => node.id === 'PAID')
+  assert.deepEqual({ lines: paid.lines, beforeLines: paid.beforeLines }, { lines: ['已支付'], beforeLines: ['已付款'] })
+  const flow = layout.flows[0]
+  assert.deepEqual(flow.nodes.find(node => node.id === 'S1').lines, ['receiveCancellationRe', 'questFromCustomerApp'])
+  // 没有标签的连线输出空行列表。
+  assert.deepEqual(flow.edges.find(edge => edge.id === 'S1->S2').lines, [])
+  assert.deepEqual(flow.edges.find(edge => edge.id === 'S2->S5').lines, ['已支付'])
+})
+
 test('layout：两次运行输出字节一致', t => {
   const f = fixture(t)
   f.design(unionModel())

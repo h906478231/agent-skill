@@ -719,6 +719,12 @@ function nodeSize(names, decision) {
   return { width, height: box.lineCount * SIZE.LINE_HEIGHT + SIZE.PAD_Y * 2 }
 }
 
+/**
+ * 已折好的文字行：随布局 JSON 输出，讲解视频等下游直接按行绘制，不再各自复制一份折行规则。
+ * @returns {string[]} 没有文字时为空数组。
+ */
+const textLines = (text, maxWidth) => (text ? wrapText(text, maxWidth).lines : [])
+
 /** 连线标签在 ELK 中的尺寸；没有标签时返回 null。 */
 function labelSize(texts) {
   const present = texts.filter(Boolean)
@@ -737,7 +743,8 @@ const diffOf = item => item.diff || 'unchanged'
 function machineGraph(machine) {
   const nodes = [...machine.states].sort(byId).map(state => ({
     data: { id: state.id, name: state.name, initial: state.initial === true, final: state.final === true,
-      diff: diffOf(state), before: state.before || null },
+      diff: diffOf(state), before: state.before || null,
+      lines: textLines(state.name, SIZE.MAX_TEXT), beforeLines: textLines(beforeValue(state, 'name'), SIZE.MAX_TEXT) },
     size: nodeSize([state.name, beforeValue(state, 'name')].filter(Boolean), false),
   }))
   const edges = []
@@ -747,14 +754,16 @@ function machineGraph(machine) {
     const moved = beforeValue(transition, 'from') !== transition.from || beforeValue(transition, 'to') !== transition.to
     edges.push({
       data: { id: transition.id, from: transition.from, to: transition.to, trigger: transition.trigger, guard: transition.guard || null,
-        diff: diffOf(transition), before: transition.before || null, scenarios: transition.scenarios || [], route: 'current', text: label },
+        diff: diffOf(transition), before: transition.before || null, scenarios: transition.scenarios || [], route: 'current', text: label,
+        lines: textLines(label, SIZE.MAX_LABEL), beforeLines: textLines(oldLabel, SIZE.MAX_LABEL) },
       // 终点未变时，同一条线要放下变更前后两种标签；终点变了则旧标签画在旧路线上。
       label: labelSize(moved ? [label] : [label, oldLabel]),
     })
     if (moved) {
       edges.push({
         data: { id: `${transition.id}@before`, of: transition.id, from: beforeValue(transition, 'from'), to: beforeValue(transition, 'to'),
-          diff: diffOf(transition), route: 'before', text: oldLabel },
+          diff: diffOf(transition), route: 'before', text: oldLabel,
+          lines: textLines(oldLabel, SIZE.MAX_LABEL), beforeLines: textLines(oldLabel, SIZE.MAX_LABEL) },
         label: labelSize([oldLabel]),
       })
     }
@@ -766,11 +775,13 @@ function machineGraph(machine) {
 function flowGraph(flow) {
   const nodes = [...flow.steps].sort(byId).map(step => ({
     data: { id: step.id, name: step.name, actor: step.actor || null, kind: step.kind || null, async: step.async === true,
-      causes: step.causes || [], diff: diffOf(step), before: step.before || null, scenarios: step.scenarios || [] },
+      causes: step.causes || [], diff: diffOf(step), before: step.before || null, scenarios: step.scenarios || [],
+      lines: textLines(step.name, SIZE.MAX_TEXT), beforeLines: textLines(beforeValue(step, 'name'), SIZE.MAX_TEXT) },
     size: nodeSize([step.name, beforeValue(step, 'name')].filter(Boolean), step.kind === DECISION_KIND || beforeValue(step, 'kind') === DECISION_KIND),
   }))
   const edges = flow.edges.map(edge => ({ ...edge, id: edgeKey(edge) })).sort(byId).map(edge => ({
-    data: { id: edge.id, from: edge.from, to: edge.to, label: edge.label || null, diff: diffOf(edge), before: edge.before || null, text: edge.label || null },
+    data: { id: edge.id, from: edge.from, to: edge.to, label: edge.label || null, diff: diffOf(edge), before: edge.before || null, text: edge.label || null,
+      lines: textLines(edge.label, SIZE.MAX_LABEL), beforeLines: textLines(beforeValue(edge, 'label'), SIZE.MAX_LABEL) },
     label: labelSize([edge.label, beforeValue(edge, 'label')]),
   }))
   return { id: flow.id, name: flow.name, nodes, edges }
