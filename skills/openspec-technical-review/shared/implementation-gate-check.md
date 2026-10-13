@@ -23,7 +23,7 @@ node <GATE> review <changeRoot>
 | 脚本输出 | Verify 处理 |
 |---------|------------|
 | `evidence.applicable = false` | 报告写「切片证据：<reason>」，不计 CRITICAL |
-| 切片 `status` 为 `missing` / `incomplete` / `failed` / `no-reference`（出现在 `issues`） | **CRITICAL**，逐条列出切片编号与原因 |
+| 切片 `status` 为 `missing` / `incomplete` / `failed` / `no-reference`（出现在 `issues`） | **CRITICAL**，逐条列出切片编号与原因。`Result: PASS_WITH_BASELINE` 按通过处理；缺 `Baseline List` / `Introduced Failures` 记为 `incomplete`，本次引入的失败不为 0 记为 `failed` |
 | 切片 `status = stale` | **CRITICAL**。按 `changedSinceEvidence` 判断：变化可能影响本切片 → 重跑该切片验证并更新证据；确认**全部**变化与本切片行为无关 → 按 `slice-evidence.md`「豁免记录格式」登记后重跑 `evidence`；无法判断 → 按过期重跑 |
 | `evidence.warnings`（切片未全部勾选时的问题） | WARNING（未完成任务本身已是 CRITICAL） |
 | `review.applicable = false` | 报告写「双轴评审：<reason>」 |

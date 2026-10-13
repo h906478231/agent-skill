@@ -58,6 +58,13 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/opsx:propose` to create them.
    - If the change is already coherent, say so and make no edits.
 
+   **范围扩展拆分提示（本仓自加，非上游原文）** —— 只在 apply 已开始时执行，判据是 `tasks.md` 开头存在 `基线任务数：N（YYYY-MM-DD 首次 apply）` 行；没有该行，说明还没开始 apply，跳过本检查。写入任何修改**之前**，比较修改后的 checkbox 总数与 N。满足以下任一条件时，用 AskUserQuestion 提示拆分：
+   - 新增任务数 > N × 50%（例：N = 30，新增 16 项 → 提示；新增 3 项修复任务 → 不提示）；
+   - 修改新增一个能力（`specs/` 下新的 capability）；
+   - 修改新增一个顶层模块（如迁移模块、新服务）。
+
+   选项固定为「创建变更（推荐）」和「继续当前变更」。选「创建变更」时，不写入扩展部分，建议 `/opsx:propose <新变更名>`，只在当前变更中保留与原范围相关的修改。两种选择都追加到变更目录的 `discussion-log.md`（格式见 `../openspec-discussion-sync/SKILL.md`）：日期、触发条件（数字或新增的能力 / 模块）、用户选择。阈值只用于提示，不阻断。
+
 5. **Confirm and apply, one artifact at a time**
    - Show each proposed revision and why. Write only after the user confirms.
    - If the user rejects a revision, do not write it - leave that artifact unchanged.

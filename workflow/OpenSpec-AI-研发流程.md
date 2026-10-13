@@ -4,7 +4,7 @@
 
 > **📖 文档说明**  
 > 本文档是面向**人类阅读**的完整汇总版本，包含流程说明、部署指南、FAQ 等。  
-> **AI skills 使用的是模块化版本**，分布于各 skill 的 `shared/` 目录：门禁分级与 Phase 定义见 `skills/openspec-technical-review/shared/`（`gate-levels.md`、`phases.md`、`gate-policy.md`），第一性原理/交叉验证/Seam 决策见 `skills/openspec-explore/shared/`，门禁裁决与 TDD 纪律见 `skills/openspec-technical-review/shared/`，任务切片等编排规则内联在 `claude/commands/opsx/` 的命令文件中。  
+> **AI skills 使用的是模块化版本**，分布于各 skill 的 `shared/` 目录：门禁分级与 Phase 定义见 `skills/openspec-technical-review/shared/`（`gate-levels.md`、`phases.md`、`gate-policy.md`），第一性原理/交叉验证/Seam 决策见 `skills/openspec-explore/shared/`，任务切片见 `skills/openspec-propose/shared/task-slicing.md`，TDD 纪律与切片证据见 `skills/openspec-apply-change/shared/`，双轴评审见 `skills/openspec-code-quality/shared/`，STE 检查卡点见 `skills/openspec-ste/shared/gate-check.md`，变更模型见 `skills/openspec-change-overview/shared/change-model.md`。  
 > 如需修改流程规则，请编辑对应模块，本文档定期同步更新。
 
 > 以 OpenSpec 作为研发流程的核心控制器（需求澄清、方案设计、变更生命周期），在进入代码实现前增加 **Technical Review Gate（技术评审门禁）**，由 AI Agent 模拟架构/并发/性能/数据库/安全评审角色。
@@ -104,6 +104,16 @@
 | **L2 标准** | 新增业务流程、跨模块调用、引入缓存、批量操作 | 跑 **architecture + database + security + performance** | 需要 |
 | **L3 全量** | 涉及MQ/异步、并发消费、分布式一致性、状态机、大数据量、新建核心表、对外开放接口 | **五维度全跑** | 需要，且建议第二人复核 |
 
+**方案类型维度**：上表适用于完整方案。`design.md` 推荐 **MVP** 时按「方案类型 × 升级信号」分层：
+
+| 方案类型 | 升级信号 | 编码前评审范围 |
+|---------|---------|---------------|
+| MVP | 未命中 | 跳过技术评审，不创建 `review-summary.md`；`overview.md` 开头记录方案类型、信号、判定人、日期 |
+| MVP | 命中 | 只跑信号映射出的维度（MVP 评审标准），其余维度记为「不适用」，仍需签字 |
+| 完整方案 | 任意 | 按上表 L0–L3 |
+
+信号到维度：异步/MQ/重试/幂等/状态机 → concurrency；租户隔离/权限/敏感数据/对外接口/用户上传 → security；新建表/唯一索引/改字段类型 → database；批量 ≥ 1 万 → performance；新增跨模块依赖/新建模块 → architecture。实现后双轴评审不受分层影响（只有 L0 豁免）。规则唯一事实源：`skills/openspec-technical-review/shared/gate-levels.md`。
+
 ---
 
 ### 触发升级的信号（命中任一，至少L3）
@@ -145,14 +155,20 @@
 |---------|-----------|------|
 | `/opsx:grill <change>` | `openspec-grill` | Grill 访谈（决策树分轮访谈） |
 | `/opsx:explore <change>` | `openspec-explore` | Phase 1-2：需求澄清 + 方案探索 |
-| `/opsx:overview <change>` | `openspec-change-overview` | 生成变更总览（文档地图、字段台账、条件矩阵） |
-| `/opsx:propose <change>` | `openspec-propose` | 任务拆分（由 explore 自动调用） |
+| `/opsx:overview <change>` | `openspec-change-overview` | 生成变更总览（文档地图、字段台账、条件矩阵；有变更模型时另生成 `overview.html`） |
+| `/opsx:propose <change>` | `openspec-propose` | 生成 proposal / design / specs / tasks（含任务拆分）；卡点①：STE + 变更模型检查 |
+| `/opsx:ff <change>` | 无（上游命令） | 一次生成全部产物；**不跑卡点①检查**，产物问题要到 apply 才被拦下，建议用 `/opsx:propose` |
+| `/opsx:update <change>` | `openspec-update-change` | 修改已有产物并保持一致；卡点②：STE + 变更模型检查 |
 | `/opsx:review <change>` | `openspec-technical-review` | Phase 3-4：技术评审门禁 |
-| `/opsx:apply <change>` | `openspec-apply-change` | Phase 5：代码实施 |
-| `/opsx:quality <change>` | `openspec-code-quality` | Phase 5.5：代码质量评审 |
-| `/opsx:verify <change>` | `openspec-verify-change` | Phase 6：验证 |
-| `/opsx:explain <change>` | `openspec-finding-explain` | Finding 详细解析（按需生成） |
+| `/opsx:apply <change>` | `openspec-apply-change` | Phase 5：代码实施；卡点③：签字校验 + STE + 变更模型检查 |
+| `/opsx:quality <change>` | `openspec-code-quality` | Phase 5.5：双轴独立评审 |
+| `/opsx:verify <change>` | `openspec-verify-change` | Phase 6：验证；卡点④：STE + 变更模型检查 |
+| `/opsx:sync <change>` | `openspec-sync-specs` | delta spec 同步到主 spec（archive 会调用） |
 | `/opsx:archive <change>` | `openspec-archive-change` | 变更归档 |
+| `/opsx:explain <change>` | `openspec-finding-explain` | Finding 详细解析（按需生成） |
+| `/opsx:video <change> [focus]` | `openspec-explainer-video` | 讲解视频（按需生成，不进默认流程） |
+
+STE 检查（`openspec-ste`）没有独立命令，由四个卡点调用。
 
 ### 三种使用方式
 
@@ -232,19 +248,25 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   → openspec/changes/<change-name>/design.md
 #      ※ 必含「候选方案交叉验证矩阵」（至少2个候选方案 × 四维对比）
 #      ※ 必含「测试 Seam 决策」区块（L2/L3；从哪些公共边界验证行为）
+#      ※ 必含「可视化判定」小节；状态变动或流程变动命中时写 change-model 代码块
+#        （规则：skills/openspec-change-overview/shared/change-model.md）
 #   → discussion-log.md（子agent讨论结论回流，见skill openspec-discussion-sync）
 
-# ── 生成变更总览（可选但推荐）──────────────────────────
-/opsx:overview <change-name>
-#   → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
-#   一页看懂流程、字段变更与规则条件是否遗漏
-#   标 ⚠️ 未落地 的条目视同 Blocker
-
-# ── 任务拆分：垂直切片 + 阻塞 DAG ─────────────────────
+# ── 生成产物与任务拆分：垂直切片 + 阻塞 DAG ──────────────
+/opsx:propose <change-name>
 #   tasks.md 按 tracer-bullet 垂直切片组织（规则：skills/openspec-propose/shared/task-slicing.md，
 #   由 /opsx:propose 生成 tasks 时自动加载）
 #   每个切片端到端可演示，Blocked by 显式声明，frontier 可并行
 #   发布前三问（粒度/阻塞边/合并拆分）由用户确认后定稿
+#   ◆ 卡点①：产物写完后跑 STE 检查 → 变更模型检查，退出码 0 才输出总结
+#     （处理口径：skills/openspec-ste/shared/gate-check.md）
+
+# ── 生成变更总览（可选但推荐）──────────────────────────
+/opsx:overview <change-name>
+#   → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
+#   → overview.html（有变更模型时；变更前 / 对比 / 变更后三个视图）
+#   一页看懂流程、字段变更与规则条件是否遗漏
+#   标 ⚠️ 未落地 的条目视同 Blocker
 
 # ── 分级判定 ────────────────────────────────────────
 # 根据上面的决策树判断：L0 / L1 / L2 / L3
@@ -256,6 +278,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   → review-summary.md（门禁裁决 + 跨维度冲突检测）
 
 # 若 BLOCKED → 回改 design.md + 填「评审意见闭环记录」，然后按牵连关系重走
+/opsx:update <change-name>       # ◆ 卡点②：写入修改后跑 STE + 变更模型检查
 /opsx:review <change-name> --roles concurrency,database
 
 # ── 人工门禁：硬门禁 ──────────────────────────────────
@@ -265,6 +288,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 
 # ── Phase 5：代码实施 ────────────────────────────────
 /opsx:apply <change-name>
+#   ◆ 卡点③：开始前依次做签字校验 → STE 检查 → 变更模型检查，任一项阻断即停止
 #   参考 review-summary.md 的「涉及代码模块」和「建议修复」
 #   按已评审通过的设计实现，不重新设计
 #   ※ 按切片实施 + TDD 纪律：只在声明的 Seam 测试，red before green
@@ -287,6 +311,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #      ※ Coherence 维度：实现与设计交叉核对
 #   → 再逐条核对 overview.md 的条件矩阵，⚠️ 未落地项视同 Blocker
 #   → 切片证据新鲜度 + 双轴裁决核对：缺失/过期证据、评审 BLOCKED 均为 CRITICAL
+#   → ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL
 #   → 补充人工核对清单（回溯第一性原理 / 方案选择一致性 / 可测试性 / 运维成本）
 
 # ── 收口 ─────────────────────────────────────────────
@@ -374,6 +399,33 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 
 ---
 
+#### 场景5：卡点被 STE 检查或变更模型检查拦下
+
+```bash
+# 报告逐项列出 文件:行号、规则、命中词或元素 ID、替代词
+# 1. 用 /opsx:update 按报告修正产物（不要直接改代码绕过）
+/opsx:update <change-name>
+# 2. 修正后重跑被拦下的命令（propose / apply / verify）
+```
+
+- STE 阻断项（禁用别名、非受控通用词、模糊词）的修正方式见 `skills/openspec-ste/shared/gate-check.md`；必须保留旧词时用行内代码或 `<!-- term-allow: 旧词 -->` 豁免
+- 变更模型阻断项（CM-1～CM-6）的修正方式见 `skills/openspec-change-overview/shared/change-model.md`「6 项检查」；CM-1 不通过时 CM-2、CM-3、CM-4、CM-6 不执行，先修 CM-1
+
+---
+
+#### 场景6：需要给他人讲解复杂变更
+
+```bash
+/opsx:video <change-name> <主题>
+#   → video/storyboard.md：AI 只写分镜，人工签署后才渲染
+#   → video/explainer.srt + 配音视频（video/media/ 不进 git）
+```
+
+- 只适用于含变更模型的变更；不进入默认流程，不影响任何卡点与归档
+- 渲染依赖缺失时按 `video.mjs doctor` 输出的安装指引处理（见 `skills/openspec-explainer-video/SKILL.md`）
+
+---
+
 ## ⚠️ 新手常见错误
 
 | 错误做法 | 为什么错 | 正确做法 |
@@ -386,7 +438,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 
 ---
 
-## ❓ 高频FAQ（13个）
+## ❓ 高频FAQ（14个）
 
 <details>
 <summary><strong>Q1: 改个字段也要跑五个Agent？</strong></summary>
@@ -521,6 +573,23 @@ Phase 6验证时会回溯检查实现是否解决了「底层问题」而非「�
 - 并行跑门禁和准备代码框架（门禁通过后快速实施）
 </details>
 
+<details>
+<summary><strong>Q14: design.md 没有状态机，为什么 propose 报变更模型检查不通过？</strong></summary>
+
+**A**: 只要有 design.md，就必须有「可视化判定」小节（CM-5），与变更等级无关。
+
+两条都未命中时写成：
+
+```markdown
+## 可视化判定
+
+- 状态变动：未命中（本变更不修改状态）
+- 流程变动：未命中（本变更不修改现有流程）
+```
+
+这时不写 `change-model` 代码块。命中时为每个涉及的状态机或流程写一个条目，格式见 `skills/openspec-change-overview/shared/change-model.md`。
+</details>
+
 ---
 
 # ═══════════════════════════════════════════
@@ -540,14 +609,17 @@ OpenSpec Explore
       │  方案探索（Phase 2）→ design.md（候选方案 + 推荐方案）
       │    ※ 交叉验证 I：候选方案四维对比矩阵（成本/性能/复杂度/风险）
       │    ※ 测试 Seam 决策区块：从哪些公共边界验证行为
+      │    ※ 「可视化判定」小节；状态变动或流程变动命中时写 change-model 代码块
       │  ※ 子 agent 讨论结论回流 → discussion-log.md（贯穿 Phase 1–2）
       ▼
 技术方案确认（design.md 含推荐方案）
       │
       ├─ tasks.md 任务拆分：垂直切片 + 阻塞 DAG（openspec-propose 的 shared/task-slicing.md）
       │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户三问确认后定稿
+      │    ◆ 卡点①（/opsx:propose）：STE 检查 → 变更模型检查，退出码 0 才输出总结
       │
       ├─ /opsx:overview → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
+      │                    + overview.html（有变更模型时）
       ▼
    【分级判定】L0 豁免 ──────────────────────────┐
       │ L1/L2/L3                                │
@@ -564,7 +636,8 @@ OpenSpec Explore
 评审汇总（Phase 4）→ review-summary.md（门禁裁决 + 修改建议）      │
       │  含业务影响地图、代码改动范围（v2.0）                     │
       │                                                        │
-      ├─ BLOCKED ─→ 回改 design.md（留闭环记录）─→ 重走门禁 ⟲     │
+      ├─ BLOCKED ─→ /opsx:update 回改 design.md（留闭环记录；     │
+      │             ◆ 卡点②：STE + 变更模型检查）─→ 重走门禁 ⟲    │
       │                                                        │
       ├─【可选】/opsx:explain                                   │
       │         → review/finding-details/<ID>.md（详细解析）     │
@@ -574,15 +647,21 @@ OpenSpec Explore
       ▼                                                        │
       ◄────────────────────────────────────────────────────────┘
 OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/测试）
-      │  参考 review-summary.md 的"涉及代码模块"和"建议修复"      │
+      │  ◆ 卡点③：签字校验 → STE 检查 → 变更模型检查，任一项阻断即停止
+      │  参考 review-summary.md 的"涉及代码模块"和"建议修复"
       ▼
 双轴独立评审（Phase 5.5）→ /opsx:quality → review/standards.md + review/spec-fidelity.md + review/code-review-summary.md
       │  同一固定基线、两轴并行互不读取；任一轴未闭环 Blocker 不得归档
       ▼
 验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（用 overview.md 条件矩阵）+ 项目自有测试 + 切片证据新鲜度
       │  ※ 交叉验证 III：实现与设计交叉核对（Coherence 一致性校验）
+      │  ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL
       ▼
 OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据与讨论产物随变更进 changes/archive/
+
+旁路（不进默认流程，不参与任何卡点）：
+  /opsx:explain → review/finding-details/<ID>.md（解析单个 finding）
+  /opsx:video   → video/storyboard.md（人工签署）→ 渲染讲解视频（需要变更模型）
 ```
 
 ---
@@ -593,18 +672,20 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 |------|------|--------|------|-----------|
 | Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查共识充分性，已有决策不重复访谈；沉淀术语与决策 | 共识 + `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
 | Phase 1 需求澄清 | `/opsx:explore` | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
-| Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块） | 否 |
+| Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；命中时含 `change-model` 代码块） | 否 |
 | （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
-| 变更总览 | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵 | `overview.md`（派生视图，勿手改） | 否 |
+| 变更总览 | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
 | 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前三问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
-| 分级判定 | 人工（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `review-summary.md` | 否 |
+| 产物检查（四个卡点） | `/opsx:propose`、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查，再跑变更模型检查；阻断时 propose / update 修正后重跑，apply 停止，verify 记 CRITICAL | 无独立产物 | 否 |
+| 分级判定 | 人工（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md` | 否 |
 | Phase 3 技术评审门禁 | `/opsx:review` | 专项 Agent 并行评审已确定方案；**多角色多维度交叉验证（角色数按分级）** | `review/*.md` | 否 |
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
-| Phase 5 代码实现 | `/opsx:apply` | 按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**；**证据先于勾选** | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
+| Phase 5 代码实现 | `/opsx:apply` | 开始前通过签字校验、STE 检查、变更模型检查；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**；**证据先于勾选** | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
 | Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
-| Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
+| Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + 切片证据与双轴裁决核对 + STE / 变更模型检查；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
 | 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
+| 讲解视频（按需，不进默认流程） | `/opsx:video` | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕 | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
 
 ---
 
@@ -727,6 +808,17 @@ Phase 2 除方案矩阵外，必须确定**从哪些公共边界（Seam）验证
 - **L0/L1 变更**：建议有；缺省时 apply 阶段先与用户口头确认测试边界
 
 规则唯一事实源：`skills/openspec-explore/shared/seam-decisions.md`。
+
+### design.md 还必须包含：可视化判定小节与变更模型
+
+design.md 存在时，必须有「可视化判定」小节，逐条声明「状态变动」「流程变动」是否命中。判定不依赖变更等级。
+
+- **命中**：为每个涉及的状态机或流程在 `change-model` 代码块中写一个条目，标出新增 / 修改 / 删除；修改项必须写旧值，新增和修改的迁移、步骤必须引用 spec 中的 Scenario
+- **两条都未命中**：不写 `change-model` 代码块
+- **派生产物**：`/opsx:overview` 由变更模型生成 Mermaid 对比图与 `overview.html`；`/opsx:video` 的分镜只引用变更模型中的元素 ID
+- **检查**：四个卡点运行 6 项检查（CM-1～CM-6），全部阻断
+
+规则唯一事实源：`skills/openspec-change-overview/shared/change-model.md`；设计取舍见 `docs/adr/0004-change-model-as-diagram-source.md`。
 
 ---
 
@@ -912,9 +1004,12 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 **入口**：`/opsx:apply <change-name>`
 
-**前置条件**：
-- `review-summary.md` 已有人工签字 `Technical Review Approved`
-- 门禁裁决为 `READY_FOR_HUMAN_APPROVAL`
+**前置条件**（apply 开始任何任务前按此顺序校验，任一项不通过即停止）：
+- `review-summary.md` 已有人工签字 `Technical Review Approved`，门禁裁决为 `READY_FOR_HUMAN_APPROVAL`（L0 豁免无此项）
+- STE 检查无阻断项（`skills/openspec-ste/shared/gate-check.md`「Apply」列）
+- 变更模型检查无阻断项（`skills/openspec-change-overview/shared/change-model.md`「6 项检查」）
+
+被拦下时用 `/opsx:update` 修正产物后重新 apply，见「场景5」。
 
 **做什么**：
 按已评审通过的设计实现，不重新设计方案。参考 `review-summary.md` 的「涉及代码模块」和「建议修复」。
@@ -930,6 +1025,8 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - 切片声明了 `Evidence: evidence/slice-<id>.md` 时，每个任务项勾选前：跑验证命令 → 取实现指纹 → 写入 / 更新证据 → `Result: PASS` 后才勾选
 - 证据记录行为、Seam、实现指纹、变更文件、验证命令与结果、覆盖的验收行为、剩余风险；命令按项目自身约定选择，只记实际执行的结果
 - 全部切片完成跑完整测试套件时，同步刷新各切片证据指纹
+- 完整套件有失败时，用 `implementation-gate.mjs regress` 与基线失败清单（默认 `docs/test-baseline.txt`）比较：只剩已知基线失败记 `PASS_WITH_BASELINE`（带 `Baseline List` 与 `Introduced Failures: 0`）；有本次引入的失败记 `FAIL` 并新增修复任务。结论只写「本次引入的失败：N」，不列基线失败
+- 补充材料放 `evidence/attachments/`；首次 apply 在 `tasks.md` 写「基线任务数」行，新增任务超过 50% 或新增能力 / 模块时提示拆分为新变更
 - 规则唯一事实源：`skills/openspec-apply-change/shared/slice-evidence.md`
 
 **产出**：
@@ -954,7 +1051,9 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 **要求**：
 - 任一轴存在未闭环 Blocker 即 `BLOCKED`，不得归档
-- 修复走 `tasks.md` 勾选；修复后重新生成基线、两轴都重跑
+- Blocker 只能按判据 B1–B5 判定（写错数据 / 越权 / 假勾选 / 正常输入下已有功能失败 / 吞异常记成功），触发场景以 `[Bn]` 开头；只在依赖故障或边界输入下出现的问题为 Major
+- 修复走 `tasks.md` 勾选（门禁外提交先登记任务）；修复后用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
+- 报告原地覆盖，禁止 `-roundN` 副本；闭环历史记在每轴报告的 `## Finding 台账`
 - 规则唯一事实源：`skills/openspec-code-quality/shared/dual-axis-review.md`
 - 历史变更已有的 `review/code-quality.md` 继续有效，不要求补跑双轴
 
@@ -972,6 +1071,8 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - **Coherence**：**实现是否偏离 `design.md` 的既定决策**、代码风格与项目模式是否一致
 
 **切片证据与双轴评审核对**：缺失 / 不完整 / 失败 / 过期的切片证据、双轴评审 `BLOCKED` 均为 CRITICAL；与本切片行为无关的变化可按豁免格式登记，无法判断即按过期重跑（口径见 `skills/openspec-technical-review/shared/implementation-gate-check.md`）。
+
+**产物检查**：与上一项同一阶段运行 STE 检查与变更模型检查，每个阻断项记为 CRITICAL，修正走 `/opsx:update`（口径见 `skills/openspec-ste/shared/gate-check.md`「Verify」列）。
 
 **产出**：
 校验报告（对话内），按 CRITICAL / WARNING / SUGGESTION 分级。
@@ -1119,9 +1220,11 @@ Technical Review Approved: 张三  2026-08-26
 | `review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md` | 是 | 同上 | 否 |
 | `evidence/slice-<id>.md` | 是 | 同上 | 否 |
 | `discussion-log.md` | 是 | 同上 | 否 |
-| `overview.md` | 是 | 同上 | 否 |
+| `overview.md`、`overview.html`（有变更模型时） | 是 | 同上 | 否 |
+| `video/storyboard.md`（含人工签署）、`video/explainer.srt` | 是 | 同上 | 否 |
+| `video/media/`（音频、mp4、渲染缓存） | **否**，项目 `.gitignore` 加 `openspec/changes/*/video/media/` | 本地随目录移动，不进 git | 否 |
 
-`openspec archive` 把整个 `changes/<name>/` 目录搬到 `changes/archive/<name>/`，上述文件**自动随之归档，不需要额外操作，也不要在归档前手工删除**。
+`openspec archive` 把整个 `changes/<name>/` 目录搬到 `changes/archive/<name>/`，上述提交 git 的文件**自动随之归档，不需要额外操作，也不要在归档前手工删除**。
 
 **双轴评审与切片证据的两条边界**：一是**不追溯**——只对按新规则创建的变更生效（`tasks.md` 切片声明了 `Evidence:`，或已生成双轴评审产物），历史变更与历史 archive 不补造证据、不补跑双轴；二是**不外发**——证据与评审动作只在本地读写变更目录，不自动执行 git push、创建 PR、部署、发布或云舟等外部任务回写，这些动作需另行授权。
 
@@ -1173,6 +1276,8 @@ git check-ignore -v openspec/changes/*/review-summary.md openspec/changes/*/revi
 **始终存在的绕过路径**：直接让 Agent 用 Edit/Write 改代码，完全不经过任何 apply 入口 —— 三道防线全部看不到。
 
 **所以**：别把门禁当成「代码不可能未经评审进主干」的保证。**真正的兜底仍然是 PR review 与 CI。** 门禁的价值在于让正常路径上「评审」成为默认动作而非可选动作。
+
+**产物检查的强制力与第②道相同**：STE 检查与变更模型检查只在 propose / update / apply / verify 四个卡点由 skill 或 command 调用，属于提示词级约束。`/opsx:ff`、`/opsx:explore` 生成或修改产物时不运行，产物问题要到 apply 才被拦下。对话回复的 STE 阻断只有 Claude Code 能做，需单独注册 Stop hook（见下方部署说明）。
 
 ---
 
@@ -1251,6 +1356,14 @@ hook 依赖 `jq`，缺失时脚本会失败。确认已安装：
 jq --version
 ```
 
+#### STE 回复检查 hook（可选）
+
+与评审门禁 hook 无关，用于在对话回复出现 CONTEXT.md 禁用别名时让 Claude 改写。安装 skill 不会自动注册。
+
+- 注册位置：`~/.claude/settings.json`（全局）或项目 `.claude/settings.json`；事件为 `Stop`，命令为 `node <STE_DIR>/scripts/ste-lint.mjs reply-hook`
+- 生效条件：hook 读取 `$CLAUDE_PROJECT_DIR/CONTEXT.md`，项目没有 CONTEXT.md 时直接放行
+- 注册格式与回退方法的唯一事实源：`skills/openspec-ste/SKILL.md`「对话回复检查」
+
 </details>
 
 ---
@@ -1286,8 +1399,8 @@ jq --version
 
 ---
 
-**最后更新**：2026-09-04  
-**文档版本**：v2.1（v2.0 基础上吸收 grill 访谈、垂直切片、seam-first TDD 三项工程实践）  
+**最后更新**：2026-10-12  
+**文档版本**：v2.2（v2.1 基础上同步双轴独立评审、切片新鲜证据、STE 检查、变更模型与讲解视频）  
 **维护者**：[AI Skills 开发团队]
 
 ---

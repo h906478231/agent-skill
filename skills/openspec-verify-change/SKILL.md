@@ -82,6 +82,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - 运行 `node <GATE> evidence <changeRoot>` 与 `node <GATE> review <changeRoot>`（`<GATE>` = `../openspec-technical-review/scripts/implementation-gate.mjs`）
    - 缺失 / 不完整 / 失败 / 过期的切片证据，双轴评审 `BLOCKED` 或报告不完整 → CRITICAL；证据过期按 `changedSinceEvidence` 决定重跑或登记豁免
    - 脚本返回「不适用」时把理由原样写进报告，不得把缺证据静默当作通过；历史变更不追溯补证据
+   - 运行 `node <GATE> hygiene <changeRoot>`：每条 `warnings` 记为一条 SUGGESTION（文件路径 + `reason`），建议把补充材料移到 `evidence/attachments/`、删除 `-roundN` 副本；不阻断归档
+   - 完整回归结论只写本次引入的失败数：`PASS_WITH_BASELINE`（本次引入的失败：0）记为通过；**禁止在报告中列出基线失败的测试名或数量**。本次引入的失败不为 0 → 每个测试记一条 CRITICAL，写明测试名与修复任务（规则见 `../openspec-apply-change/shared/slice-evidence.md`「结果取值」）
 
    **STE 检查（本仓自加，非上游原文）** —— 运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Verify」列记录结果（每个阻断项记为 CRITICAL）；找不到脚本时在报告中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
 
@@ -126,6 +128,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
 8. **Generate Verification Report**
 
+   报告写入变更目录时固定为 `<changeRoot>/verification.md`，每次重跑**原地覆盖**，禁止生成 `verification-round2.md` 这类副本（本仓自加；规则见 `../openspec-code-quality/shared/dual-axis-review.md`「原地覆盖与 Finding 台账」）。
+
    **Summary Scorecard**:
    ```
    ## Verification Report: <change-name>
@@ -137,6 +141,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    | Correctness  | M/N reqs covered |
    | Coherence    | Followed/Issues  |
    | Evidence     | N/M slices fresh (or 不适用: reason) |
+   | Regression   | PASS / PASS_WITH_BASELINE（本次引入的失败：0）/ FAIL（本次引入：<测试名>） |
    | Review       | PASSED/BLOCKED (or 不适用: reason)   |
    | STE          | PASS/BLOCKED/ERROR (or 已跳过: reason) |
    | Change Model | PASS/BLOCKED/ERROR (or 已跳过: reason) |
@@ -159,6 +164,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    3. **SUGGESTION** (Nice to fix):
       - Pattern inconsistencies
+      - Artifacts outside the allowlist (`hygiene` warnings, 本仓自加)
       - Minor improvements
       - Each with specific recommendation
 

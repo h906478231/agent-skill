@@ -54,6 +54,8 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/opsx:propose` to create them.
    - If the change is already coherent, say so and make no edits.
 
+   **范围扩展拆分提示（本仓自加）** —— `tasks.md` 开头有 `基线任务数：N（…首次 apply）` 行时，写入修改前比较：新增任务 > N × 50%，或新增能力，或新增顶层模块 → 用 AskUserQuestion 提示「创建变更（推荐）/ 继续当前变更」，选择追加到 `discussion-log.md`。只提示，不阻断。规则见 skill `openspec-update-change` 的同名小节。
+
 5. **Confirm and apply, one artifact at a time**
    - Show each proposed revision and why. Write only after the user confirms.
    - If the user rejects a revision, do not write it - leave that artifact unchanged.

@@ -11,12 +11,16 @@
  *
  * 用法：
  *   node implementation-gate.mjs fingerprint <changeRoot> [--repo <dir>]
- *   node implementation-gate.mjs baseline    <changeRoot> [--base <rev>] [--repo <dir>]
+ *   node implementation-gate.mjs baseline    <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]
  *   node implementation-gate.mjs review      <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs evidence    <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs archive     <changeRoot> [--repo <dir>]
+ *   node implementation-gate.mjs hygiene     <changeRoot>
+ *   node implementation-gate.mjs regress     --baseline <file> --actual <file>
  *
- * 输出：fingerprint 输出一行指纹；baseline 输出 Markdown 基线区块；其余输出 JSON。
+ * 输出：fingerprint 输出一行指纹；baseline 输出 Markdown 基线区块（--since 给出时追加增量范围）；其余输出 JSON。
+ * regress 比较实际失败清单与已知基线失败清单，只有本次引入的失败（introduced）影响退出码。
+ * hygiene 列出变更目录中允许清单外的产物，只给 warning，退出码恒为 0（参数错误除外）。
  * 退出码：0 通过；1 存在阻断项；2 参数或环境错误（非 git 仓库、变更目录不存在等）。
  *
  * 实现指纹：在临时 index 中以 HEAD 为种子写入工作区全部改动（含未跟踪文件，遵守 .gitignore），
@@ -26,7 +30,7 @@
  *   - 对象写入对象库后，两个指纹之间可用 git diff-tree 求出变化文件，供过期判定与豁免核实。
  */
 
-import { existsSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -44,6 +48,27 @@ const GIT_TREE_FINGERPRINT = /^git-tree:([0-9a-f]{40}|[0-9a-f]{64})$/
 /** 评审基线身份字段：三份评审报告必须逐项一致；记录时间只供追溯，不参与比较。 */
 const BASELINE_KEYS = ['Change', 'Base Commit', 'Fingerprint', 'Review Scope']
 
+/**
+ * 评审规则版本：baseline 输出 `Rules Version: 2`，带该行的报告启用 Blocker 判据前缀与 Finding 台账检查。
+ * 没有该行的旧报告按旧规则检查。
+ */
+const RULES_VERSION = '2'
+
+/**
+ * 可缺省的基线身份字段：旧报告或首轮评审没有这些行时不报缺失，但三份报告取值（含缺省）必须一致。
+ * Delta Since 只在第 2 轮起的增量基线中出现。
+ */
+const OPTIONAL_BASELINE_KEYS = ['Rules Version', 'Delta Since']
+
+/** 实现后 Blocker 判据编号（B1–B5，判据表见 dual-axis-review.md）：触发场景必须以其开头。 */
+const BLOCKER_CRITERION = /^\[B[1-5]\]/
+
+/** 累计台账区块标题。 */
+const LEDGER_TITLE = 'Finding 台账'
+
+/** 重跑时的上轮闭环验证区块标题（格式见 closed-loop-verification.md）。 */
+const CLOSURE_TITLE = '上轮闭环验证'
+
 /** 双轴原始报告定义：报告路径（相对 changeRoot）、finding 前缀与结论行标题。 */
 const AXES = [
   { name: 'Standards Review', file: 'review/standards.md', prefix: 'STD' },
@@ -58,6 +83,15 @@ const CLOSED_STATUSES = ['closed', 'risk-accepted', 'false-positive']
 
 /** 「位置」可定位的判据：出现 `文件:行号`（可带区间）。 */
 const LOCATION = /[^\s`:：|]+:\d+/
+
+/** finding ID 格式（如 `STD-01`）：Findings 表与 Finding 台账共用。 */
+const FINDING_ID = /^[A-Z]+-\d+$/
+
+/**
+ * 测试名形式的闭环依据：`类名.方法名` 或 `类名#方法名`（如 `OrderTest.createsOrder`）。
+ * 排除源文件与文档扩展名：`OrderService.java`、`README.md` 是文件名，没有指到具体行。
+ */
+const TEST_NAME = /\b[A-Z][\w$]*[.#](?!(?:java|kt|kts|groovy|scala|js|mjs|cjs|jsx|ts|tsx|vue|py|go|rb|php|cs|swift|rs|c|cc|cpp|h|hpp|sql|sh|md|txt|json|ya?ml|xml|html|css|properties|gradle)\b)[a-z_$][\w$]*\b/
 
 /** 参数或环境错误：以退出码 2 结束，与「校验不通过」区分。 */
 class GateError extends Error {}
@@ -150,23 +184,40 @@ function changedFiles(repo, from, to) {
 /**
  * 生成评审基线区块：两轴原始报告与汇总报告原样粘贴同一块。
  * @param {string} baseRev 变更起点（省略取 HEAD）。
- * @throws {GateError} 起点提交无法解析时抛出。
+ * @param {string} [since] 上一轮基线指纹；给出时追加 `Delta Since` 与变化文件列表，第 2 轮起只审查该增量。
+ * @returns {{ output: string, warnings: string[] }} warnings 写到 stderr，不进入基线区块。
+ * @throws {GateError} 起点提交无法解析，或 since 不是 git-tree 指纹时抛出。
  */
-function renderBaseline(repo, changeRoot, baseRev) {
+function renderBaseline(repo, changeRoot, baseRev, since) {
   const rev = baseRev || 'HEAD'
   const base = tryGit(repo, ['rev-parse', '--verify', '-q', `${rev}^{commit}`])
   if (!base) throw new GateError(`无法解析基线提交：${rev}（尚无提交时请先提交或用 --base 指定）`)
+  if (since && !GIT_TREE_FINGERPRINT.test(since)) throw new GateError(`--since 不是 git-tree 指纹：${since}`)
   const planning = planningDir(repo, changeRoot)
-  return [
+  const fingerprint = computeFingerprint(repo, changeRoot)
+  const warnings = []
+  const delta = []
+  if (since) {
+    const files = changedFiles(repo, since, fingerprint)
+    if (files === null) {
+      warnings.push(`warning: 上一轮指纹 ${since} 的 tree 对象不存在（可能已被 git gc 回收），本轮回退为全量审查`)
+    } else {
+      delta.push(`- Delta Since: ${since}`, '- Delta Files:', ...(files.length ? files : ['（无变化）']).map(file => `  - ${file}`))
+    }
+  }
+  const output = [
     '## 评审基线',
     '',
     `- Change: ${path.basename(changeRoot)}`,
     `- Base Commit: ${base}`,
-    `- Fingerprint: ${computeFingerprint(repo, changeRoot)}`,
+    `- Fingerprint: ${fingerprint}`,
     `- Review Scope: ${base.slice(0, 12)}..工作区（含已暂存 / 未暂存 / 未跟踪文件，${planning ? `排除 ${planning}` : '无排除目录'}）`,
+    `- Rules Version: ${RULES_VERSION}`,
+    ...delta,
     `- Baseline Recorded At: ${new Date().toISOString()}`,
     '',
   ].join('\n')
+  return { output, warnings }
 }
 
 // ============================================================================
@@ -184,14 +235,28 @@ function readField(text, key) {
   return match ? clean(match[1]) : ''
 }
 
-/** 取 `## 标题` 区块正文（标题按包含匹配），到下一个一、二级标题为止；不存在返回空串。 */
-function section(text, title) {
+/**
+ * 定位 `## 标题` 区块（标题按包含匹配），到下一个一、二级标题为止。
+ * @returns {{ start: number, end: number, lines: string[] }|null} start 为标题行，end 为区块后的首行（不含）。
+ */
+function locateSection(text, title) {
   const lines = text.split(/\r?\n/)
   const start = lines.findIndex(line => /^##\s/.test(line) && line.includes(title))
-  if (start < 0) return ''
-  const rest = lines.slice(start + 1)
-  const end = rest.findIndex(line => /^#{1,2}\s/.test(line))
-  return (end < 0 ? rest : rest.slice(0, end)).join('\n')
+  if (start < 0) return null
+  const end = lines.findIndex((line, i) => i > start && /^#{1,2}\s/.test(line))
+  return { start, end: end < 0 ? lines.length : end, lines }
+}
+
+/** 取 `## 标题` 区块正文；不存在返回空串。 */
+function section(text, title) {
+  const found = locateSection(text, title)
+  return found ? found.lines.slice(found.start + 1, found.end).join('\n') : ''
+}
+
+/** 删除 `## 标题` 区块（含标题行），返回其余正文。 */
+function withoutSection(text, title) {
+  const found = locateSection(text, title)
+  return found ? [...found.lines.slice(0, found.start), ...found.lines.slice(found.end)].join('\n') : text
 }
 
 const isTableRow = line => /^\s*\|.*\|\s*$/.test(line)
@@ -217,15 +282,56 @@ function parseTables(text) {
   return rows
 }
 
-/** 读取「## 评审基线」区块中的身份字段。 */
+/** 读取「## 评审基线」区块中的身份字段（含可缺省字段，缺省为空串）。 */
 function readBaseline(text) {
   const block = section(text, '评审基线')
-  return Object.fromEntries(BASELINE_KEYS.map(key => [key, readField(block, key)]))
+  return Object.fromEntries([...BASELINE_KEYS, ...OPTIONAL_BASELINE_KEYS].map(key => [key, readField(block, key)]))
 }
 
+/**
+ * Rules Version 2 的报告结构检查：Blocker 判据前缀与 Finding 台账三条一致性规则（design D5）。
+ * @param {object[]} findings Findings 表中的 finding 行（已排除台账区块）。
+ * @returns {string[]} 结构问题。
+ */
+function checkRulesV2(file, text, findings) {
+  const issues = []
+  for (const row of findings) {
+    if (isBlocker(row) && !BLOCKER_CRITERION.test(clean(row['触发场景'] || ''))) {
+      issues.push(`${file} 的 Blocker ${row.ID} 触发场景未以判据编号 [B1]–[B5] 开头（判据表见 dual-axis-review.md）`)
+    }
+  }
+  if (!locateSection(text, LEDGER_TITLE)) {
+    issues.push(`${file} 缺少「## ${LEDGER_TITLE}」区块（Rules Version ${RULES_VERSION} 必填）`)
+    return issues
+  }
+  const ledger = parseTables(section(text, LEDGER_TITLE)).filter(row => FINDING_ID.test(row.ID || ''))
+  const findingIds = new Set(findings.map(row => row.ID))
+  const ledgerIds = new Set(ledger.map(row => row.ID))
+  for (const row of ledger) {
+    const status = clean(row['状态'] || '').toLowerCase()
+    const closure = clean(row['闭环依据'] || '')
+    if (status === 'closed') {
+      // closed 必须指到落地位置；risk-accepted / false-positive 写留痕位置即可（gate-policy.md 第 4 节）。
+      if (!LOCATION.test(closure) && !TEST_NAME.test(closure)) {
+        issues.push(`${file} 台账 ${row.ID} 状态为 closed，但闭环依据不是 文件:行号 或测试名（如 OrderTest.createsOrder）`)
+      }
+    } else if (CLOSED_STATUSES.includes(status)) {
+      if (!closure) issues.push(`${file} 台账 ${row.ID} 状态为 ${status} 但缺少闭环依据（留痕位置）`)
+    } else if (!findingIds.has(row.ID)) {
+      issues.push(`${file} 台账 ${row.ID} 未闭环，但不在 Findings 表中`)
+    }
+  }
+  for (const id of findingIds) {
+    if (!ledgerIds.has(id)) issues.push(`${file} 的 finding ${id} 未登记到「${LEDGER_TITLE}」`)
+  }
+  return issues
+}
+
+/** 严重级别为 Blocker：判据前缀检查与裁决共用同一口径。 */
+const isBlocker = row => clean(row['严重级别'] || '') === 'Blocker'
+
 /** 未闭环 Blocker 判据：严重级别为 Blocker 且闭环状态为 open 或缺省。 */
-const isOpenBlocker = row => clean(row['严重级别'] || '') === 'Blocker'
-  && !CLOSED_STATUSES.includes(clean(row['闭环状态'] || '').toLowerCase())
+const isOpenBlocker = row => isBlocker(row) && !CLOSED_STATUSES.includes(clean(row['闭环状态'] || '').toLowerCase())
 
 /** 读取原始报告的结论行（取最后一个单值结论行，模板中的「通过 / 有条件通过 / 打回」不会被误识别）。 */
 function readAxisVerdict(text) {
@@ -265,12 +371,17 @@ function checkReview(changeRoot, { required = false, currentFingerprint = null }
       issues.push(`缺少原始报告 ${axis.file}`)
       return { axis: axis.name, file: axis.file, exists: false, verdict: '', findings: 0, openBlockers: [] }
     }
-    baselines.push([axis.file, readBaseline(text)])
-    const findings = parseTables(text).filter(row => /^[A-Z]+-\d+$/.test(row.ID || ''))
+    const axisBaseline = readBaseline(text)
+    baselines.push([axis.file, axisBaseline])
+    const rulesVersion = axisBaseline['Rules Version']
+    // 台账与上轮闭环验证表也用 finding ID 作首列，必须排除，否则已闭环的 ID 会被当作 finding。
+    const findings = parseTables(withoutSection(withoutSection(text, LEDGER_TITLE), CLOSURE_TITLE))
+      .filter(row => FINDING_ID.test(row.ID || ''))
     for (const row of findings) {
       if (!row.ID.startsWith(`${axis.prefix}-`)) issues.push(`${axis.file} 的 finding ${row.ID} 前缀与评审轴不符，应为 ${axis.prefix}-`)
       if (!LOCATION.test(row['位置'] || '')) issues.push(`${axis.file} 的 finding ${row.ID} 位置无法定位，须写成 文件:行号`)
     }
+    if (rulesVersion === RULES_VERSION) issues.push(...checkRulesV2(axis.file, text, findings))
     const openBlockers = findings.filter(isOpenBlocker).map(row => row.ID)
     const verdict = readAxisVerdict(text)
     if (!verdict) {
@@ -308,10 +419,16 @@ function checkReview(changeRoot, { required = false, currentFingerprint = null }
       if (!values[key]) issues.push(`${file} 的评审基线缺少 ${key}`)
       else if (reference[key] && values[key] !== reference[key]) issues.push(`${file} 的评审基线 ${key} 与 ${referenceFile} 不一致`)
     }
+    for (const key of OPTIONAL_BASELINE_KEYS) {
+      if (values[key] !== reference[key]) {
+        issues.push(`${file} 的评审基线 ${key}（${values[key] || '无'}）与 ${referenceFile}（${reference[key] || '无'}）不一致`)
+      }
+    }
   }
   const baseline = reference || null
   if (currentFingerprint && baseline && baseline.Fingerprint && baseline.Fingerprint !== currentFingerprint) {
-    warnings.push(`评审基线 Fingerprint ${baseline.Fingerprint} 与当前实现 ${currentFingerprint} 不一致：评审后实现有变化，需判断是否重跑双轴评审`)
+    warnings.push(`评审基线 Fingerprint ${baseline.Fingerprint} 与当前实现 ${currentFingerprint} 不一致：评审后实现有变化，需判断是否重跑双轴评审；`
+      + '改动不在 tasks.md 已有任务中（门禁外提交）时，先在 tasks.md 登记任务并写明提交或文件，再生成新基线重跑')
   }
 
   const verdict = blocked ? 'BLOCKED' : issues.length ? 'INCOMPLETE' : 'PASSED'
@@ -362,11 +479,30 @@ const EVIDENCE_SECTIONS = ['变更文件', '验证命令', '覆盖的验收行�
 /** 统计区块中的列表项与表格数据行。 */
 const countEntries = body => (body.match(/^\s*(?:[-*]|\d+\.)\s+\S/gm) || []).length + parseTables(body).length
 
+/** 证据结果取值；PASS_WITH_BASELINE 表示完整套件只剩已知基线失败，按通过处理。 */
+const EVIDENCE_RESULTS = ['PASS', 'PASS_WITH_BASELINE', 'FAIL']
+
+/**
+ * 校验 PASS_WITH_BASELINE 必带的字段：Baseline List 指向存在的文件（相对仓库根），Introduced Failures 为 0。
+ * @returns {{ missing: string[], failures: string[] }}
+ */
+function inspectBaselineFields(repo, head) {
+  const missing = []
+  const failures = []
+  const list = readField(head, 'Baseline List')
+  if (!list) missing.push('Baseline List（PASS_WITH_BASELINE 必填）')
+  else if (!existsSync(path.resolve(repo, list))) missing.push(`Baseline List（文件不存在：${list}）`)
+  const introduced = readField(head, 'Introduced Failures')
+  if (!/^\d+$/.test(introduced)) missing.push('Introduced Failures（PASS_WITH_BASELINE 必填，取值为整数）')
+  else if (Number(introduced) !== 0) failures.push(`本次引入的失败为 ${introduced}，不能记为 PASS_WITH_BASELINE`)
+  return { missing, failures }
+}
+
 /**
  * 检查一份证据的字段完整性与验证结果。
  * @returns {{ fields: object, missing: string[], failures: string[] }} missing 为缺失 / 非法项，failures 为失败的验证结果。
  */
-function inspectEvidence(text, sliceId) {
+function inspectEvidence(repo, text, sliceId) {
   // 字段只在首个二级标题之前读取，避免与豁免记录表等正文混淆。
   const head = text.split(/^##\s/m)[0]
   const fields = Object.fromEntries(EVIDENCE_FIELDS.map(key => [key, readField(head, key)]))
@@ -377,13 +513,21 @@ function inspectEvidence(text, sliceId) {
   }
 
   const failures = []
+  const outcomes = []
   const result = fields.Result.toUpperCase()
-  if (fields.Result && !['PASS', 'FAIL'].includes(result)) missing.push('Result（只能是 PASS / FAIL）')
+  if (fields.Result && !EVIDENCE_RESULTS.includes(result)) missing.push('Result（只能是 PASS / PASS_WITH_BASELINE / FAIL）')
   if (result === 'FAIL') failures.push('Result 为 FAIL')
+  outcomes.push(result)
   for (const row of parseTables(section(text, '验证命令'))) {
     const outcome = (row['结果'] || '').toUpperCase()
-    if (!['PASS', 'FAIL'].includes(outcome)) missing.push('验证命令结果（每行只能是 PASS / FAIL）')
+    outcomes.push(outcome)
+    if (!EVIDENCE_RESULTS.includes(outcome)) missing.push('验证命令结果（每行只能是 PASS / PASS_WITH_BASELINE / FAIL）')
     else if (outcome === 'FAIL') failures.push(`验证命令失败：${row['命令'] || '(未写命令)'}`)
+  }
+  if (outcomes.includes('PASS_WITH_BASELINE')) {
+    const baseline = inspectBaselineFields(repo, head)
+    missing.push(...baseline.missing)
+    failures.push(...baseline.failures)
   }
   return { fields, missing: [...new Set(missing)], failures }
 }
@@ -447,7 +591,7 @@ function checkSlice(repo, changeRoot, slice, currentFingerprint) {
     return { slice: view, warnings: [], issues: [`${label} 已勾选 ${slice.done}/${slice.total} 项但缺少证据 ${ref}：证据必须先于勾选生成`] }
   }
 
-  const { fields, missing, failures } = inspectEvidence(text, slice.id)
+  const { fields, missing, failures } = inspectEvidence(repo, text, slice.id)
   view.fingerprint = fields.Fingerprint
   const problems = []
   if (missing.length) {
@@ -520,22 +664,126 @@ function checkArchive(repo, changeRoot, currentFingerprint) {
 }
 
 // ============================================================================
+// 基线差分回归
+// ============================================================================
+
+/** Maven Surefire 在失败测试后追加的标记，读取清单时删除。 */
+const SUREFIRE_SUFFIX = /\s+<<<\s+(?:FAILURE|ERROR)!\s*$/
+
+/**
+ * 读取失败清单：每行一个测试标识，跳过空行与 `#` 注释行，删除 Surefire 后缀，去重并保持顺序。
+ * @throws {GateError} 文件不存在时抛出。
+ */
+function readFailureList(file) {
+  if (!existsSync(file) || !statSync(file).isFile()) throw new GateError(`失败清单不存在：${file}`)
+  const ids = readFileSync(file, 'utf8').split(/\r?\n/)
+    .map(line => line.trim().replace(SUREFIRE_SUFFIX, '').trim())
+    .filter(line => line && !line.startsWith('#'))
+  return [...new Set(ids)]
+}
+
+/**
+ * 比较实际失败清单与已知基线失败清单。
+ * @returns {{ introduced: string[], baselineMatched: number, fixed: string[] }} 只有 introduced 影响退出码。
+ */
+function regress(baselineFile, actualFile) {
+  const baseline = readFailureList(baselineFile)
+  const actual = readFailureList(actualFile)
+  const known = new Set(baseline)
+  const failing = new Set(actual)
+  return {
+    introduced: actual.filter(id => !known.has(id)),
+    baselineMatched: actual.filter(id => known.has(id)).length,
+    fixed: baseline.filter(id => !failing.has(id)),
+  }
+}
+
+// ============================================================================
+// 产物允许清单
+// ============================================================================
+
+/**
+ * 变更目录允许的产物（路径相对 changeRoot，用 `/` 分隔），由各 OpenSpec skill 与 openspec CLI 声明的输出路径组成。
+ * 新 skill 向变更目录写入新产物时，必须同步加入本清单。补充材料一律放 evidence/attachments/。
+ */
+const ARTIFACT_ALLOWLIST = [
+  /^\.openspec\.yaml$/, // openspec CLI
+  /^(proposal|design|tasks)\.md$/, // openspec-propose
+  /^specs\/.+\.md$/, // openspec-propose / openspec-update-change
+  /^review\/(architecture|concurrency|performance|database|security)\.md$/, // openspec-technical-review
+  /^review-summary\.md$/, // openspec-technical-review
+  /^review\/(standards|spec-fidelity|code-review-summary|code-quality)\.md$/, // openspec-code-quality（code-quality.md 为历史格式）
+  /^review\/finding-details-summary\.md$/, /^review\/finding-details\/[^/]+\.md$/, /^\.finding-explain\.json$/, // openspec-finding-explain
+  /^verification\.md$/, // openspec-verify-change
+  /^evidence\/slice-[\w.-]+\.md$/, /^evidence\/attachments\/.+$/, // openspec-apply-change
+  /^overview\.(md|html)$/, // openspec-change-overview
+  /^discussion-log\.md$/, // openspec-discussion-sync / openspec-grill
+  /^video\/(storyboard\.md|explainer\.srt)$/, /^video\/media\/.+$/, // openspec-explainer-video
+]
+
+/** 系统生成的文件，不计入产物检查。 */
+const SYSTEM_FILES = /(^|\/)(\.DS_Store|Thumbs\.db)$/
+
+/** 轮次副本：文件名带 `-round<N>` 或 `-r<N>`（规则要求原地覆盖）。 */
+const ROUND_COPY = /-(round|r)\d+(\.[^/.]+)?$/i
+
+/** 文件名自由的目录（补充材料、视频缓存）：不按 round 副本判定，`jdk-r17.log` 这类名字是正常文件。 */
+const FREE_NAMING_DIRS = /^(evidence\/attachments|video\/media)\//
+
+/** 递归列出目录下的全部文件，返回相对路径（`/` 分隔）。 */
+function listFiles(root, rel = '') {
+  return readdirSync(path.join(root, rel), { withFileTypes: true }).flatMap(entry => {
+    const child = rel ? `${rel}/${entry.name}` : entry.name
+    return entry.isDirectory() ? listFiles(root, child) : [child]
+  })
+}
+
+/**
+ * 检查变更目录中允许清单外的文件；只给 warning，不阻断。
+ * @returns {{ files: number, warnings: { file: string, reason: string }[] }}
+ */
+function checkHygiene(changeRoot) {
+  const files = listFiles(changeRoot).filter(file => !SYSTEM_FILES.test(file)).sort()
+  // 先判轮次副本：`evidence/slice-01-r2.md` 也能匹配切片证据的允许规则，但规则要求原地覆盖。
+  const warnings = files.flatMap(file => {
+    if (ROUND_COPY.test(file) && !FREE_NAMING_DIRS.test(file)) return [{ file, reason: 'round copy' }]
+    if (ARTIFACT_ALLOWLIST.some(pattern => pattern.test(file))) return []
+    return [{ file, reason: '不在产物允许清单中；补充材料请放到 evidence/attachments/' }]
+  })
+  return { files: files.length, warnings }
+}
+
+// ============================================================================
 // 命令入口
 // ============================================================================
 
-/** 解析 `--key value` 形式的可选参数。 */
-function parseOptions(args) {
+/** 各子命令接受的 `--key value` 参数；其他参数一律按参数错误处理，不静默忽略。 */
+const COMMAND_OPTIONS = {
+  fingerprint: ['repo'],
+  baseline: ['base', 'since', 'repo'],
+  review: ['repo'],
+  evidence: ['repo'],
+  archive: ['repo'],
+  hygiene: [],
+  regress: ['baseline', 'actual'],
+}
+
+/** 解析 `--key value` 形式的可选参数，只接受该子命令声明的参数。 */
+function parseOptions(command, args) {
+  const allowed = COMMAND_OPTIONS[command]
   const options = {}
   for (let i = 0; i < args.length; i += 1) {
-    const match = /^--(base|repo)$/.exec(args[i])
-    if (!match || i + 1 >= args.length) throw new GateError(`无法识别的参数：${args[i]}`)
+    const match = /^--([a-z]+)$/.exec(args[i])
+    if (!match || !allowed.includes(match[1])) throw new GateError(`${command} 不支持的参数：${args[i]}`)
+    if (i + 1 >= args.length) throw new GateError(`${command} 的参数 ${args[i]} 缺少取值`)
     options[match[1]] = args[i + 1]
     i += 1
   }
   return options
 }
 
-const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive> <changeRoot> [--base <rev>] [--repo <dir>]'
+const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive|hygiene> <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]'
+  + '\n      node implementation-gate.mjs regress --baseline <file> --actual <file>'
 
 /**
  * 执行子命令。
@@ -543,16 +791,30 @@ const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|revie
  * @returns {{ code: number, output: string }} 退出码与标准输出内容。
  */
 function run(argv) {
+  if (argv[0] === 'regress') {
+    const options = parseOptions('regress', argv.slice(1))
+    if (!options.baseline || !options.actual) throw new GateError(USAGE)
+    const report = regress(path.resolve(options.baseline), path.resolve(options.actual))
+    const ok = report.introduced.length === 0
+    return { code: ok ? EXIT.PASS : EXIT.BLOCKED, output: `${JSON.stringify({ command: 'regress', ok, ...report }, null, 2)}\n` }
+  }
   const [command, changeRootArg, ...rest] = argv
-  if (!['fingerprint', 'baseline', 'review', 'evidence', 'archive'].includes(command) || !changeRootArg) throw new GateError(USAGE)
-  const options = parseOptions(rest)
+  if (!Object.prototype.hasOwnProperty.call(COMMAND_OPTIONS, command) || !changeRootArg) throw new GateError(USAGE)
+  const options = parseOptions(command, rest)
   const target = path.resolve(changeRootArg)
   if (!existsSync(target) || !statSync(target).isDirectory()) throw new GateError(`变更目录不存在：${target}`)
   const changeRoot = realpathSync(target)
+  // 产物检查只读变更目录，不依赖 git。
+  if (command === 'hygiene') {
+    return { code: EXIT.PASS, output: `${JSON.stringify({ command, change: path.basename(changeRoot), ok: true, ...checkHygiene(changeRoot) }, null, 2)}\n` }
+  }
   const repo = resolveRepo(options.repo || process.cwd())
 
   if (command === 'fingerprint') return { code: EXIT.PASS, output: `${computeFingerprint(repo, changeRoot)}\n` }
-  if (command === 'baseline') return { code: EXIT.PASS, output: renderBaseline(repo, changeRoot, options.base) }
+  if (command === 'baseline') {
+    const { output, warnings } = renderBaseline(repo, changeRoot, options.base, options.since)
+    return { code: EXIT.PASS, output, stderr: warnings.map(item => `${item}\n`).join('') }
+  }
 
   const currentFingerprint = computeFingerprint(repo, changeRoot)
   let report
@@ -572,8 +834,9 @@ function run(argv) {
 }
 
 try {
-  const { code, output } = run(process.argv.slice(2))
+  const { code, output, stderr } = run(process.argv.slice(2))
   process.stdout.write(output)
+  if (stderr) process.stderr.write(stderr)
   process.exitCode = code
 } catch (error) {
   // 参数与环境错误只输出可读信息；非预期异常保留堆栈，便于定位脚本缺陷。

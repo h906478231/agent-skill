@@ -11,6 +11,9 @@ export const meta = {
 //   { change: '<change-name>' }                       全量重走：5 维度全跑（默认）
 //   { change: '<name>', roles: ['security'] }          增量重走：只重跑指定维度，其余沿用上轮 review/<role>.md
 //   { change: '<name>', skillDir: '/abs/path/...' }    显式指定本 skill 的安装目录，省去子 agent 自行探测
+//   { change: '<name>', tier: 'mvp', roles: ['security', 'concurrency'] }
+//                                                     MVP 且命中升级信号：roles 取 shared/gate-levels.md 映射表的结果，
+//                                                     只跑这些维度并使用 MVP 评审标准，其余维度记为「不适用」而非沿用上轮
 // 缺省 change 时用 demo 变更；缺省 roles 时视为全量。
 const change = (args && args.change) || 'add-contact-batch-import'
 const base = `openspec/changes/${change}`
@@ -43,8 +46,16 @@ const ROLES = [
 
 // 解析增量重走范围：roles 未指定或为空 → 全量重走 5 维度；否则只重跑交集维度，其余沿用上轮结论。
 const requested = args && Array.isArray(args.roles) ? args.roles.filter(Boolean) : null
-const rerun = requested && requested.length > 0 ? ROLES.filter(r => requested.includes(r.key)) : ROLES
-const reuse = ROLES.filter(r => !rerun.includes(r))
+const matched = requested ? ROLES.filter(r => requested.includes(r.key)) : []
+const rerun = requested && requested.length > 0 ? matched : ROLES
+// MVP 分层：未纳入的维度不适用（不是沿用上轮），见 shared/gate-levels.md「方案类型维度」。
+const mvp = Boolean(args && args.tier === 'mvp')
+// MVP 的维度来自 gate-levels.md 映射表；没有有效 roles 说明调用方漏传映射结果，不能静默按 5 维度全跑。
+if (mvp && matched.length === 0) {
+  throw new Error(`tier: 'mvp' 必须传 roles（按 gate-levels.md「信号到维度的映射表」得出的维度），当前 roles 为 ${JSON.stringify(requested)}`)
+}
+const skipped = ROLES.filter(r => !rerun.includes(r))
+const reuse = mvp ? [] : skipped
 const incremental = reuse.length > 0
 
 const REVIEW_SCHEMA = {
@@ -87,9 +98,15 @@ const REVIEW_SCHEMA = {
 
 phase('Review')
 
-if (incremental) {
+if (mvp) {
+  log(`MVP 分层评审：只跑 [${rerun.map(r => r.key).join(', ')}]；不适用 [${skipped.map(r => r.key).join(', ')}]。`)
+} else if (incremental) {
   log(`增量重走：重跑 [${rerun.map(r => r.key).join(', ')}]；沿用上轮 [${reuse.map(r => r.key).join(', ')}]。`)
 }
+
+const mvpNote = mvp
+  ? `本次评审使用 MVP 标准。必须先阅读 ${SD}/shared/mvp-review-standard.md 理解 MVP 评审原则，只报告阻断性问题，不报告 MVP 已接受的权衡。`
+  : ''
 
 // 只对需要重跑的维度并行 fan-out。每个子 agent 自读角色准则 + 方案文档，产出结构化评审并覆写 review/<key>.md。
 const reviews = await parallel(rerun.map(r => () =>
@@ -97,6 +114,7 @@ const reviews = await parallel(rerun.map(r => () =>
     [
       `你是「${r.title} Agent」，在 OpenSpec 技术评审门禁（编码前）审查一个已确定但尚未实现的技术方案。`,
       `严格铁律：本阶段不写任何业务代码，只识别问题并给建议。`,
+      mvpNote,
       ``,
       locateHint,
       ``,
@@ -117,9 +135,11 @@ const reviews = await parallel(rerun.map(r => () =>
 phase('Summarize')
 
 // 汇总裁决对全部纳入维度求值：重跑维度用本轮结构化结论；沿用维度由汇总人读取上轮 review/<key>.md 参与裁决。
-const reuseNote = incremental
-  ? `本轮为增量重走。以下维度沿用上一轮结论，请读取其 ${base}/review/<key>.md 参与裁决，并在一览表中标注「沿用上轮」：${reuse.map(r => r.key).join(', ')}。`
-  : `本轮为全量重走，纳入维度均为本轮最新结论。`
+const reuseNote = mvp
+  ? `本轮为 MVP 分层评审（方案类型 MVP 且命中升级信号）。以下维度不适用，不参与裁决，在一览表中标注「不适用」，理由引用 ${SD}/shared/gate-levels.md「信号到维度的映射表」中命中的信号行：${skipped.map(r => r.key).join(', ')}。`
+  : incremental
+    ? `本轮为增量重走。以下维度沿用上一轮结论，请读取其 ${base}/review/<key>.md 参与裁决，并在一览表中标注「沿用上轮」：${reuse.map(r => r.key).join(', ')}。`
+    : `本轮为全量重走，纳入维度均为本轮最新结论。`
 
 const summary = await agent(
   [
@@ -143,7 +163,7 @@ const summary = await agent(
     `11) 「有条件通过」的条件清单（条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态）。映射不到 tasks 的条件视同 Blocker。`,
     `12) 上轮闭环验证结果（仅当各维度 review 中存在「上轮闭环验证」小节时）：汇总哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环，并给出各自的 status 取值。任何「声称已闭环但实际未闭环」的项一律按未闭环 Blocker 计入裁决。`,
     `13) 术语表：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。`,
-    `14) 分级结论：变更等级（L1/L2/L3，规则见 ${SD}/shared/gate-levels.md）+ 判定人 + 依据。`,
+    `14) 分级结论：方案类型（MVP / 完整方案）+ 命中的升级信号 + 变更等级（完整方案为 L1/L2/L3）或纳入维度（MVP，按映射表）+ 判定人 + 依据，规则见 ${SD}/shared/gate-levels.md。`,
     `15) 评审输入版本：列出本轮依据的 proposal.md / design.md / specs / tasks.md 的版本依据（如 git rev-parse HEAD 或文件哈希），供重走与恢复时判断输入是否变化。`,
     `16) 人工确认区：留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply。`,
     `若本轮裁决为 BLOCKED，按 gate-policy.md 的闭环记录格式明确提示：回改 design.md 后必须登记每条 Blocker 的闭环记录，下一轮评审 Agent 依赖该区块验证闭环。`,
@@ -151,6 +171,7 @@ const summary = await agent(
   { label: 'summarize', phase: 'Summarize' }
 )
 
-log(`技术评审门禁完成（${incremental ? '增量重走' : '全量'}），产物：review/*.md 与 review-summary.md。请人工审阅后在 review-summary.md 写入 Technical Review Approved，再运行 /opsx:apply。`)
+log(`技术评审门禁完成（${mvp ? 'MVP 分层' : incremental ? '增量重走' : '全量'}），产物：review/*.md 与 review-summary.md。请人工审阅后在 review-summary.md 写入 Technical Review Approved，再运行 /opsx:apply。`)
 
-return { change, mode: incremental ? 'incremental' : 'full', rerun: rerun.map(r => r.key), reuse: reuse.map(r => r.key), reviews, summary }
+return { change, mode: mvp ? 'mvp' : incremental ? 'incremental' : 'full', rerun: rerun.map(r => r.key), reuse: reuse.map(r => r.key),
+  notApplicable: mvp ? skipped.map(r => r.key) : [], reviews, summary }

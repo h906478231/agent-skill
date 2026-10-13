@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -50,25 +50,41 @@ const FINDING_HEADER = [
   '|----|---------|------------|------|------------|-----------|---------|-----------|---------|---------|',
 ].join('\n')
 
-/** 生成一行 finding；位置默认可定位到 `文件:行号`。 */
-const finding = (id, severity, { location = 'src/order.js:1', status = 'open' } = {}) =>
-  `| ${id} | ${severity} | 创建订单 | ${location} | order.create | 白话说明 | 可复现场景 | 具体后果 | 具体修复 | ${status} |`
+/** 生成一行 finding；位置默认可定位到 `文件:行号`，Blocker 的触发场景默认带判据前缀 `[B4]`。 */
+const finding = (id, severity, { location = 'src/order.js:1', status = 'open', trigger } = {}) =>
+  `| ${id} | ${severity} | 创建订单 | ${location} | order.create | 白话说明 | ${trigger ?? (severity === 'Blocker' ? '[B4] 正常输入下创建订单失败' : '可复现场景')} | 具体后果 | 具体修复 | ${status} |`
 
 const isOpenBlocker = row => / Blocker \|/.test(row) && /\| open \|$/.test(row)
 
-/** 按规则骨架写一份原始报告；结论默认由是否有未闭环 Blocker 推出。 */
-function axisReport(title, baseline, rows, verdict) {
+const LEDGER_HEADER = ['| ID | 严重级别 | 首次轮次 | 状态 | 闭环轮次 | 闭环依据 |', '|----|---------|---------|------|---------|---------|'].join('\n')
+
+/** 生成一行台账；非 open 状态默认写可定位的闭环依据。 */
+const ledgerRow = (id, severity, status = 'open', evidence = status === 'open' ? '' : 'src/order.js:1') =>
+  `| ${id} | ${severity} | R1 | ${status} | ${status === 'open' ? '' : 'R2'} | ${evidence} |`
+
+/** 由 finding 行推出一致的台账行（Rules Version 2 报告的默认台账）。 */
+const ledgerFrom = rows => rows.map(row => {
+  const [id, severity, , , , , , , , status] = row.replace(/^\||\|$/g, '').split('|').map(cell => cell.trim())
+  return ledgerRow(id, severity, status)
+})
+
+/** 按规则骨架写一份原始报告；结论默认由是否有未闭环 Blocker 推出；ledger 为 null 时不写台账区块。 */
+function axisReport(title, baseline, rows, verdict, ledger = ledgerFrom(rows)) {
   const computed = rows.some(isOpenBlocker) ? '打回' : '通过'
   return [`# ${title}（demo）`, '', baseline.trim(), '', '## Findings', '', FINDING_HEADER,
-    ...(rows.length ? rows : ['| 无 | | | | | | | | | |']), '', '## 结论', '', `${title} 结论：${verdict || computed}`, ''].join('\n')
+    ...(rows.length ? rows : ['| 无 | | | | | | | | | |']), '',
+    ...(ledger ? ['## Finding 台账', '', LEDGER_HEADER, ...ledger, ''] : []),
+    '## 结论', '', `${title} 结论：${verdict || computed}`, ''].join('\n')
 }
 
-/** 写入双轴原始报告与汇总；options 可覆盖某一份的基线、结论或跳过某份文件。 */
-function writeReview(f, baseline, { standards = [], spec = [], declared, skip = [], baselines = {} } = {}) {
+/** 写入双轴原始报告与汇总；options 可覆盖某一份的基线、结论、台账或跳过某份文件。 */
+function writeReview(f, baseline, { standards = [], spec = [], declared, skip = [], baselines = {}, ledgers = {} } = {}) {
   const blocked = [...standards, ...spec].some(isOpenBlocker)
   const files = {
-    'review/standards.md': axisReport('Standards Review', baselines.standards || baseline, standards),
-    'review/spec-fidelity.md': axisReport('Spec Fidelity Review', baselines.spec || baseline, spec),
+    'review/standards.md': axisReport('Standards Review', baselines.standards || baseline, standards, undefined,
+      ledgers.standards === undefined ? ledgerFrom(standards) : ledgers.standards),
+    'review/spec-fidelity.md': axisReport('Spec Fidelity Review', baselines.spec || baseline, spec, undefined,
+      ledgers.spec === undefined ? ledgerFrom(spec) : ledgers.spec),
     'review/code-review-summary.md': ['# 实现后双轴评审汇总（demo）', '', (baselines.summary || baseline).trim(), '',
       '## 两轴状态', '', '| 评审轴 | 原始报告 |', '|---|---|',
       '| Standards Review | review/standards.md |', '| Spec Fidelity Review | review/spec-fidelity.md |', '',
@@ -185,9 +201,9 @@ function writeTasks(f, slices) {
 }
 
 /** 按 slice-evidence.md 模板生成证据；omit 可去掉字段或整段，exemptions 为豁免记录行。 */
-function evidence(id, fingerprint, { omit = [], result = 'PASS', commandResult = 'PASS', exemptions = [] } = {}) {
+function evidence(id, fingerprint, { omit = [], result = 'PASS', commandResult = 'PASS', exemptions = [], extra = {} } = {}) {
   const fields = { Slice: id, Behavior: `行为 ${id}`, Seam: 'POST /orders', 'Recorded At': '2026-09-30T10:00:00Z',
-    Fingerprint: fingerprint, 'Fingerprint Source': 'node implementation-gate.mjs fingerprint', Result: result }
+    Fingerprint: fingerprint, 'Fingerprint Source': 'node implementation-gate.mjs fingerprint', Result: result, ...extra }
   const sections = {
     变更文件: ['- src/order.js'],
     验证命令: ['| 命令 | 结果 | 摘要 |', '|------|------|------|', `| \`node --test\` | ${commandResult} | 3 tests |`],
@@ -406,4 +422,308 @@ test('不追溯历史变更：无 Evidence 引用或无切片时不阻断，但�
     assert.equal(report.evidence.applicable, false)
     assert.ok(report.notes.some(note => note.startsWith('不适用')), `${name} 应给出不适用理由`)
   }
+})
+
+// ---------------------------------------------------------------------------
+// streamline-openspec-gates Slice 01：基线差分回归（Seam：regress / evidence）
+// ---------------------------------------------------------------------------
+
+/** 写一份失败清单（相对仓库根），返回绝对路径。 */
+function failureList(f, rel, lines) {
+  f.write(rel, `${lines.join('\n')}\n`)
+  return join(f.repo, rel)
+}
+
+test('regress：实际失败全部在基线清单中时 introduced 为空、退出码 0', t => {
+  const f = fixture(t)
+  const known = Array.from({ length: 27 }, (_, i) => `com.a.KnownTest.case${i + 1}`)
+  const baseline = failureList(f, 'docs/test-baseline.txt', ['# 已知基线失败', '', ...known])
+  const actual = failureList(f, 'build/actual.txt', known.map(id => `${id} <<< FAILURE!`))
+  const result = f.run('regress', '--baseline', baseline, '--actual', actual)
+  assert.equal(result.code, 0, result.out + result.err)
+  const report = result.json()
+  assert.deepEqual(report.introduced, [])
+  assert.equal(report.baselineMatched, 27)
+  assert.deepEqual(report.fixed, [])
+})
+
+test('regress：基线外的失败记为 introduced，退出码 1；不再失败的基线项记为 fixed，不影响退出码', t => {
+  const f = fixture(t)
+  const baseline = failureList(f, 'docs/test-baseline.txt', ['com.a.FooTest.bar', 'com.a.OldTest.y'])
+  const actual = failureList(f, 'build/actual.txt', ['  com.a.FooTest.bar <<< ERROR!  ', 'com.a.NewTest.x <<< FAILURE!'])
+  const result = f.run('regress', '--baseline', baseline, '--actual', actual)
+  assert.equal(result.code, 1)
+  const report = result.json()
+  assert.deepEqual(report.introduced, ['com.a.NewTest.x'])
+  assert.equal(report.baselineMatched, 1)
+  assert.deepEqual(report.fixed, ['com.a.OldTest.y'])
+
+  const onlyFixed = failureList(f, 'build/fixed.txt', ['com.a.FooTest.bar'])
+  const fixedRun = f.run('regress', '--baseline', baseline, '--actual', onlyFixed)
+  assert.equal(fixedRun.code, 0, fixedRun.out)
+  assert.deepEqual(fixedRun.json().fixed, ['com.a.OldTest.y'])
+})
+
+test('regress：缺少参数或文件不存在时退出码 2', t => {
+  const f = fixture(t)
+  const baseline = failureList(f, 'docs/test-baseline.txt', ['com.a.FooTest.bar'])
+  assert.equal(f.run('regress', '--baseline', baseline).code, 2)
+  assert.equal(f.run('regress', '--baseline', baseline, '--actual', join(f.repo, 'missing.txt')).code, 2)
+})
+
+/** 写入基线清单与 PASS_WITH_BASELINE 证据的已完成切片；返回 evidence 命令结果。 */
+function baselineEvidence(f, extra, { listOnDisk = true } = {}) {
+  if (listOnDisk) failureList(f, 'docs/test-baseline.txt', ['com.a.KnownTest.case1'])
+  writeTasks(f, [{ id: '01', done: [true] }])
+  f.write('openspec/changes/demo/evidence/slice-01.md', evidence('01', fingerprintOf(f),
+    { result: 'PASS_WITH_BASELINE', commandResult: 'PASS_WITH_BASELINE', extra }))
+  return f.run('evidence', f.changeRoot)
+}
+
+test('PASS_WITH_BASELINE 证据带基线清单且本次引入失败为 0 时判定新鲜并通过', t => {
+  const f = fixture(t)
+  const result = baselineEvidence(f, { 'Baseline List': 'docs/test-baseline.txt', 'Introduced Failures': '0' })
+  assert.equal(result.code, 0, result.out)
+  assert.equal(result.json().slices[0].status, 'fresh')
+})
+
+test('PASS_WITH_BASELINE 缺少 Baseline List、清单文件不存在或缺少 Introduced Failures 时报 CRITICAL', t => {
+  const cases = [
+    [{ 'Introduced Failures': '0' }, true, 'Baseline List'],
+    [{ 'Baseline List': 'docs/test-baseline.txt', 'Introduced Failures': '0' }, false, 'Baseline List'],
+    [{ 'Baseline List': 'docs/test-baseline.txt' }, true, 'Introduced Failures'],
+  ]
+  for (const [extra, listOnDisk, marker] of cases) {
+    const f = fixture(t)
+    const result = baselineEvidence(f, extra, { listOnDisk })
+    assert.equal(result.code, 1, `${marker}: ${result.out}`)
+    const report = result.json()
+    assert.equal(report.slices[0].status, 'incomplete')
+    assert.ok(report.issues.some(issue => issue.includes(marker)), JSON.stringify(report.issues))
+  }
+})
+
+test('PASS_WITH_BASELINE 但本次引入失败不为 0 时证据未通过', t => {
+  const f = fixture(t)
+  const result = baselineEvidence(f, { 'Baseline List': 'docs/test-baseline.txt', 'Introduced Failures': '1' })
+  assert.equal(result.code, 1)
+  assert.equal(result.json().slices[0].status, 'failed')
+})
+
+// ---------------------------------------------------------------------------
+// streamline-openspec-gates Slice 02：Blocker 判据与累计台账（Seam：baseline / review）
+// ---------------------------------------------------------------------------
+
+/** 去掉基线中的 Rules Version 行，模拟本变更之前生成的旧报告。 */
+const legacyBaseline = baseline => baseline.replace(/^- Rules Version: .*\n/m, '')
+
+test('baseline 输出 Rules Version: 2', t => {
+  const f = fixture(t)
+  assert.equal(field(f.run('baseline', f.changeRoot).out, 'Rules Version'), '2')
+})
+
+test('Rules Version 2：Blocker 触发场景不以 [B1]–[B5] 开头时报结构问题，带判据时不报', t => {
+  const f = fixture(t)
+  writeReview(f, f.run('baseline', f.changeRoot).out, {
+    standards: [finding('STD-01', 'Blocker', { trigger: '复用路径可能失败' })],
+    spec: [finding('SPEC-01', 'Blocker', { trigger: '[B3] 任务 2.1 已勾选但无实现' })],
+  })
+  const report = f.run('review', f.changeRoot).json()
+  assert.ok(report.issues.some(issue => issue.includes('STD-01') && issue.includes('判据')), JSON.stringify(report.issues))
+  assert.ok(!report.issues.some(issue => issue.includes('SPEC-01')), JSON.stringify(report.issues))
+})
+
+test('Rules Version 2：台账缺失、closed 行缺闭环依据、open 行不在 Findings、Findings 行不在台账时报结构问题', t => {
+  const cases = {
+    'Finding 台账': { standards: [finding('STD-01', 'Minor')], ledgers: { standards: null } },
+    'STD-02': { standards: [finding('STD-01', 'Minor')],
+      ledgers: { standards: [ledgerRow('STD-01', 'Minor'), ledgerRow('STD-02', 'Major', 'closed', '')] } },
+    'STD-03': { standards: [finding('STD-01', 'Minor')],
+      ledgers: { standards: [ledgerRow('STD-01', 'Minor'), ledgerRow('STD-03', 'Major', 'open')] } },
+    'SPEC-04': { spec: [finding('SPEC-04', 'Minor')], ledgers: { spec: [] } },
+  }
+  for (const [marker, options] of Object.entries(cases)) {
+    const f = fixture(t)
+    writeReview(f, f.run('baseline', f.changeRoot).out, options)
+    const result = f.run('review', f.changeRoot)
+    assert.equal(result.code, 1, `${marker}: ${result.out}`)
+    assert.ok(result.json().issues.some(issue => issue.includes(marker)), `${marker}: ${JSON.stringify(result.json().issues)}`)
+  }
+})
+
+test('Rules Version 2：台账中已闭环的 Blocker 不计入裁决，台账行不当作 finding', t => {
+  const f = fixture(t)
+  writeReview(f, f.run('baseline', f.changeRoot).out, {
+    spec: [finding('SPEC-02', 'Minor')],
+    ledgers: { spec: [ledgerRow('SPEC-01', 'Blocker', 'closed', 'src/order.js:1 OrderTest.createsOrder'), ledgerRow('SPEC-02', 'Minor')] },
+  })
+  const result = f.run('review', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  assert.equal(result.json().verdict, 'PASSED')
+})
+
+test('没有 Rules Version 的旧报告不要求判据前缀与台账', t => {
+  const f = fixture(t)
+  writeReview(f, legacyBaseline(f.run('baseline', f.changeRoot).out), {
+    spec: [finding('SPEC-01', 'Blocker', { trigger: '复用路径可能失败' })], ledgers: { standards: null, spec: null },
+  })
+  const report = f.run('review', f.changeRoot).json()
+  assert.equal(report.verdict, 'BLOCKED')
+  assert.deepEqual(report.issues, [])
+})
+
+test('三份报告的 Rules Version 不一致时报结构问题', t => {
+  const f = fixture(t)
+  const baseline = f.run('baseline', f.changeRoot).out
+  writeReview(f, baseline, { baselines: { spec: legacyBaseline(baseline) } })
+  const issues = f.run('review', f.changeRoot).json().issues
+  assert.ok(issues.some(issue => issue.includes('Rules Version')), JSON.stringify(issues))
+})
+
+test('评审后实现有变化（门禁外提交）时提示先登记任务再重跑', t => {
+  const f = fixture(t)
+  writeReview(f, f.run('baseline', f.changeRoot).out)
+  f.write('src/order.js', 'export const create = () => 5\n')
+  const warnings = f.run('review', f.changeRoot).json().warnings
+  assert.ok(warnings.some(item => item.includes('tasks.md') && item.includes('登记')), JSON.stringify(warnings))
+})
+
+// ---------------------------------------------------------------------------
+// streamline-openspec-gates Slice 03：增量基线（Seam：baseline --since / review）
+// ---------------------------------------------------------------------------
+
+/** 读取 baseline 输出中 `- Delta Files:` 下的文件列表。 */
+const deltaFiles = text => [...text.matchAll(/^ {2}- (.+)$/gm)].map(match => match[1].trim())
+
+test('baseline --since 输出 Delta Since 行，只列出上一指纹以来变化的文件', t => {
+  const f = fixture(t)
+  const previous = fingerprintOf(f)
+  f.write('src/order.js', 'export const create = () => 11\n')
+  f.write('src/refund.js', 'export const refund = () => 0\n')
+  const result = f.run('baseline', f.changeRoot, '--since', previous)
+  assert.equal(result.code, 0, result.err)
+  assert.equal(field(result.out, 'Delta Since'), previous)
+  assert.deepEqual(deltaFiles(result.out).sort(), ['src/order.js', 'src/refund.js'])
+})
+
+test('baseline --since 的 tree 对象不存在时回退为全量审查并输出 warning', t => {
+  const f = fixture(t)
+  const result = f.run('baseline', f.changeRoot, '--since', `git-tree:${'ab'.repeat(20)}`)
+  assert.equal(result.code, 0, result.err)
+  assert.equal(field(result.out, 'Delta Since'), '')
+  assert.ok(field(result.out, 'Fingerprint'), '回退后仍输出完整基线')
+  assert.match(result.err, /warning/i)
+})
+
+test('三份报告的 Delta Since 不一致时报结构问题', t => {
+  const f = fixture(t)
+  const previous = fingerprintOf(f)
+  f.write('src/order.js', 'export const create = () => 12\n')
+  const delta = f.run('baseline', f.changeRoot, '--since', previous).out
+  writeReview(f, delta, { baselines: { summary: f.run('baseline', f.changeRoot).out } })
+  const issues = f.run('review', f.changeRoot).json().issues
+  assert.ok(issues.some(issue => issue.includes('Delta Since')), JSON.stringify(issues))
+})
+
+// ---------------------------------------------------------------------------
+// streamline-openspec-gates Slice 04：产物允许清单（Seam：hygiene）
+// ---------------------------------------------------------------------------
+
+test('hygiene：允许清单内的产物不报 warning，清单外的文件各报一条且不阻断', t => {
+  const f = fixture(t)
+  const allowed = ['.openspec.yaml', 'design.md', 'tasks.md', 'specs/gate/spec.md', 'review/security.md',
+    'review/standards.md', 'review-summary.md', 'evidence/slice-01.md', 'evidence/attachments/write-scan.txt',
+    'overview.md', 'discussion-log.md', 'video/storyboard.md']
+  for (const rel of allowed) f.write(`openspec/changes/demo/${rel}`, 'x\n')
+  f.write('openspec/changes/demo/review/standards-round1.md', 'x\n')
+  f.write('openspec/changes/demo/verification-r2.md', 'x\n')
+  f.write('openspec/changes/demo/p0-optimization-report.md', 'x\n')
+  const result = f.run('hygiene', f.changeRoot)
+  assert.equal(result.code, 0, result.out + result.err)
+  const { warnings } = result.json()
+  assert.deepEqual(warnings.map(item => item.file).sort(),
+    ['p0-optimization-report.md', 'review/standards-round1.md', 'verification-r2.md'])
+  assert.equal(warnings.find(item => item.file === 'review/standards-round1.md').reason, 'round copy')
+  assert.equal(warnings.find(item => item.file === 'verification-r2.md').reason, 'round copy')
+  assert.notEqual(warnings.find(item => item.file === 'p0-optimization-report.md').reason, 'round copy')
+})
+
+test('hygiene：变更目录不存在时退出码 2', t => {
+  const f = fixture(t)
+  assert.equal(f.run('hygiene', join(f.repo, 'openspec/changes/missing')).code, 2)
+})
+
+// ---------------------------------------------------------------------------
+// streamline-openspec-gates Slice 07：双轴评审 R1 修复（Seam：参数解析 / hygiene / review）
+// ---------------------------------------------------------------------------
+
+test('子命令不支持的参数返回退出码 2，不静默忽略', t => {
+  const f = fixture(t)
+  const previous = fingerprintOf(f)
+  assert.equal(f.run('review', f.changeRoot, '--since', previous).code, 2)
+  assert.equal(f.run('baseline', f.changeRoot, '--actual', 'x.txt').code, 2)
+  assert.equal(f.run('hygiene', f.changeRoot, '--repo', f.repo).code, 2)
+  assert.equal(f.run('regress', '--baseline', 'a', '--actual', 'b', '--base', 'HEAD').code, 2)
+  assert.equal(f.run('baseline', f.changeRoot, '--since', previous).code, 0)
+})
+
+test('hygiene：切片证据的 round 副本报 round copy', t => {
+  const f = fixture(t)
+  f.write('openspec/changes/demo/evidence/slice-01.md', 'x\n')
+  f.write('openspec/changes/demo/evidence/slice-01-r2.md', 'x\n')
+  f.write('openspec/changes/demo/evidence/slice-02-round1.md', 'x\n')
+  const { warnings } = f.run('hygiene', f.changeRoot).json()
+  assert.deepEqual(warnings.map(item => [item.file, item.reason]).sort(),
+    [['evidence/slice-01-r2.md', 'round copy'], ['evidence/slice-02-round1.md', 'round copy']])
+})
+
+test('Rules Version 2：台账闭环依据不是 文件:行号 或测试名时报结构问题', t => {
+  const cases = {
+    '已修复': false, 'src/order.js': false, 'src/order.js:12': true, 'OrderTest.createsOrder': true,
+    'src/order/OrderService.java': false, 'README.md': false, '已修复，见 OrderService.java': false,
+  }
+  for (const [closure, valid] of Object.entries(cases)) {
+    const f = fixture(t)
+    writeReview(f, f.run('baseline', f.changeRoot).out, {
+      spec: [finding('SPEC-02', 'Minor')],
+      ledgers: { spec: [ledgerRow('SPEC-01', 'Major', 'closed', closure), ledgerRow('SPEC-02', 'Minor')] },
+    })
+    const issues = f.run('review', f.changeRoot).json().issues
+    assert.equal(issues.some(issue => issue.includes('SPEC-01')), !valid, `${closure}: ${JSON.stringify(issues)}`)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// streamline-openspec-gates Slice 08：双轴评审 R2 修复（Seam：review / hygiene / 参数解析）
+// ---------------------------------------------------------------------------
+
+test('R2 形态报告：「上轮闭环验证」表中的已闭环 ID 不当作 finding', t => {
+  const f = fixture(t)
+  const closure = ['## 上轮闭环验证', '', '| ID | 修复任务 | 核实位置 | 核实结果 |', '|----|---------|---------|---------|',
+    '| SPEC-01 | tasks.md 7.1 | src/order.js:1 已修复 | closed |', ''].join('\n')
+  writeReview(f, f.run('baseline', f.changeRoot).out, {
+    spec: [finding('SPEC-02', 'Minor')],
+    ledgers: { spec: [ledgerRow('SPEC-01', 'Major', 'closed', 'src/order.js:1'), ledgerRow('SPEC-02', 'Minor')] },
+  })
+  const file = join(f.changeRoot, 'review/spec-fidelity.md')
+  f.write('openspec/changes/demo/review/spec-fidelity.md', readFileSync(file, 'utf8').replace('## Findings', `${closure}\n## Findings`))
+  const result = f.run('review', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  assert.equal(result.json().axes.find(axis => axis.file === 'review/spec-fidelity.md').findings, 1)
+})
+
+test('参数缺少取值时提示缺少取值，而不是不支持的参数', t => {
+  const f = fixture(t)
+  const result = f.run('baseline', f.changeRoot, '--base')
+  assert.equal(result.code, 2)
+  assert.match(result.err, /缺少取值/)
+})
+
+test('hygiene：evidence/attachments/ 与 video/media/ 下的文件名不按 round 副本判定', t => {
+  const f = fixture(t)
+  f.write('openspec/changes/demo/evidence/attachments/jdk-r17.log', 'x\n')
+  f.write('openspec/changes/demo/video/media/scene-r2.mp4', 'x\n')
+  f.write('openspec/changes/demo/review/standards-r2.md', 'x\n')
+  const { warnings } = f.run('hygiene', f.changeRoot).json()
+  assert.deepEqual(warnings.map(item => [item.file, item.reason]), [['review/standards-r2.md', 'round copy']])
 })

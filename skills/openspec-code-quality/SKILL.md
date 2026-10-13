@@ -16,7 +16,7 @@ description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec 
                                     └─ 汇总裁决              → review/code-review-summary.md
 ```
 
-- **输入**：同一固定基线下本次变更的完整 diff + 变更 artifacts。
+- **输入**：同一固定基线下本次变更的 diff（第 1 轮为完整 diff，第 2 轮起为上一轮基线以来的增量）+ 变更 artifacts。
 - **输出**：两份独立原始报告 + 一份只做索引与裁决的汇总。
 - **不改代码**，不执行 push、PR、部署或外部任务回写。
 
@@ -48,16 +48,21 @@ description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec 
 1. 解析变更名，`openspec status --change "<name>" --json` 取 `changeRoot`。
 2. 确认有 diff：`git status --short` 与 `git diff --stat`（变更已提交时用变更起点到 HEAD 的范围，`git log` 定位起点 commit）。**diff 为空则中止**，提示先完成 `/opsx:apply`。
 3. 在 `changeRoot` 下创建 `review/` 目录。
+4. **重跑时登记门禁外提交**：运行 `node <GATE> fingerprint <changeRoot>`，与上一轮报告基线的 `Fingerprint` 比较。不同且 `tasks.md` 没有对应任务时（修复不是通过 `/opsx:apply` 提交的），先在 `tasks.md` 新增一个任务，写明提交 SHA 或文件，再进入 Step 1。
 
 ## 执行步骤
 
 ### Step 1 — 固定基线（只做一次）
 
 ```bash
-node <GATE> baseline <changeRoot> [--base <变更起点 commit>]
+node <GATE> baseline <changeRoot> [--base <变更起点 commit>]                              # 第 1 轮
+node <GATE> baseline <changeRoot> [--base <变更起点 commit>] --since <上一轮 Fingerprint>  # 第 2 轮起
 ```
 
 把输出的「## 评审基线」区块原样保存，Step 2 两个子 agent 与 Step 3 汇总都使用**同一块**。从此刻到两份原始报告写完，不得修改实现代码。
+
+- 第 2 轮起，`<上一轮 Fingerprint>` 取上一轮报告基线中的 `Fingerprint`。输出带 `Delta Since` 与 `Delta Files`，本轮只审查这些文件。
+- 命令在 stderr 输出 warning（上一轮 tree 对象已被回收）时，基线不带 `Delta Since`，本轮按第 1 轮审查完整 diff。
 
 ### Step 2 — 并行调度两个隔离的评审 agent
 
@@ -72,9 +77,9 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>]
 
 1. `<SKILL_DIR>` 的绝对路径，并说明「下文所有 `<SKILL_DIR>/...` 路径都替换为该值」；
 2. 对应角色文件全文（其中已声明必读的共用规则，子 agent 自行读取）；
-3. Step 1 的基线区块，并要求「报告开头原样粘贴，评审范围以 `Base Commit` 到工作区为准」；
+3. Step 1 的基线区块，并要求「报告开头原样粘贴」。评审范围：第 1 轮以 `Base Commit` 到工作区为准；基线带 `Delta Since` 时只审查 `Delta Files` 列出的文件；
 4. `changeRoot` 与 artifacts 路径；
-5. **重跑时**：本轴上一轮报告路径，要求先做上轮闭环验证；
+5. **重跑时**：本轴上一轮报告路径，要求先对台账中 `open` 的项做上轮闭环验证，原地覆盖报告并累计台账；Spec Fidelity 的规格覆盖矩阵沿用上一轮，只更新 delta 涉及的行；
 6. 明确禁止读取另一轴的原始报告与 `review/code-review-summary.md`。
 
 环境不支持子 agent 时，按「Standards → Spec Fidelity」顺序执行，并在汇总「执行方式」列标注 `顺序执行（独立性降级）`（规则见 `shared/dual-axis-review.md`「独立性」）。
@@ -90,7 +95,7 @@ node <GATE> review <changeRoot>
 ```
 
 - 退出码 `0`：裁决 `PASSED` 且报告结构完整，可进入 `/opsx:verify`。
-- 退出码 `1` 且 `issues` 非空：报告结构有问题（缺文件、基线不一致、finding 不可定位、结论与 Blocker 矛盾、汇总自述裁决不符），修正后重跑本步骤。
+- 退出码 `1` 且 `issues` 非空：报告结构有问题（缺文件、基线不一致、finding 不可定位、结论与 Blocker 矛盾、汇总自述裁决不符、Blocker 缺少 `[B1]`–`[B5]` 判据、Finding 台账缺失或不一致），修正后重跑本步骤。
 - 退出码 `1` 且 `verdict = BLOCKED`：向用户列出各轴 `openBlockers`，按下方「裁决与闭环」处理。
 - `warnings` 中的基线陈旧提醒：评审后代码又变了，判断是否重跑双轴。
 
@@ -98,7 +103,9 @@ node <GATE> review <changeRoot>
 
 - 裁决规则见 `shared/dual-axis-review.md`「裁决规则」：**任一轴存在未闭环 Blocker 即 `BLOCKED`，不得 `/opsx:archive`**。
 - 「有条件通过」的每个条件必须映射到 `tasks.md` 的一个勾选项，**映射不到视同 Blocker**。
-- 修复即改代码：修复后**重新生成基线、两轴都重跑**，对上轮 Blocker 逐条核实 —— 要指到具体行确认已落地，只看提交说明不算闭环。
+- Blocker 只能按 `shared/dual-axis-review.md`「Blocker 判据（B1–B5）」判定；只在依赖故障或边界输入下出现的问题定为 Major。
+- 修复即改代码：修复后用 `--since` **重新生成增量基线、两轴都重跑**（只审查 delta），对上轮 Blocker 逐条核实 —— 要指到具体行确认已落地，只看提交说明不算闭环。
+- 已闭环项写入本轴 `## Finding 台账`（`closed` + 闭环轮次 + `文件:行号` 或测试名），不再放进 Findings 表；报告原地覆盖，**禁止**生成 `-roundN` 副本（规则见 `../openspec-technical-review/shared/closed-loop-verification.md`「实现后双轴评审的差异」）。
 - 误报或知情接受：按 `../openspec-technical-review/shared/gate-policy.md` 第 4 节的驳回 / risk accepted 格式记录在**对应轴的原始报告**，写明决策人与理由，不改代码就不重跑。
 
 ## 兼容

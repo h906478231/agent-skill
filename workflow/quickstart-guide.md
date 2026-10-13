@@ -93,6 +93,16 @@ Q3: 命中以下任一？
 - `openspec/changes/add-user-nickname/proposal.md`（需求澄清）
 - `openspec/changes/add-user-nickname/design.md`（方案设计）
 
+然后生成全部产物：
+
+```bash
+/opsx:propose add-user-nickname
+```
+
+- 补齐 `specs/` 与 `tasks.md`
+- design.md 必须有「可视化判定」小节；本例只加字段，两条都写「未命中」，不写 `change-model` 代码块
+- 产物写完后 AI 自动跑 STE 检查与变更模型检查，有阻断项会先修正再输出总结
+
 ---
 
 ### Step 3: 技术评审门禁
@@ -195,6 +205,8 @@ Technical Review Approved: 你的名字  2026-08-23
 /opsx:apply add-user-nickname
 ```
 
+**开始前 AI 会先校验**：签字 → STE 检查 → 变更模型检查。任一项不通过就停下并列出问题，用 `/opsx:update add-user-nickname` 修正后重新 apply。
+
 **AI会做**：
 - 生成数据库迁移脚本（DDL）
 - 生成 Repository 代码
@@ -205,7 +217,9 @@ Technical Review Approved: 你的名字  2026-08-23
 
 ---
 
-### Step 6: 代码质量评审（可选但推荐）
+### Step 6: 双轴独立评审
+
+`tasks.md` 切片声明了 `Evidence:` 时必跑，缺少双轴评审产物不能归档；平铺任务清单与历史变更不强制，推荐运行。
 
 ```bash
 /opsx:quality add-user-nickname
@@ -234,6 +248,8 @@ Technical Review Approved: 你的名字  2026-08-23
 
 **另外逐条核对条件**（如果 Step 4 有"有条件通过"）：
 - 检查 C-01 的长度校验是否真的实现了
+
+**同时检查**：切片证据是否过期、双轴评审是否 BLOCKED、STE / 变更模型检查是否有阻断项，以上都记为 CRITICAL
 
 **有 CRITICAL 问题？** → 修复后重跑 `/opsx:verify`
 
@@ -360,7 +376,7 @@ Technical Review Approved: 你的名字  2026-08-23
 
 ### 想了解完整流程？
 
-→ [OpenSpec-AI-研发流程.md](OpenSpec-AI-研发流程.md)（1222 行完整文档）
+→ [OpenSpec-AI-研发流程.md](OpenSpec-AI-研发流程.md)（完整文档，含「常见分支场景」：卡点被拦下、讲解视频等）
 
 ### 想了解新架构（方案设计）？
 

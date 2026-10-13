@@ -47,10 +47,13 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>]
 - Base Commit: <起点 commit 全量 SHA>
 - Fingerprint: git-tree:<当前实现指纹>
 - Review Scope: <起点短 SHA>..工作区（含已暂存 / 未暂存 / 未跟踪文件，排除 openspec）
+- Rules Version: 2
 - Baseline Recorded At: <ISO 时间>
 ```
 
 - `Change` / `Base Commit` / `Fingerprint` / `Review Scope` 四项是基线身份，三份报告必须完全一致；`Baseline Recorded At` 仅供追溯。
+- 第 2 轮起用 `--since` 生成增量基线，区块追加 `Delta Since` 与 `Delta Files`（见下文「修复与重跑」）。`Delta Since` 与 `Rules Version` 都是可缺省的身份字段：缺省不报错，但三份报告必须一致。
+- `Rules Version: 2` 是规则开关：带该行的报告必须遵守下文「Blocker 判据」与「Finding 台账」，脚本据此校验。三份报告的取值必须一致。没有该行的旧报告按旧规则检查，不追溯。
 - `Fingerprint` 是排除规划目录后整个工作区内容的 git tree 哈希（算法见 `<GATE>` 文件头），与切片证据使用同一口径。
 - 基线生成后到两份原始报告写完之前，**不得修改实现代码**。评审中想顺手修 —— 先写完本轮报告，修复后重新生成基线再重跑。
 
@@ -66,6 +69,7 @@ finding 字段、五条硬规则与维度结论**完全沿用** `../openspec-tec
 
 - `位置` 必须写成 `文件路径:行号`（可带行号区间 `:12-20`）。Spec Fidelity 报告「缺失实现」时，指向 spec / design / tasks 中对应需求所在行。**无法定位到行的 finding 不得提交**。
 - 「触发场景」对 Standards 放宽为维护场景（如「下次改这段折扣规则要同步改 3 处，漏一处就两套算法并存」），但仍须具体到「改什么会漏什么」。
+- **Blocker 必须引用下文「Blocker 判据」**：「触发场景」以判据编号开头（如 `[B4] 正常输入下…`），「建议修复」写出证明修复的测试或 Seam。
 - 结论行必须单独成行，只写一个取值。
 
 ```markdown
@@ -76,11 +80,19 @@ finding 字段、五条硬规则与维度结论**完全沿用** `../openspec-tec
 
 ## 上轮闭环验证                            ← 仅重跑时，规则见 ../openspec-technical-review/shared/closed-loop-verification.md
 
-## Findings
+## Findings                                ← 只保留未闭环项与本轮新发现的项
 
 | ID | 严重级别 | 影响业务功能 | 位置 | 涉及代码模块 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复 | 闭环状态 |
 |----|---------|------------|------|------------|-----------|---------|-----------|---------|---------|
 | STD-01 | Major | 创建订单 | src/order/OrderService.java:42 | OrderService.create | … | … | … | … | open |
+| STD-02 | Blocker | 创建订单 | src/order/OrderService.java:57 | OrderService.create | … | [B4] 正常输入下… | … | 补 OrderApiTest.createsOrder | open |
+
+## Finding 台账                             ← 跨轮次累计，只增加不删除
+
+| ID | 严重级别 | 首次轮次 | 状态 | 闭环轮次 | 闭环依据 |
+|----|---------|---------|------|---------|---------|
+| STD-01 | Major | R1 | open | | |
+| STD-02 | Blocker | R1 | open | | |
 
 ## 本轴特有内容                            ← Standards：重复率专项；Spec Fidelity：规格覆盖矩阵
 
@@ -89,7 +101,44 @@ finding 字段、五条硬规则与维度结论**完全沿用** `../openspec-tec
 Standards Review 结论：有条件通过          ← Spec Fidelity 轴写 Spec Fidelity Review 结论：…
 ```
 
-没有 finding 时保留表头并写一行「无」，结论照写。
+没有 finding 时保留 Findings 与台账的表头，Findings 写一行「无」，结论照写。
+
+## Blocker 判据（B1–B5）
+
+实现后双轴评审的 Blocker **只有**下表五种。不符合任一判据的问题，最高定为 Major：
+
+| 编号 | 判据 |
+|------|------|
+| B1 | 写错数据，或把数据写到错误的归属方、租户或路径 |
+| B2 | 允许跨租户访问或越权访问 |
+| B3 | 已勾选的任务没有实现 |
+| B4 | 输入正常、依赖健康时，已有功能失败 |
+| B5 | 吞掉异常，把失败的操作记录为成功 |
+
+- **Major 边界**：只在依赖故障（下游超时、查询服务不可用等）或边界输入下才出现的问题，定为 Major，不定为 Blocker。示例：复用路径只在企业编码查询服务不可用时失败 → Major。
+- Blocker 行的「触发场景」以 `[B1]`–`[B5]` 开头；不新增表格列，因为 finding 格式与 Technical Review 共用。
+- Blocker 行的「建议修复」必须写出证明修复的测试名或 Seam。
+- 脚本对 `Rules Version: 2` 的报告校验判据前缀，缺少前缀的 Blocker 报为结构问题。
+
+## 原地覆盖与 Finding 台账
+
+- **原地覆盖**：每轮重跑直接覆盖 `review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md` 与 `verification.md`。**禁止**生成 `standards-round1.md`、`verification-round2.md` 这类副本。轮次历史只记在台账中。
+- **台账**：每轴报告的 `## Finding 台账` 记录本轴出现过的全部 finding，跨轮次只增加，不删除行。
+
+| 列 | 要求 |
+|----|------|
+| `ID` | 与 Findings 表一致 |
+| `严重级别` | 首次判定的级别；后续改级在闭环依据中说明 |
+| `首次轮次` | 首次出现的轮次，如 `R1` |
+| `状态` | `open` / `closed` / `risk-accepted` / `false-positive` |
+| `闭环轮次` | 状态变为非 `open` 的轮次；`open` 时留空 |
+| `闭环依据` | 非 `open` 时必填：`文件:行号` 或测试名；`risk-accepted` / `false-positive` 写留痕位置 |
+
+脚本校验三条一致性规则：
+
+1. 非 `open` 的台账行必须有闭环依据；
+2. `open` 的台账行必须出现在 Findings 表中；
+3. Findings 表中的每个 ID 必须出现在台账中。
 
 ## 汇总报告 `review/code-review-summary.md`
 
@@ -151,14 +200,26 @@ node <GATE> review <changeRoot>
 3. finding ID 前缀与所在轴一致，`位置` 含 `文件:行号`；
 4. 各轴结论行与未闭环 Blocker 一致（有未闭环 Blocker 却写「通过」即报错）；
 5. 汇总 `Code Review Verdict` 与重新计算的裁决一致；
-6. 基线 `Fingerprint` 与当前实现不一致时给出 warning（评审之后代码又变了，需判断是否重跑）。
+6. 基线 `Fingerprint` 与当前实现不一致时给出 warning（评审之后代码又变了，需判断是否重跑）；
+7. 三份报告的 `Rules Version` 与 `Delta Since` 一致（缺省也算一个取值）；
+8. `Rules Version: 2` 的原始报告：Blocker 触发场景带 `[B1]`–`[B5]` 前缀，`## Finding 台账` 存在且满足上文三条一致性规则。台账行不计入 finding 与裁决。
 
 `issues` 非空时修正报告再重跑，不得带着结构问题进入 `/opsx:verify`。
 
 ## 修复与重跑
 
-- 修复动作回 `tasks.md` 新增勾选项再做；修复即改代码，因此修复后**重新生成基线、两轴都重跑**（两轴必须落在同一新基线上）。两轴并行，墙钟接近较慢的一轴。
-- 重跑时对上轮 Blocker 逐条核实，要指到具体行确认已落地，只看提交说明不算闭环（规则同 `closed-loop-verification.md`）。
+- 修复动作回 `tasks.md` 新增勾选项再做；门禁外提交的修复先登记任务（见 `closed-loop-verification.md`「实现后双轴评审的差异」）。
+- **第 1 轮审查完整 diff。第 2 轮起只审查增量**：用上一轮基线的 `Fingerprint` 生成新基线，两轴仍落在同一新基线上：
+
+  ```bash
+  node <GATE> baseline <changeRoot> [--base <变更起点 commit>] --since <上一轮 Fingerprint>
+  ```
+
+  输出在基线区块中追加 `Delta Since: git-tree:<上一轮指纹>` 与 `Delta Files` 列表。`Delta Since` 计入基线身份，三份报告必须一致。
+- 增量轮的审查范围 = `Delta Files` 中的文件 + 本轴台账中 `open` 项的闭环验证。不再审查 delta 之外的文件，也不在 verify 前额外安排一次全量评审：各轮 delta 加上台账已覆盖完整 diff。
+- Spec Fidelity 的规格覆盖矩阵沿用上一轮，只更新 delta 涉及的行；未涉及的行保持不变。
+- 上一轮的 tree 对象已被 git gc 回收时，命令输出 warning 并回退为全量基线（不带 `Delta Since`），本轮按第 1 轮审查完整 diff。
+- 两轴并行，墙钟接近较慢的一轴。重跑时对上轮 Blocker 逐条核实，要指到具体行确认已落地，只看提交说明不算闭环（规则同 `closed-loop-verification.md`）。
 
 ## 适用范围与兼容
 

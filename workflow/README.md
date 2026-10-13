@@ -49,7 +49,8 @@
 - 技术评审门禁（5角色并行评审）
 - 分级门禁（L0/L1/L2/L3）
 - 人工签字与闭环验证
-- 代码质量评审与验证
+- 双轴独立评审与验证
+- 产物检查卡点（STE 检查、变更模型检查）
 
 **适合**：
 - ✅ 企业级项目，需要完整流程
@@ -66,12 +67,16 @@
 |---------|------|---------|
 | `/opsx:grill` | 决策访谈（消除隐含假设、沉淀 CONTEXT.md / ADR） | 完整流程 |
 | `/opsx:explore` | 需求澄清 + 方案探索 | 完整流程 |
-| `/opsx:propose` | 生成 proposal / design / specs / tasks | 完整流程 |
+| `/opsx:propose` | 生成 proposal / design / specs / tasks；产物写完后跑 STE 与变更模型检查 | 完整流程 |
+| `/opsx:update` | 修改已有产物；写入后跑 STE 与变更模型检查 | 完整流程 |
+| `/opsx:overview` | 变更总览（有变更模型时另生成 overview.html） | 完整流程 |
 | `/opsx:review` | 技术评审门禁（多角色） | 完整流程 |
-| `/opsx:apply` | 代码实施 | 完整流程 |
-| `/opsx:quality` | 代码质量评审 | 完整流程 |
-| `/opsx:verify` | 验证（三维校验） | 完整流程 |
+| `/opsx:apply` | 代码实施；开始前校验签字、STE、变更模型 | 完整流程 |
+| `/opsx:quality` | 双轴独立评审（Standards + Spec Fidelity） | 完整流程 |
+| `/opsx:verify` | 验证（三维校验 + 证据 + 双轴裁决 + STE / 变更模型检查） | 完整流程 |
 | `/opsx:archive` | 归档 | 完整流程 |
+| `/opsx:explain` | 解析单个 finding | 按需 |
+| `/opsx:video` | 讲解视频（人工签署分镜后渲染） | 按需 |
 
 ---
 

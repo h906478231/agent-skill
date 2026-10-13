@@ -78,6 +78,8 @@ Implement tasks from an OpenSpec change.
    - Remaining tasks overview
    - Dynamic instruction from CLI
 
+   **基线任务数（本仓自加，非上游原文）** —— 首次 apply（`tasks.md` 还没有任何 `- [x]`，且开头没有基线行）时，在 `tasks.md` 一级标题之后写一行 `基线任务数：N（YYYY-MM-DD 首次 apply）`，N 为当前 checkbox 总数。该行不是 checkbox，不影响进度解析，之后不修改。已有该行时，比较当前 checkbox 总数与 N：新增任务 > N × 50%，或新增能力、新增顶层模块，按 `../openspec-update-change/SKILL.md`「范围扩展拆分提示」询问用户并记录到 `discussion-log.md`。
+
 7. **Implement tasks (loop until done or blocked)**
 
    **TDD 实施纪律（写第一个测试之前，读取 `shared/tdd-discipline.md` 并遵守）** —— 本 skill 目录下的规则文件（相对本 SKILL.md 解析，装了 openspec-apply-change 就一定存在）；读不到时用 Glob 搜 `**/openspec-apply-change/shared/tdd-discipline.md`。要点：只在 design.md「测试 Seam 决策」区块（或口头确认后回记到切片 `Seam:` 行）声明的公共边界写测试，未声明的边界先问；red before green；一次一个切片、切片内一次一个行为（一个失败测试 → 最小实现 → 下一个）；每完成一个任务项跑单个测试文件 + 类型检查，全部完成跑一次完整测试套件；重构不进 red-green 循环，留给 `/opsx:quality`。
@@ -93,6 +95,8 @@ Implement tasks from an OpenSpec change.
    - Continue to next task
 
    All tasks done → run the full test suite once and refresh every slice's evidence fingerprint (see `shared/slice-evidence.md`「生成时机」), so earlier slices are not left stale by later ones.
+
+   **完整套件存在失败时（本仓自加）** —— 把实际失败整理为清单，运行 `node <GATE> regress --baseline <基线失败清单> --actual <实际失败清单>`（清单格式与生成方法见 `shared/slice-evidence.md`「基线失败清单」）：`introduced` 为空记 `PASS_WITH_BASELINE`，并写 `Baseline List` 与 `Introduced Failures: 0`；不为空记 `FAIL`，点名每个引入的测试并在 `tasks.md` 新增修复任务。结论只写「本次引入的失败：N」，不列出基线失败。
 
    **Pause if:**
    - Task is unclear → ask for clarification
