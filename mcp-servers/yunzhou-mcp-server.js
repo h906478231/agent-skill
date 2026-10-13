@@ -27,6 +27,80 @@ import os from 'os'
 // 用 execFile（参数以数组传递、不经过 shell）替代 exec，避免外部可控参数被 shell 解析造成命令注入
 const execFileAsync = promisify(execFile)
 
+// flows-cli 输出缓冲上限：单任务详情实测约 50KB，清单模式 limit=100 实测约 0.3MB，
+// 留出 8MB 上限以保证含长描述或评论较多的读取不会被默认的 1MB 限制打断
+const MAX_CLI_OUTPUT_BYTES = 8 * 1024 * 1024
+
+/**
+ * 归一化 flows-cli 返回的错误信息
+ *
+ * CLI 的 JSON envelope 里 error 是对象（{ code, message }），直接拼进模板串会得到 "[object Object]"，
+ * 因此这里显式取出 message 与 code；同时兼容返回纯字符串错误的历史形态。
+ *
+ * @param {*} error envelope 的 error 字段
+ * @returns {string} 可直接展示给调用方的错误描述
+ */
+function formatCliError(error) {
+  if (!error) {
+    return '未知错误'
+  }
+  if (typeof error === 'string') {
+    return error
+  }
+  const message = error.message || '未知错误'
+  return error.code === undefined ? message : `${message}（错误码 ${error.code}）`
+}
+
+/**
+ * 解析 flows-cli 的 JSON 输出
+ *
+ * @param {string} text 子进程 stdout
+ * @returns {object|null} envelope 对象；不是合法 JSON 对象时返回 null
+ */
+function parseCliEnvelope(text) {
+  if (!text) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 执行 flows-cli 并返回 JSON envelope
+ *
+ * CLI 的业务失败（任务不存在、参数非法等）同样会输出 `{ ok:false, error:{ code, message } }`，
+ * 但退出码是 1，execFile 因此抛异常并把 envelope 留在 error.stdout 上。
+ * 这里统一回收 stdout 中的 envelope，避免调用方只看到 "Command failed" 这类无信息量的报错。
+ *
+ * @param {string[]} cliArgs 命令行参数（不含可执行文件名），调用方负责先完成参数校验
+ * @returns {Promise<object>} CLI 的 JSON envelope；输出无法解析时返回合成的错误 envelope
+ */
+async function runCliJson(cliArgs) {
+  let stdout
+  let stderr
+  try {
+    // maxBuffer 显式放宽：execFile 默认 1MB，而清单模式 limit=100 的任务列表实测约 0.3MB、
+    // 含长描述的清单会突破默认上限并抛 ERR_CHILD_PROCESS_STDIO_MAXBUFFER，导致读取直接失败
+    ;({ stdout, stderr } = await execFileAsync('flows-cli', cliArgs, { maxBuffer: MAX_CLI_OUTPUT_BYTES }))
+  } catch (error) {
+    if (error.stderr) {
+      console.error(`[yunzhou-mcp] stderr: ${error.stderr}`)
+    }
+    const envelope = parseCliEnvelope(error.stdout)
+    return envelope || { ok: false, error: { message: error.message } }
+  }
+
+  if (stderr) {
+    console.error(`[yunzhou-mcp] stderr: ${stderr}`)
+  }
+
+  return parseCliEnvelope(stdout) || { ok: false, error: { message: '无法解析 flows-cli 输出' } }
+}
+
 // 创建 MCP 服务器
 const server = new Server(
   {
@@ -72,14 +146,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'string',
             description: '清单 ID'
           },
-          project_id: {
-            type: 'string',
-            description: '项目 ID（可选）'
-          },
           completion: {
             type: 'string',
-            description: '任务完成状态',
-            enum: ['open', 'closed', 'all'],
+            description: '任务完成状态（closed 为兼容别名，等同 completed）',
+            enum: ['open', 'completed', 'closed', 'all'],
             default: 'open'
           },
           limit: {
@@ -234,58 +304,58 @@ async function handleFetchTask(args) {
 
   console.error(`[yunzhou-mcp] 拉取任务 #${taskId}`)
 
-  let result
-  try {
-    // 参数以数组传递，外部输入不会被 shell 解释为命令
-    result = await execFileAsync('flows-cli', [
-      'task', 'get',
-      '--task-id', String(taskId),
-      '--profile', String(profile),
-      '--json'
-    ])
-  } catch (error) {
-    // execFile 失败时子进程 stderr 挂在错误对象上，先保留原有 stderr 日志，再抛给上层统一返回错误响应
-    if (error.stderr) {
-      console.error(`[yunzhou-mcp] stderr: ${error.stderr}`)
-    }
-    throw error
-  }
-
-  const { stdout, stderr } = result
-
-  if (stderr) {
-    console.error(`[yunzhou-mcp] stderr: ${stderr}`)
-  }
-
-  const response = JSON.parse(stdout)
+  // 参数以数组传递，外部输入不会被 shell 解释为命令；CLI 的业务错误由 runCliJson 统一还原
+  const response = await runCliJson([
+    'task', 'get',
+    '--task-id', String(taskId),
+    '--profile', String(profile),
+    '--json'
+  ])
 
   if (!response.ok) {
     return {
       content: [
         {
           type: 'text',
-          text: `拉取任务失败: ${response.error || '未知错误'}`
+          text: `拉取任务失败: ${formatCliError(response.error)}`
         }
       ],
       isError: true
     }
   }
 
-  const task = response.data
+  // CLI 契约：envelope 的 data 是聚合对象（project / task / placements / comments 等），任务本体在 data.task
+  const task = response.data?.task
+
+  if (!task) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: '拉取任务失败: 响应中缺少 task 数据'
+        }
+      ],
+      isError: true
+    }
+  }
+
+  // 任务所在的清单（看板列）由 placements 提供：任务本体没有 column_id / column_title 字段
+  const placement = Array.isArray(task.placements) ? task.placements[0] : undefined
 
   // 提取并格式化任务信息
   const taskInfo = {
     id: task.id,
     title: task.title,
-    description: task.content || task.description || '',
-    priority: task.priority || 'medium',
+    description: task.description || '',
+    priority: task.priority || '普通',
     type: inferTaskType(task),
-    column_id: task.column_id,
-    column_title: task.column_title,
-    assignee: task.assignee?.name || '未分配',
-    created_at: task.created_at,
-    updated_at: task.updated_at,
-    completed: task.completed || false
+    project_id: placement?.projectId,
+    column_id: placement?.columnId,
+    column_title: placement?.columnTitle,
+    assignee: task.assigneeName || '未分配',
+    created_at: task.createdAt,
+    completed_at: task.completedAt,
+    completed: isTaskCompleted(task)
   }
 
   return {
@@ -298,6 +368,37 @@ async function handleFetchTask(args) {
   }
 }
 
+/**
+ * 归一化 task list 返回的 tasks 字段
+ *
+ * CLI 契约：task list 的 tasks 字段可能是以任务 ID 为键的对象（清单模式的实际返回），也可能是数组；
+ * 两种形态都必须能遍历，否则对象形态直接调用 map 会抛 "map is not a function"。
+ *
+ * @param {*} tasks response.data.tasks
+ * @returns {Array<object>} 任务数组；字段缺失或类型非预期时返回空数组
+ */
+function normalizeTaskList(tasks) {
+  if (Array.isArray(tasks)) {
+    return tasks
+  }
+  if (tasks && typeof tasks === 'object') {
+    return Object.values(tasks)
+  }
+  return []
+}
+
+/**
+ * 判断任务是否已完成
+ *
+ * CLI 不返回 completed 布尔字段，只返回完成时间与完成人，因此以 completedAt 是否存在为准。
+ *
+ * @param {object} task 任务对象（task get / task list 返回的形态）
+ * @returns {boolean} 是否已完成
+ */
+function isTaskCompleted(task) {
+  return task.completedAt !== undefined && task.completedAt !== null
+}
+
 // 列表任务返回数量限制，与 yunzhou_list_tasks 工具 schema 中的 minimum/maximum 保持一致，避免出现魔法值
 const MIN_TASK_LIMIT = 1
 const MAX_TASK_LIMIT = 100
@@ -307,6 +408,20 @@ const MAX_TASK_LIMIT = 100
  */
 async function handleListTasks(args) {
   const { column_id, completion = 'open', limit = 10, profile = 'default' } = args
+
+  // column_id 为必填：CLI 的项目模式（--project-id）不支持分页与完成状态过滤，会一次性返回项目全部任务，
+  // 结果既会撑爆子进程 stdout 缓冲区，也会灌满模型上下文，因此本工具只提供清单模式
+  if (String(column_id ?? '').length === 0) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: '必须指定 column_id'
+        }
+      ],
+      isError: true
+    }
+  }
 
   // 数值型参数显式校验：limit 必须是 1~100 的整数（与工具 schema 的 minimum/maximum 一致），非法值直接返回错误响应
   const taskLimit = Number(limit)
@@ -322,54 +437,40 @@ async function handleListTasks(args) {
     }
   }
 
-  console.error(`[yunzhou-mcp] 列出清单任务 (column: ${column_id})`)
+  // CLI 只接受 open|completed|all；closed 是早期 schema 中的写法，归一化为 completed，避免历史调用直接报参数错误
+  const cliCompletion = completion === 'closed' ? 'completed' : String(completion)
 
-  let result
-  try {
-    // 参数以数组传递，外部输入不会被 shell 解释为命令
-    result = await execFileAsync('flows-cli', [
-      'task', 'list',
-      '--column-id', String(column_id),
-      '--completion', String(completion),
-      '--limit', String(taskLimit),
-      '--profile', String(profile),
-      '--json'
-    ])
-  } catch (error) {
-    // execFile 失败时子进程 stderr 挂在错误对象上，先保留原有 stderr 日志，再抛给上层统一返回错误响应
-    if (error.stderr) {
-      console.error(`[yunzhou-mcp] stderr: ${error.stderr}`)
-    }
-    throw error
-  }
+  console.error(`[yunzhou-mcp] 列出清单 ${column_id} 的任务`)
 
-  const { stdout, stderr } = result
-
-  if (stderr) {
-    console.error(`[yunzhou-mcp] stderr: ${stderr}`)
-  }
-
-  const response = JSON.parse(stdout)
+  // 参数以数组传递，外部输入不会被 shell 解释为命令；CLI 的业务错误由 runCliJson 统一还原
+  const response = await runCliJson([
+    'task', 'list',
+    '--column-id', String(column_id),
+    '--completion', cliCompletion,
+    '--limit', String(taskLimit),
+    '--profile', String(profile),
+    '--json'
+  ])
 
   if (!response.ok) {
     return {
       content: [
         {
           type: 'text',
-          text: `列出任务失败: ${response.error || '未知错误'}`
+          text: `列出任务失败: ${formatCliError(response.error)}`
         }
       ],
       isError: true
     }
   }
 
-  const tasks = (response.data.tasks || []).map(task => ({
+  const tasks = normalizeTaskList(response.data?.tasks).map(task => ({
     id: task.id,
     title: task.title,
-    priority: task.priority || 'medium',
+    priority: task.priority || '普通',
     type: inferTaskType(task),
-    assignee: task.assignee?.name || '未分配',
-    completed: task.completed || false
+    assignee: task.assigneeName || '未分配',
+    completed: isTaskCompleted(task)
   }))
 
   return {
@@ -426,31 +527,15 @@ async function handleAddComment(args) {
     }
     cliArgs.push('--profile', String(profile), '--json')
 
-    let result
-    try {
-      result = await execFileAsync('flows-cli', cliArgs)
-    } catch (error) {
-      // execFile 失败时子进程 stderr 挂在错误对象上，先保留原有 stderr 日志，再抛给上层统一返回错误响应
-      if (error.stderr) {
-        console.error(`[yunzhou-mcp] stderr: ${error.stderr}`)
-      }
-      throw error
-    }
-
-    const { stdout, stderr } = result
-
-    if (stderr) {
-      console.error(`[yunzhou-mcp] stderr: ${stderr}`)
-    }
-
-    const response = JSON.parse(stdout)
+    // 业务错误由 runCliJson 统一还原，避免只剩 "Command failed" 这类无信息量的报错
+    const response = await runCliJson(cliArgs)
 
     if (!response.ok) {
       return {
         content: [
           {
             type: 'text',
-            text: `添加评论失败: ${response.error || '未知错误'}`
+            text: `添加评论失败: ${formatCliError(response.error)}`
           }
         ],
         isError: true
@@ -523,32 +608,15 @@ async function handleUpdateTask(args) {
     '--json'
   ]
 
-  let result
-  try {
-    // 参数以数组传递，外部输入不会被 shell 解释为命令
-    result = await execFileAsync('flows-cli', cliArgs)
-  } catch (error) {
-    // execFile 失败时子进程 stderr 挂在错误对象上，先保留原有 stderr 日志，再抛给上层统一返回错误响应
-    if (error.stderr) {
-      console.error(`[yunzhou-mcp] stderr: ${error.stderr}`)
-    }
-    throw error
-  }
-
-  const { stdout, stderr } = result
-
-  if (stderr) {
-    console.error(`[yunzhou-mcp] stderr: ${stderr}`)
-  }
-
-  const response = JSON.parse(stdout)
+  // 参数以数组传递，外部输入不会被 shell 解释为命令；业务错误由 runCliJson 统一还原
+  const response = await runCliJson(cliArgs)
 
   if (!response.ok) {
     return {
       content: [
         {
           type: 'text',
-          text: `更新任务失败: ${response.error || '未知错误'}`
+          text: `更新任务失败: ${formatCliError(response.error)}`
         }
       ],
       isError: true
