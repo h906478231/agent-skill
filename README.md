@@ -148,11 +148,11 @@ npx skills remove --skill ddd-aggregate
 
 ### 关于 vendored 资产的重复
 
-`skills/openspec-{explore,propose,apply-change,update-change,sync-specs,archive-change,verify-change,ff-change}/SKILL.md` 与 `claude/commands/opsx/{explore,propose,apply,update,sync,archive,verify,ff}.md` 是 OpenSpec CLI 生成的上游副本（skill 侧 frontmatter 标 `generatedBy`，命令侧没有该字段），两两高度重复。**这部分刻意不做去重** —— 改动会在上游升级时产生冲突。
+`skills/openspec-{explore,propose,apply-change,update-change,sync-specs,archive-change,verify-change}/SKILL.md` 与 `claude/commands/opsx/{explore,propose,apply,update,sync,archive,verify,ff}.md` 是 OpenSpec CLI 生成的上游副本（`ff` 只有命令形态，没有对应 skill）（skill 侧 frontmatter 标 `generatedBy`，命令侧没有该字段），两两高度重复。**这部分刻意不做去重** —— 改动会在上游升级时产生冲突。
 
 唯一例外是 apply 的技术评审门禁校验块（本仓自加，非上游原文），已抽到 `skills/openspec-technical-review/shared/apply-gate-check.md`，两处改为引用。propose / update / apply / verify 中的 STE 检查块同理（本仓自加），处理口径抽到 `skills/openspec-ste/shared/gate-check.md`，各处只保留一行引用。
 
-本仓自建资产（6 个 `openspec-*` 流程增强 skill 与 `review`/`overview`/`quality`/`grill` 四个命令）则严格遵守单一事实源，命令文件均为薄壳。
+本仓自建资产（9 个 `openspec-*` 流程增强 skill 与 `grill`/`review`/`overview`/`quality`/`explain`/`video` 六个命令）则严格遵守单一事实源，命令文件均为薄壳。
 
 ## 编写规范
 
