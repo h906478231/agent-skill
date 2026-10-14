@@ -120,7 +120,7 @@ const reviews = await parallel(rerun.map(r => () =>
       ``,
       `第一步：读取以下三个文件，作为本次评审的准则：`,
       `  · ${SD}/roles/${r.key}.md —— 你的角色定位、审查清单、本维度闭环判据；`,
-      `  · ${SD}/shared/finding-format.md —— finding 9 个字段、五条硬规则、维度结论取值；`,
+      `  · ${SD}/shared/finding-format.md —— finding 10 个字段、五条硬规则、维度结论取值；`,
       `  · ${SD}/shared/closed-loop-verification.md —— 上轮闭环验证规则。`,
       `第二步：读取方案文档 ${base}/proposal.md（需求澄清结论）与 ${base}/design.md（已确定方案，可能是回改后的新版）。`,
       `第三步（上轮闭环验证）：仅当 design.md 末尾存在「## 评审意见闭环记录」区块时执行，完全按 ${SD}/shared/closed-loop-verification.md 的规则处理其中「维度」属于你（${r.title}）的每一行，并结合角色文件里的「本维度闭环判据」判定。你是全新上下文，没有上轮记忆 —— 不做这一步就会重复报同一问题或漏掉验证。`,

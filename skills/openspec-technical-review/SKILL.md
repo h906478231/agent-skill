@@ -33,7 +33,7 @@ OpenSpec Explore ──> 需求澄清 ──> 方案探索 ──> 技术方案�
 openspec-technical-review/
 ├── SKILL.md                          # 本文件：门禁编排流程
 ├── shared/                           # 共用规则的唯一事实源，roles / 命令 / workflow 一律引用不复制
-│   ├── finding-format.md             #   finding 9 个字段 + 五条硬规则 + verdict + 输出骨架
+│   ├── finding-format.md             #   finding 10 个字段 + 五条硬规则 + verdict + 输出骨架
 │   ├── gate-levels.md                #   L0–L3 门禁适用范围分级与升级信号
 │   ├── gate-policy.md                #   裁决判定 / 重走范围 / 牵连关系 / 驳回与 risk accepted
 │   ├── mvp-review-standard.md        #   MVP 方案下只检查阻断性问题的评审标准
