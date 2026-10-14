@@ -19,7 +19,7 @@ grep -m1 'Technical Review Approved:' "openspec/changes/<name>/review-summary.md
 
 | 情况 | 处理 |
 |------|------|
-| **签字行仍是空白占位**（空、`____`、`<签名>`） | 门禁跑过但无人批准。**停止**，请用户审阅 `review/*.md` 后签字 |
+| **签字行仍是空白占位**（空、`____`、`<签名>`、以下划线开头再补括号说明如 `__________ （签字 / 日期）`） | 门禁跑过但无人批准。**停止**，请用户审阅 `review/*.md` 后签字（判定规则与 `hooks/check-review-approval.sh` 一致） |
 | **裁决为 `BLOCKED`** | 即使有签字也**停止**。未闭环 Blocker 必须先回 `design.md` 闭环并重走门禁 |
 | **已签字且 `READY_FOR_HUMAN_APPROVAL`** | 放行，继续实现 |
 

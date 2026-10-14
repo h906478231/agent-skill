@@ -96,10 +96,14 @@ fi
 # 取冒号后、首个「签署人」之前的内容作为签字值
 SIGN_VALUE="$(printf '%s' "$SIGN_LINE" | sed -E 's/.*Technical Review Approved:[[:space:]]*//; s/签署人.*//' | tr -d '[:space:]')"
 
-# 空白占位判定：为空 / 仅由下划线组成 / 仍含「＜签名＞」「<签名>」类模板占位符 → 未签字
-# 注：占位符用 grep -F 做字节级子串匹配，避免全角字符在正则字符类中按字节拆分导致误判
+# 空白占位判定：为空 / 仅由下划线组成 / 以下划线开头但后面跟着括号说明 / 仍含「＜签名＞」「<签名>」类模板占位符 → 未签字
+# 注：占位符用 grep -F 做字节级子串匹配，避免全角字符在正则字符类中按字节拆分导致误判；
+#     下划线开头的判定同样用固定字面前缀（`^(__|＿＿)`），不进字符类，规避同一问题。
+#     「以下划线开头」覆盖「保留占位符、后面补一句（签字 / 日期）」这类写法——
+#     这类行没写任何批准人，若按已签字放行等于绕过人工门禁（真实签名不会以连续下划线开头）。
 if [ -z "$SIGN_VALUE" ] \
   || printf '%s' "$SIGN_VALUE" | grep -qE '^[_＿]+$' \
+  || printf '%s' "$SIGN_VALUE" | grep -qE '^(__|＿＿)' \
   || printf '%s' "$SIGN_VALUE" | grep -qF '＜签名＞' \
   || printf '%s' "$SIGN_VALUE" | grep -qF '<签名>'; then
   deny "变更 [$CHANGE_NAME] 技术评审门禁未签字：review-summary.md 的「Technical Review Approved:」仍是空白占位（____）。请人工审阅 review/*.md 后在该行写入批准人姓名，再执行 apply。签字前禁止 /opsx:apply。"
