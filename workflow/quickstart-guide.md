@@ -28,7 +28,7 @@ proposal   design     review      代码    verify  archive
 ```
 Q1: 只改文案/注释/配置/格式化？
     │
-    ├─ 是 → L0豁免（直接改，记录豁免理由）
+    ├─ 是 → L0豁免（直接改，不必建变更目录；已在 OpenSpec 里的变更记一行豁免理由）
     │
     └─ 否 → Q2
 

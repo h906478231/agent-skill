@@ -215,7 +215,7 @@ Skill(skill: "openspec-explore", args: "user-nickname-field")
 
 ```bash
 # ── L0豁免：不走门禁 ──────────────────────
-# 直接改代码；豁免理由记在变更目录 overview.md 开头（不要创建 review-summary.md，那会触发签字门禁）
+# 直接改代码；已在 OpenSpec 里的变更记一行豁免理由（不要创建 review-summary.md，那会触发签字门禁）
 ```
 
 **豁免场景**：
@@ -225,7 +225,7 @@ Skill(skill: "openspec-explore", args: "user-nickname-field")
 - 依赖小版本升级
 - 纯测试补充
 
-**注意**：L0 **不要创建 `review-summary.md`**（该文件存在即视为启用门禁、hook 会要求签字行）。豁免理由写在变更目录 `overview.md` 开头，格式：
+**注意**：L0 **不要创建 `review-summary.md`**（该文件存在即视为启用门禁、hook 会要求签字行）。豁免理由写在变更目录 `overview.md` 开头，格式见下；**纯小改还没进 OpenSpec 时直接改代码即可，不必为留痕单独建变更目录**。
 
 ```markdown
 L0豁免：调整日志级别配置，不涉及业务逻辑
