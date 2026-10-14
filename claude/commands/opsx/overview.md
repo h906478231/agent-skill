@@ -26,6 +26,8 @@ tags: [workflow, overview, traceability]
 
 ## 刷新时机
 
+本命令是**按需入口**：L2/L3 或字段与规则条件较多的变更推荐在下列时机各刷新一次；L0/L1 与未生成 `overview.md` 的变更不要求，`/opsx:verify` 直接核对 `review-summary.md` 的条件清单。
+
 `design.md` 定稿后首次生成 → 门禁出 `review-summary.md` 后刷新 → `/opsx:verify` 前刷新并逐条核对条件落地情况。
 
 ## 关联
