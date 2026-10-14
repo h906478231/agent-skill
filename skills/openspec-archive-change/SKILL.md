@@ -117,7 +117,7 @@ All artifacts complete. All tasks complete.
 - **技术评审签字**：若 `review-summary.md` 存在，必须有 `Technical Review Approved:` 签字行；缺签字或裁决为 BLOCKED 时拒绝。
 - **未闭环 Blocker**：`review-summary.md` 的「已确认风险详细清单」中未闭环 Blocker 必须为 0（闭合判定见 `../openspec-technical-review/shared/closed-loop-verification.md`）。
 - **代码质量评审（历史变更）**：若存在 `review/code-quality.md`，结论不得为「打回」，未闭环 Blocker 必须为 0。
-- **双轴评审与切片证据**：运行 `node <GATE> archive <changeRoot>`（`<GATE>` = `../openspec-technical-review/scripts/implementation-gate.mjs`），退出码非 0 即拒绝归档，并列出 `blockers`（任一轴未闭环 Blocker、评审报告缺失或不一致、缺失 / 不完整 / 失败 / 过期的切片证据）；`notes` 中的不适用理由写入归档摘要。完整口径见 `../openspec-technical-review/shared/implementation-gate-check.md`「Archive」一节，历史变更不追溯。
+- **双轴评审与切片证据**：运行 `node <GATE> archive <changeRoot>`（`<GATE>` = `../openspec-technical-review/scripts/implementation-gate.mjs`），退出码非 0 即拒绝归档，并列出 `blockers`（任一轴未闭环 Blocker、L2/L3 缺少或不一致的评审报告、缺失 / 不完整 / 失败 / 过期的切片证据）；`notes` 中的不适用理由写入归档摘要。完整口径见 `../openspec-technical-review/shared/implementation-gate-check.md`「Archive」一节，历史变更不追溯。
 - **Phase 6 验证**：`/opsx:verify` 的 CRITICAL 项必须已清零；`overview.md` 条件矩阵中标 `⚠️ 未落地` 的行必须已清零（尚未拆分 tasks 的「待拆分」行不计）。
 - **验证结论留痕**：`/opsx:verify` 的结论只在对话内，归档前必须取得用户「验证已通过」的显式确认，并把该确认写进归档摘要。
 

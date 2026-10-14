@@ -1,6 +1,8 @@
 # OpenSpec 研发流程 Phases 定义
 
 > 状态路由由 coordinator 与 workflow 内置判定：本表与下图是能力地图，不是必跑顺序。L2/L3 检查决策充分性，不强制重复 grill；有待查事实才 explore，无阻断未知直接 propose/update。恢复时复核实际产物和批准版本，不从头覆盖。
+>
+> **按需环节**（表中标「按需」者：Grill 访谈、讨论回流、变更总览、讲解视频）只在触发条件命中时运行，不进入每次变更的默认路径。变更总览在字段或规则条件较多的变更（L2/L3）推荐生成；未生成时 Verify 直接核对 `review-summary.md` 的条件清单，不阻断。
 
 ## 各阶段职责与产物
 
@@ -10,7 +12,7 @@
 | Phase 1 需求澄清 | `/opsx:explore`                  | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
 | Phase 2 方案探索 | `/opsx:explore`                  | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；状态变动或流程变动命中时写 `change-model` 代码块，规则见 `../../openspec-change-overview/shared/change-model.md`） | 否 |
 | （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
-| 变更总览 | `/opsx:overview`                 | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
+| 变更总览（按需） | `/opsx:overview`                 | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
 | 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载 `../../openspec-propose/shared/task-slicing.md`） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前三问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 产物检查（四个卡点） | `/opsx:propose`、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查（禁用别名 / 非受控通用词 / 模糊词），再跑变更模型检查（CM-1～CM-6）；各卡点按退出码处理（`../../openspec-ste/shared/gate-check.md`）；archive 不重跑，靠 verify 的 CRITICAL 阻断 | 无独立产物；阻断项在对应卡点输出 | 否 |
 | 分级判定 | 人工（参照下表）                         | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md`（见 `gate-levels.md`） | 否 |
@@ -18,9 +20,9 @@
 | Phase 4 评审确认 | 同上（汇总）                           | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工                               | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply`                    | 开始任何任务前依次做签字校验（`apply-gate-check.md`）、STE 检查、变更模型检查，任一项阻断即停止；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**（规则见 `../../openspec-apply-change/shared/tdd-discipline.md`）；**证据先于勾选**：每个切片记录绑定实现指纹的新鲜证据（规则见 `../../openspec-apply-change/shared/slice-evidence.md`） | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
-| Phase 5.5 双轴独立评审 | `/opsx:quality`                  | 同一固定基线并行跑 Standards Review（工程规范）与 Spec Fidelity Review（规格忠实度），互不读取对方报告，汇总按任一轴未闭环 Blocker 阻断（规则见 `../../openspec-code-quality/shared/dual-axis-review.md`） | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
+| Phase 5.5 双轴独立评审 | `/opsx:quality`                  | 同一固定基线并行跑 Standards Review（工程规范）与 Spec Fidelity Review（规格忠实度），互不读取对方报告，汇总按任一轴未闭环 Blocker 阻断（规则见 `../../openspec-code-quality/shared/dual-axis-review.md`）；**L2/L3 必跑，L0/L1 推荐** | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + **切片证据新鲜度与双轴裁决核对**（见 `implementation-gate-check.md`）+ STE 检查与变更模型检查（阻断项记为 CRITICAL）；**实现与设计交叉核对**（门禁侧的条件核对与增强交叉核对清单见 `phase6-verification.md`） | 校验报告（对话内） | 修复项 |
-| 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs（delta→main 由 skill `openspec-sync-specs` / `/opsx:sync` 执行，archive 调用；主 spec 有差异却跳过同步时需用户显式确认原因）；**归档前置校验**：签字缺失 / 未闭环 Blocker / verify 未通过 / 双轴评审 Blocker / 切片证据缺失或过期时拒绝归档；评审、证据与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
+| 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs（delta→main 由 skill `openspec-sync-specs` / `/opsx:sync` 执行，archive 调用；主 spec 有差异却跳过同步时需用户显式确认原因）；**归档前置校验**：签字缺失 / 未闭环 Blocker / verify 未通过 / L2/L3 双轴评审 Blocker 或报告缺失 / 切片证据缺失或过期时拒绝归档；评审、证据与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video`                    | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕；不属于任何卡点或归档检查（规则见 `../../openspec-explainer-video/SKILL.md`） | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
 
 ## 全景流程图
@@ -45,7 +47,7 @@ OpenSpec Explore
       │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户三问确认后定稿
       │    ◆ 卡点①（/opsx:propose）：STE 检查 → 变更模型检查，退出码 0 才输出总结
       │
-      ├─ /opsx:overview → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
+      ├─ /opsx:overview（按需）→ overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
       │                    + overview.html（有变更模型时）
       ▼
    【分级判定】L0 豁免 ──────────────────────────┐

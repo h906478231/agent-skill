@@ -168,7 +168,7 @@ What would you like to do?
 - **STE 检查存在阻断项时不开始任何任务**（Step 2，本仓自加）—— 修正产物走 `/opsx:update`，不在 apply 中顺手改
 - **Follow the TDD discipline in `shared/tdd-discipline.md`** (Step 7) — seam-first, red before green, refactoring is deferred to `/opsx:quality`, never on the red-green path
 - **证据先于勾选**（本仓自加）—— 切片声明了 `Evidence:` 时，按 `shared/slice-evidence.md` 先记录绑定当前实现指纹的验证证据再勾选；不伪造结果、不为历史变更补造证据
-- **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5，产出 `review/code-quality.md`）与 `/opsx:verify`（Phase 6，三维校验 + 评审条件核对）；任一未通过或存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序与门禁口径的唯一事实源见 `../openspec-technical-review/shared/phases.md`
+- **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5，产出 `review/code-review-summary.md`）与 `/opsx:verify`（Phase 6，三维校验 + 评审条件核对）；任一未通过或存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序与门禁口径的唯一事实源见 `../openspec-technical-review/shared/phases.md`
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing

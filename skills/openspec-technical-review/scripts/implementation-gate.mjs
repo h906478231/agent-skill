@@ -5,7 +5,7 @@
  * 所属：skill openspec-technical-review（门禁口径中枢）。调用方：/opsx:apply（写证据前取指纹）、
  * /opsx:quality（生成固定基线、校验双轴报告）、/opsx:verify 与 /opsx:archive（证据与评审闭环校验），
  * 以及对应的 openspec-* skill。规则事实源（本脚本只做确定性判定，不重复规则说明）：
- *   - 双轴评审：openspec-code-quality/shared/dual-axis-review.md
+ *   - 双轴评审：openspec-code-quality/shared/dual-axis-review.md（是否必需按分级：L2/L3 必需，L0/L1 只推荐，见 reviewRequired）
  *   - 切片证据：openspec-apply-change/shared/slice-evidence.md
  *   - verify / archive 如何解读输出：openspec-technical-review/shared/implementation-gate-check.md
  *
@@ -345,6 +345,38 @@ const readTasks = changeRoot => readText(changeRoot, 'tasks.md') || ''
 /** tasks.md 是否声明了切片证据引用：即按新规则创建的变更，双轴评审产物必需。 */
 const declaresEvidence = tasks => /^\s*Evidence\s*[:：]/m.test(tasks)
 
+/** overview.md 里的分级行：允许 markdown 引用前缀 `>`，写法见 gate-levels.md「分级决策责任」。 */
+const TIER_LINE = /^\s*>?\s*分级\s*[:：]\s*(\S.*)$/
+
+/**
+ * 从 overview.md 的分级行读取变更等级（L0–L3）。
+ * 读不到时返回 null：没有 overview.md、没有分级行、或写的是「未判定」都走这一支，
+ * 由调用方按保守口径处理（见 reviewRequired）。
+ * @returns {'L0'|'L1'|'L2'|'L3'|null} 等级；无法判定时为 null。
+ */
+function readTier(changeRoot) {
+  const overview = readText(changeRoot, 'overview.md')
+  if (overview === null) return null
+  const line = overview.split(/\r?\n/).map(item => item.match(TIER_LINE)).find(Boolean)
+  if (!line) return null
+  const level = line[1].match(/\bL([0-3])\b/i)
+  return level ? `L${level[1]}` : null
+}
+
+/**
+ * 双轴评审产物是否必需。
+ * L0/L1 只推荐、不阻断归档；L2/L3 必需。判定仍以「切片声明了 Evidence 引用」为触发条件，
+ * 因此历史变更（无 Evidence 引用）保持不追溯，不会被新规则追加要求。
+ * @param {string} changeRoot 变更目录。
+ * @param {string} tasks tasks.md 文本。
+ * @returns {boolean} true 表示缺少双轴评审产物时记阻断项。
+ */
+function reviewRequired(changeRoot, tasks) {
+  if (!declaresEvidence(tasks)) return false
+  const tier = readTier(changeRoot)
+  return tier !== 'L0' && tier !== 'L1'
+}
+
 // ============================================================================
 // 双轴评审校验
 // ============================================================================
@@ -358,7 +390,11 @@ const declaresEvidence = tasks => /^\s*Evidence\s*[:：]/m.test(tasks)
 function checkReview(changeRoot, { required = false, currentFingerprint = null } = {}) {
   const files = [...AXES.map(axis => axis.file), SUMMARY_FILE]
   if (!required && !files.some(file => existsSync(path.join(changeRoot, file)))) {
-    return { applicable: false, reason: '不适用：未生成双轴评审产物（L0 豁免，或未启用本能力的历史变更）', verdict: null,
+    const tier = readTier(changeRoot)
+    const why = tier === 'L0' || tier === 'L1'
+      ? `${tier} 推荐运行，未生成不阻断`
+      : 'L0 豁免，或未启用本能力的历史变更'
+    return { applicable: false, reason: `不适用：未生成双轴评审产物（${why}）`, verdict: null,
       axes: [], issues: [], warnings: [] }
   }
   const issues = []
@@ -647,7 +683,7 @@ function checkEvidence(repo, changeRoot, currentFingerprint) {
  * @returns {object} ok、blockers、notes、warnings，以及 review / evidence 明细。
  */
 function checkArchive(repo, changeRoot, currentFingerprint) {
-  const review = checkReview(changeRoot, { required: declaresEvidence(readTasks(changeRoot)), currentFingerprint })
+  const review = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint })
   const evidence = checkEvidence(repo, changeRoot, currentFingerprint)
   const blockers = []
   const notes = []
@@ -820,7 +856,7 @@ function run(argv) {
   let report
   let ok
   if (command === 'review') {
-    report = checkReview(changeRoot, { required: declaresEvidence(readTasks(changeRoot)), currentFingerprint })
+    report = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint })
     ok = !report.applicable || report.verdict === 'PASSED'
   } else if (command === 'evidence') {
     report = checkEvidence(repo, changeRoot, currentFingerprint)

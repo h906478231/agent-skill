@@ -408,6 +408,34 @@ test('按新规则创建的变更缺少双轴评审产物时拒绝归档', t => 
   assert.ok(result.json().blockers.some(item => item.includes('review/standards.md')))
 })
 
+test('分级为 L1 的变更缺少双轴评审产物时不阻断归档（L1 只推荐）', t => {
+  const f = fixture(t)
+  completedChange(f)
+  f.write('openspec/changes/demo/overview.md',
+    '> 分级：L1 轻量 ｜ 判定人：用户 ｜ 日期：2026-10-14 ｜ 依据：单表单字段改动\n')
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  const report = result.json()
+  assert.equal(report.review.applicable, false)
+  assert.ok(report.review.reason.includes('L1'), report.review.reason)
+  assert.equal(report.evidence.applicable, true)
+})
+
+test('分级为空或未判定时按保守口径要求双轴评审产物', t => {
+  const lines = {
+    L2: '> 分级：L2 标准 ｜ 判定人：用户 ｜ 日期：2026-10-14 ｜ 依据：跨模块调用\n',
+    未判定: '> 分级：未判定 ｜ 判定人：— ｜ 日期：— ｜ 依据：—\n',
+  }
+  for (const [name, line] of Object.entries(lines)) {
+    const f = fixture(t)
+    completedChange(f)
+    f.write('openspec/changes/demo/overview.md', line)
+    const result = f.run('archive', f.changeRoot)
+    assert.equal(result.code, 1, `${name}: ${result.out}`)
+    assert.ok(result.json().blockers.some(item => item.includes('review/standards.md')), name)
+  }
+})
+
 test('不追溯历史变更：无 Evidence 引用或无切片时不阻断，但给出不适用理由', t => {
   const layouts = {
     历史变更: f => writeTasks(f, [{ id: '01', done: [true], evidence: false }]),

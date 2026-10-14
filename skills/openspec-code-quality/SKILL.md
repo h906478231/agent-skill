@@ -35,7 +35,7 @@ description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec 
 
 ## 适用范围分级
 
-沿用 [门禁分级标准](../openspec-technical-review/shared/gate-levels.md)：**L0（纯文案/配置/注释/纯测试补充）豁免；L1 及以上两轴都跑**。两轴并行，墙钟接近较慢的一轴。
+沿用 [门禁分级标准](../openspec-technical-review/shared/gate-levels.md)：**L2/L3 必须跑**；**L0/L1 推荐跑**，未生成不阻断归档。等级取变更目录 `overview.md` 的分级行；读不到等级时按 L2/L3 处理。两轴并行，墙钟接近较慢的一轴。
 
 ## 路径约定
 

@@ -21,7 +21,7 @@ tags: [workflow, review, quality]
 - 基线只生成一次：`node <GATE> baseline <changeRoot>`（`<GATE>` = skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs`），两轴与汇总原样使用同一块；diff 为空则中止并提示先完成 `/opsx:apply`。
 - 两个轴用两个独立子 agent 并行执行，**互不读取对方原始报告与汇总**；finding 格式沿用 skill `openspec-technical-review` 的 `shared/finding-format.md`，前缀 `STD-` / `SPEC-`，「位置」必须精确到 `文件:行号`。
 - 汇总只做索引与裁决，不改写原始 finding；写完必须跑 `node <GATE> review <changeRoot>` 校验。
-- L0 变更豁免，L1 及以上两轴都跑。
+- L2/L3 必须跑两轴；L0/L1 推荐跑，未生成不阻断归档（等级取 `overview.md` 的分级行，读不到时按 L2/L3 处理）。
 - **任一轴存在未闭环 Blocker 即 `BLOCKED`，不得 `/opsx:archive`**；「有条件通过」的条件映射不到 tasks 视同 Blocker。
 
 ## 产物
