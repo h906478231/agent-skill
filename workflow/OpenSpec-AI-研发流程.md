@@ -5,7 +5,7 @@
 > **📖 文档说明**  
 > 本文档是面向**人类阅读**的完整汇总版本，包含流程说明、部署指南、FAQ 等。  
 > **AI skills 使用的是模块化版本**，分布于各 skill 的 `shared/` 目录：门禁分级与 Phase 定义见 `skills/openspec-technical-review/shared/`（`gate-levels.md`、`phases.md`、`gate-policy.md`），第一性原理/交叉验证/Seam 决策见 `skills/openspec-explore/shared/`，任务切片见 `skills/openspec-propose/shared/task-slicing.md`，TDD 纪律与切片证据见 `skills/openspec-apply-change/shared/`，双轴评审见 `skills/openspec-code-quality/shared/`，STE 检查卡点见 `skills/openspec-ste/shared/gate-check.md`，变更模型见 `skills/openspec-change-overview/shared/change-model.md`。  
-> 如需修改流程规则，请编辑对应模块，本文档定期同步更新。
+> 如需修改流程规则，请编辑对应模块，本文档定期同步更新。正文中标有「📌 同步副本」的区块是事实源的逐字或逐项复制，以事实源为准；`scripts/test-doc-consistency.mjs` 会比对两者，事实源改了而这里没跟上时测试失败。
 
 > 以 OpenSpec 作为研发流程的核心控制器（需求澄清、方案设计、变更生命周期），在进入代码实现前增加 **Technical Review Gate（技术评审门禁）**，由 AI Agent 模拟架构/并发/性能/数据库/安全评审角色。
 >
@@ -70,6 +70,8 @@
 
 ### 快速判定流程图
 
+> 📌 同步副本：图中的升级信号与各等级维度复制自 `skills/openspec-technical-review/shared/gate-levels.md`，修改请先改事实源再同步到这里；`scripts/test-doc-consistency.mjs` 会比对两者。
+
 ```
 你的变更是？
     │
@@ -97,6 +99,8 @@
 
 ### 分级对照表
 
+> 📌 同步副本：下面两张表复制自 `skills/openspec-technical-review/shared/gate-levels.md`，修改请先改事实源再同步到这里；`scripts/test-doc-consistency.mjs` 会比对两者。
+
 | 等级 | 典型变更 | 门禁要求 | 人工签字 |
 |------|---------|---------|---------|
 | **L0 豁免** | 纯文案/注释/日志文案、配置值调整、格式化、依赖小版本升级、纯测试补充 | **跳过门禁**，直接apply | 不需要；L0 **不要创建 `review-summary.md`**（该文件存在即视为启用门禁、hook 会要求签字行），豁免理由记在变更目录 `overview.md` 开头（供事后追溯） |
@@ -118,8 +122,10 @@
 
 ### 触发升级的信号（命中任一，至少L3）
 
+> 📌 同步副本：本清单复制自 `skills/openspec-technical-review/shared/gate-levels.md`，修改请先改事实源再同步到这里；`scripts/test-doc-consistency.mjs` 会比对两者。
+
 - 出现「异步」「MQ」「并发消费」「重试」「幂等」
-- 出现「批量」且量级 ≥ 1万
+- 出现「批量」且量级 ≥ 1 万
 - 新建表，或对既有表加唯一索引/改字段类型
 - 接口对外网开放，或处理用户上传内容
 - 涉及租户隔离、权限判定、敏感数据
@@ -287,7 +293,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 # ── 人工门禁：硬门禁 ──────────────────────────────────
 # 审阅 review-summary.md，认可后在末尾写入：
 #   Technical Review Approved: 张三  2026-08-26
-#   复核（L3必填）: 李四  2026-08-26
+#   复核: 李四  2026-08-26（L3 建议第二人复核，非必填）
 
 # ── Phase 5：代码实施 ────────────────────────────────
 /opsx:apply <change-name>
@@ -478,9 +484,9 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 <details>
 <summary><strong>Q4: /opsx:review 提示缺 design.md？</strong></summary>
 
-**A**: 门禁前置校验要求 proposal.md 与 design.md 都存在且design含推荐方案。
+**A**: 门禁前置校验要求 proposal.md 与 design.md 都存在，proposal 含「第一性原理分析」、design 含推荐方案；L2/L3 的 design 还须含「候选方案交叉验证矩阵」与「测试 Seam 决策」（L1 允许单一方案，不查这两项）。
 
-先回 `/opsx:explore` 补齐 —— 这正是「方案未确定不开始编码」。
+已有产物缺区块用 `/opsx:update` 补齐，需求或方案还没想清时回 `/opsx:explore` —— 这正是「方案未确定不开始编码」。
 </details>
 
 <details>
@@ -728,6 +734,8 @@ Phase 1 的核心任务是**确保方向正确**。在明确业务目标、边�
 
 ### proposal.md 必须包含的区块
 
+> 📌 同步副本：本节模板与下方判据表复制自 `skills/openspec-explore/shared/first-principles.md`，修改请先改事实源再同步到这里；`scripts/test-doc-consistency.mjs` 会比对两者。
+
 ```markdown
 ## 第一性原理分析
 
@@ -771,6 +779,8 @@ Phase 2 的核心任务是**在多个候选方案之间做出有依据的选择*
 
 ### design.md 必须包含的矩阵
 
+> 📌 同步副本：本节模板与下方判据表复制自 `skills/openspec-explore/shared/cross-validation.md`，修改请先改事实源再同步到这里；`scripts/test-doc-consistency.mjs` 会比对两者。
+
 ```markdown
 ## 候选方案交叉验证矩阵
 
@@ -780,6 +790,8 @@ Phase 2 的核心任务是**在多个候选方案之间做出有依据的选择*
 | **性能** | 10 万条需 5 分钟，阻塞 | 10 万条需 2 分钟，非阻塞 | 10 万条需 10 分钟，离线无感知 |
 | **复杂度** | 低：单体同步逻辑 | 高：需处理消息重试/死信/幂等 | 中：需配置 ETL 任务与监控 |
 | **风险** | 超时风险高，无法扩展 | MQ 依赖引入新故障点 | ETL 平台依赖，实时性差 |
+| **可测试性** | 易：单元测试即可 | 中：需 mock MQ 或集成测试 | 易：离线任务易回归 |
+| **运维成本** | 低：无新组件 | 高：MQ 监控/告警/容量规划 | 中：ETL 任务监控 |
 
 ### 推荐方案及决策依据
 - **推荐**：方案 B（异步 MQ 分片消费）
@@ -797,11 +809,10 @@ Phase 2 的核心任务是**在多个候选方案之间做出有依据的选择*
 
 | 判据 | 通过标准 | 不通过示例 |
 |------|---------|-----------|
-| **候选数量** | L2/L3：至少 2 个有实质差异的方案；L0/L1：1 个方案 + 不选其他方案的理由 | 只有 1 个方案且没写不选其他方案的理由，或多个方案只是参数微调 |
+| **候选数量** | L2/L3：至少 2 个有实质差异的方案；L0/L1：也可以只有 1 个方案，但要写明不选其他方案的理由 | 只有 1 个方案且没写不选其他方案的理由，或多个方案只是参数微调 |
 | **维度完整性** | 至少覆盖成本/性能/复杂度/风险四维 | 只比较「哪个更快」 |
 | **决策可追溯** | 能回答「为什么不选其他方案」 | 只说「方案 B 最好」，未说明为什么 |
 | **回溯验证** | 推荐方案确实解决 proposal.md 中的底层问题 | 推荐方案偏离了第一性原理分析的结论 |
-| **Seam 已确定** | 每个验收行为都能映射到至少一个声明的测试 Seam | 测试边界未定，留给 apply 阶段随手写 |
 
 **未通过交叉验证的 design 不得进入 Phase 3 门禁。**
 
@@ -1193,9 +1204,13 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 **签字格式**：
 
 ```markdown
+Gate-Level: L3
+Gate-Verdict: READY_FOR_HUMAN_APPROVAL
 Technical Review Approved: 张三  2026-08-26
-复核（L3 必填）: 李四  2026-08-26
+复核: 李四  2026-08-26
 ```
+
+前两行由门禁汇总生成，人只填签字行；`Gate-Verdict: BLOCKED` 时签字也不放行。`复核:` 行是 L3 的建议项，留空不拦截。格式见 `skills/openspec-technical-review/shared/gate-policy.md`「机器可读裁决行」。
 
 ---
 
@@ -1323,21 +1338,27 @@ realpath skills/openspec-technical-review/hooks/check-review-approval.sh
 
 #### 注册后必须验证内容版本
 
-只看「有没有 hooks 字段」不够 —— 旧版 hook 在缺 `review-summary.md` 时会放行：
+只看「有没有 hooks 字段」不够 —— 注册路径可能指向不含本仓修复的旧副本。不要靠 grep 某句提示文案判断版本（文案会改），直接与本仓源文件逐字节比对（在本仓根目录执行）：
 
 ```bash
-grep -c '技术评审门禁尚未执行' "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' ~/.claude/settings.json | sed 's/^bash //')"
+HOOK="$(jq -r '.hooks.PreToolUse[0].hooks[0].command' ~/.claude/settings.json | sed 's/^bash //')"
+cmp "$HOOK" skills/openspec-technical-review/hooks/check-review-approval.sh && echo 一致
 ```
 
-输出 `1` 才是含 fail-open 修复的版本；输出 `0` 说明指向了旧副本，必须改路径。
+输出「一致」才是本仓当前版本；输出差异说明指向了旧副本，必须改路径或先同步。
 
 #### 行为验证
 
-在一个没有 `review-summary.md` 的变更上执行，应被拒绝：
+造一个签字行仍为空白占位的变更，hook 应拦截（沿用上一步的 `$HOOK`）：
 
 ```bash
-openspec apply some-change-without-review
+T="$(mktemp -d)" && mkdir -p "$T/openspec/changes/demo"
+printf 'Technical Review Approved: __________\n' > "$T/openspec/changes/demo/review-summary.md"
+printf '{"tool_input":{"command":"openspec apply demo"}}' | CLAUDE_PROJECT_DIR="$T" bash "$HOOK" | grep -c '"deny"'
+rm -rf "$T"
 ```
+
+输出 `1` 表示拦截生效；输出 `0` 说明 hook 没有按预期工作。缺 `review-summary.md` 的变更**按设计放行**（该变更未启用门禁，见 `apply-gate-check.md`「何时执行」），不要拿它做行为验证。本段命令由 `scripts/test-approval-hook.mjs` 实际执行，改动时测试会同步校验。
 
 #### 依赖检查
 
@@ -1371,7 +1392,7 @@ jq --version
 
 ```bash
 /opsx:review <change>                          # 全量重走
-/opsx:review <change> --roles security         # 增量重走，其余沿用上轮 review/<role>.md
+/opsx:review <change> --roles security         # 增量重走，其余纳入维度沿用上轮 review/<role>.md
 ```
 
 **裁决始终对全部纳入维度求值**：沿用维度若仍有未闭环 Blocker，门禁仍 `BLOCKED`。

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -131,3 +131,18 @@ test('Gate-Verdict 为 READY 或缺该行（旧版产物）时只看签字', (t)
   assert.equal(runHook(t, 'Technical Review Approved: 张三 2026-10-14').denied, false)
 })
 
+test('研发流程文档的「行为验证」片段对当前 hook 输出 1', () => {
+  // 文档曾要求 grep 一句已被删掉的提示文案、并在缺 summary 的变更上断言被拒，两者都与实现相反。
+  // 这里直接执行文档里的片段，hook 行为或文档任一侧漂移，测试即失败。
+  const doc = readFileSync(new URL('../workflow/OpenSpec-AI-研发流程.md', import.meta.url), 'utf8')
+  const section = doc.split('#### 行为验证')[1]
+  assert.ok(section, '流程文档缺少「行为验证」小节')
+  const snippet = section.match(/```bash\n([\s\S]*?)```/)?.[1]
+  assert.ok(snippet, '「行为验证」小节缺少 bash 代码块')
+  const r = spawnSync('/bin/bash', ['-c', snippet], {
+    env: { ...process.env, HOOK: HOOK.pathname },
+    encoding: 'utf8',
+  })
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout.trim(), '1')
+})
