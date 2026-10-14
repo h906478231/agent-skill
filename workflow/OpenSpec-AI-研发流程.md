@@ -507,7 +507,7 @@ BLOCKED必须先闭环Blocker并重走门禁 → 变成READY → 才能签字 �
 <details>
 <summary><strong>Q7: proposal/design/spec/tasks四份文档太散，怎么确认规则条件没遗漏？</strong></summary>
 
-**A**: 跑 `/opsx:overview <change>`。
+**A**: 跑 `/opsx:overview <change>`（按需入口：字段与规则条件较多时推荐；未生成时 verify 直接核对 `review-summary.md` 的条件清单）。
 
 「规则条件可追溯矩阵」把四类来源（proposal验收条件、spec scenario、design约束、review的「有条件通过」）合成一张表。
 
