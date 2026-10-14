@@ -163,7 +163,7 @@ const summary = await agent(
     `11) 「有条件通过」的条件清单（条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态）。映射不到 tasks 的条件视同 Blocker。`,
     `12) 上轮闭环验证结果（仅当各维度 review 中存在「上轮闭环验证」小节时）：汇总哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环，并给出各自的 status 取值。任何「声称已闭环但实际未闭环」的项一律按未闭环 Blocker 计入裁决。`,
     `13) 术语表：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。`,
-    `14) 分级结论：方案类型（MVP / 完整方案）+ 命中的升级信号 + 变更等级（完整方案为 L1/L2/L3）或纳入维度（MVP，按映射表）+ 判定人 + 依据，规则见 ${SD}/shared/gate-levels.md。`,
+    `14) 分级结论：方案类型（MVP / 完整方案）+ 命中的升级信号 + 变更等级（完整方案为 L1/L2/L3）或纳入维度（MVP，按映射表）+ 判定人 + 依据，规则见 ${SD}/shared/gate-levels.md。同时确保变更目录 overview.md 开头也写有这一行（还没有该文件时，创建只含文件头与分级行的最小 overview.md）——实现阶段的归档门禁从 overview.md 读等级判定双轴评审是否必需。`,
     `15) 评审输入版本：列出本轮依据的 proposal.md / design.md / specs / tasks.md 的版本依据（如 git rev-parse HEAD 或文件哈希），供重走与恢复时判断输入是否变化。`,
     `16) 人工确认区：留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply。`,
     `若本轮裁决为 BLOCKED，按 gate-policy.md 的闭环记录格式明确提示：回改 design.md 后必须登记每条 Blocker 的闭环记录，下一轮评审 Agent 依赖该区块验证闭环。`,
