@@ -1,0 +1,254 @@
+# 通用受控词表、模糊词清单与默认阈值（openspec-ste 内置默认值）
+#
+# - 按 STE 原则自行编写：一个意思只用一个词，非受控词给出唯一的受控替代词。
+#   不是 ASD-STE100 官方词典的翻译或摘录（ADR-0005）。规则说明见 shared/ste-rules.md。
+# - 项目在 openspec/ste.yaml 中用 add / remove 增删条目，用 thresholds 覆盖阈值。
+# - 非受控词与模糊词至少 2 个字：检查用子串匹配，1 个字的词会大面积误报。
+# - exceptions：含该词但不算违规的短语（如「利用率」），命中位置落在其中时不报告。
+
+version: 1
+
+# 默认阈值（C-R6.3 描述句字数、C-R5.1 指令句字数、C-R6.6 段落句数）。
+# 40 / 30 字由 STE 25 / 20 词按约 1.5 字/词折算，折算比未经验证，句长规则只告警。
+thresholds:
+  descriptive: 40
+  instruction: 30
+  paragraph: 6
+
+# 通用受控词表（C-R1.1）：word 为非受控词，replacement 为唯一受控替代词。
+vocabulary:
+  # —— 使用、选择 ——
+  - { word: 利用, replacement: 使用, exceptions: [利用率] }
+  - { word: 运用, replacement: 使用 }
+  - { word: 采用, replacement: 使用, exceptions: [采用率] }
+  - { word: 借助, replacement: 使用 }
+  - { word: 选用, replacement: 选择 }
+  - { word: 挑选, replacement: 选择 }
+  - { word: 选取, replacement: 选择 }
+  # —— 编写、说明、显示 ——
+  - { word: 撰写, replacement: 编写 }
+  - { word: 书写, replacement: 编写 }
+  - { word: 阐述, replacement: 说明 }
+  - { word: 阐明, replacement: 说明 }
+  - { word: 陈述, replacement: 说明, exceptions: [陈述句] }
+  - { word: 描绘, replacement: 描述 }
+  - { word: 展示, replacement: 显示 }
+  - { word: 呈现, replacement: 显示 }
+  - { word: 显现, replacement: 显示 }
+  # —— 查看、检查、查找 ——
+  - { word: 查阅, replacement: 查看 }
+  - { word: 察看, replacement: 查看 }
+  - { word: 浏览, replacement: 查看, exceptions: [浏览器] }
+  - { word: 检阅, replacement: 检查 }
+  - { word: 核查, replacement: 检查 }
+  - { word: 查验, replacement: 检查 }
+  - { word: 检验, replacement: 检查 }
+  - { word: 校对, replacement: 核对 }
+  - { word: 判别, replacement: 判断 }
+  - { word: 比对, replacement: 比较 }
+  - { word: 辨别, replacement: 区分 }
+  - { word: 分辨, replacement: 区分, exceptions: [分辨率] }
+  - { word: 寻找, replacement: 查找 }
+  - { word: 搜寻, replacement: 查找 }
+  # —— 得到、知道 ——
+  - { word: 获得, replacement: 得到 }
+  - { word: 获悉, replacement: 知道 }
+  - { word: 知晓, replacement: 知道 }
+  - { word: 调取, replacement: 读取 }
+  - { word: 读入, replacement: 读取, exceptions: [阅读入] }
+  - { word: 写进, replacement: 写入 }
+  # —— 创建、增加、删除、修改 ——
+  - { word: 新建, replacement: 创建, exceptions: [重新建] }
+  - { word: 建立, replacement: 创建 }
+  - { word: 添加, replacement: 增加 }
+  - { word: 增添, replacement: 增加 }
+  - { word: 追加, replacement: 增加 }
+  - { word: 添置, replacement: 增加 }
+  - { word: 删掉, replacement: 删除 }
+  - { word: 去掉, replacement: 删除 }
+  - { word: 去除, replacement: 删除 }
+  - { word: 减掉, replacement: 减少 }
+  - { word: 更改, replacement: 修改 }
+  - { word: 改动, replacement: 修改 }
+  - { word: 更动, replacement: 修改 }
+  - { word: 修订, replacement: 修改 }
+  - { word: 设定, replacement: 设置 }
+  - { word: 变为, replacement: 变成 }
+  - { word: 转变, replacement: 变成 }
+  - { word: 转化, replacement: 转换 }
+  - { word: 提升, replacement: 提高 }
+  - { word: 改善, replacement: 改进 }
+  # —— 开始、停止、完成、运行 ——
+  - { word: 完毕, replacement: 完成 }
+  - { word: 终止, replacement: 停止 }
+  - { word: 中止, replacement: 停止 }
+  - { word: 运作, replacement: 运行 }
+  - { word: 达成, replacement: 达到 }
+  - { word: 落实, replacement: 实现 }
+  - { word: 落地, replacement: 实现, exceptions: [落地页] }
+  # —— 处理、导致、保证、避免 ——
+  - { word: 处置, replacement: 处理 }
+  - { word: 应对, replacement: 处理, exceptions: [相应对, 对应对, 响应对] }
+  - { word: 致使, replacement: 导致 }
+  - { word: 引发, replacement: 导致 }
+  - { word: 确保, replacement: 保证 }
+  - { word: 务必, replacement: 必须, exceptions: [任务必, 业务必, 服务必, 事务必] }
+  - { word: 理应, replacement: 应该 }
+  - { word: 能够, replacement: 能, exceptions: [性能够] }
+  - { word: 可否, replacement: 能否 }
+  - { word: 准许, replacement: 允许 }
+  - { word: 许可, replacement: 允许, exceptions: [许可证, 许可协议] }
+  - { word: 严禁, replacement: 禁止 }
+  - { word: 规避, replacement: 避免 }
+  - { word: 避开, replacement: 避免 }
+  - { word: 防范, replacement: 防止 }
+  - { word: 预防, replacement: 防止 }
+  # —— 通知、回复、等待 ——
+  - { word: 告知, replacement: 通知 }
+  - { word: 通告, replacement: 通知 }
+  - { word: 答复, replacement: 回复 }
+  - { word: 回应, replacement: 回复 }
+  - { word: 应答, replacement: 回复 }
+  - { word: 等候, replacement: 等待 }
+  - { word: 延后, replacement: 推迟 }
+  - { word: 延期, replacement: 推迟 }
+  # —— 有、包含、缺少 ——
+  - { word: 具备, replacement: 有 }
+  - { word: 拥有, replacement: 有, exceptions: [拥有者, 拥有权] }
+  - { word: 具有, replacement: 有 }
+  - { word: 包括, replacement: 包含 }
+  - { word: 囊括, replacement: 包含 }
+  - { word: 涵盖, replacement: 覆盖 }
+  - { word: 缺乏, replacement: 缺少 }
+  - { word: 欠缺, replacement: 缺少 }
+  - { word: 漏掉, replacement: 遗漏 }
+  # —— 按照、参考、连接、拆分、存储 ——
+  - { word: 依照, replacement: 按照 }
+  - { word: 遵照, replacement: 按照 }
+  - { word: 遵循, replacement: 遵守 }
+  - { word: 依循, replacement: 遵守 }
+  - { word: 参照, replacement: 参考 }
+  - { word: 参阅, replacement: 参考 }
+  - { word: 衔接, replacement: 连接 }
+  - { word: 分割, replacement: 拆分 }
+  - { word: 切割, replacement: 拆分 }
+  - { word: 储存, replacement: 存储 }
+  - { word: 存放, replacement: 存储 }
+  - { word: 记载, replacement: 记录 }
+  # —— 圈内黑话（C-R1.10）——
+  - { word: 赋能, replacement: 支持 }
+  - { word: 抓手, replacement: 方法 }
+  - { word: 打通, replacement: 连接 }
+  - { word: 拉通, replacement: 统一 }
+  - { word: 沉淀, replacement: 记录 }
+  - { word: 复盘, replacement: 回顾 }
+  - { word: 兜底, replacement: 后备 }
+  - { word: 颗粒度, replacement: 粒度 }
+  # —— 名词 ——
+  - { word: 情形, replacement: 情况 }
+  - { word: 状况, replacement: 情况 }
+  - { word: 境况, replacement: 情况 }
+  - { word: 办法, replacement: 方法 }
+  - { word: 手段, replacement: 方法 }
+  - { word: 缘由, replacement: 原因 }
+  - { word: 缘故, replacement: 原因 }
+  - { word: 差错, replacement: 错误 }
+  - { word: 谬误, replacement: 错误 }
+  - { word: 瑕疵, replacement: 缺陷 }
+  - { word: 毛病, replacement: 缺陷 }
+  - { word: 使用者, replacement: 用户 }
+  - { word: 开发人员, replacement: 开发者 }
+  - { word: 研发人员, replacement: 开发者 }
+  - { word: 程序员, replacement: 开发者 }
+  - { word: 讯息, replacement: 信息 }
+  - { word: 资讯, replacement: 信息 }
+  - { word: 机能, replacement: 功能 }
+  - { word: 效能, replacement: 性能 }
+  - { word: 数目, replacement: 数量 }
+  - { word: 种类, replacement: 类型 }
+  - { word: 范畴, replacement: 范围 }
+  - { word: 准则, replacement: 规则 }
+  - { word: 守则, replacement: 规则 }
+  - { word: 主旨, replacement: 主题 }
+  - { word: 环节, replacement: 步骤 }
+  - { word: 样例, replacement: 示例 }
+  - { word: 范例, replacement: 示例 }
+  - { word: 例子, replacement: 示例 }
+  - { word: 案例, replacement: 示例 }
+  # —— 连接词与副词 ——
+  - { word: 倘若, replacement: 如果 }
+  - { word: 假如, replacement: 如果 }
+  - { word: 假若, replacement: 如果 }
+  - { word: 若是, replacement: 如果 }
+  - { word: 如若, replacement: 如果 }
+  - { word: 因而, replacement: 因此 }
+  - { word: 故而, replacement: 因此 }
+  - { word: 所以, replacement: 因此, exceptions: [之所以, 所以然] }
+  - { word: 然而, replacement: 但是 }
+  - { word: 此外, replacement: 另外 }
+  - { word: 随后, replacement: 然后 }
+  - { word: 接着, replacement: 然后, exceptions: [连接着] }
+  - { word: 立刻, replacement: 立即 }
+  - { word: 马上, replacement: 立即 }
+  - { word: 即刻, replacement: 立即 }
+  - { word: 目前, replacement: 当前 }
+  - { word: 眼下, replacement: 当前 }
+  - { word: 此前, replacement: 之前, exceptions: [此前提] }
+  - { word: 以往, replacement: 以前 }
+  - { word: 迄今, replacement: 至今 }
+  - { word: 所有, replacement: 全部, exceptions: [所有者, 所有权] }
+  - { word: 每一个, replacement: 每个 }
+  - { word: 仅仅, replacement: 只 }
+  - { word: 单单, replacement: 只 }
+  - { word: 极其, replacement: 非常 }
+  - { word: 格外, replacement: 非常 }
+  - { word: 大约, replacement: 约, exceptions: [大约束] }
+  - { word: 大概, replacement: 约, exceptions: [大概率] }
+  - { word: 诸多, replacement: 多个 }
+  - { word: 众多, replacement: 多个 }
+  - { word: 许多, replacement: 多个, exceptions: [允许多] }
+  - { word: 若干, replacement: 多个 }
+  - { word: 亦即, replacement: 即 }
+  - { word: 也就是说, replacement: 即 }
+  - { word: 换言之, replacement: 即 }
+  - { word: 总而言之, replacement: 总之 }
+
+# 模糊词清单（C-R4.1）：不可度量的词，改写为具体数值、条件或对象。
+# 写成字符串，或写成 { word, exceptions } 声明例外短语。
+vague:
+  - 适当
+  - 相关
+  - 优化
+  - 合理
+  - 合适
+  - 恰当
+  - 妥善
+  - 尽量
+  - 尽可能
+  - 一定程度
+  - 某些
+  - 一些
+  - 少许
+  - 些许
+  - 大量
+  - 较好
+  - 更好
+  - 良好
+  - 足够
+  - 必要时
+  - 适时
+  - { word: 及时, exceptions: [及时间] }
+  - 显著
+  - 明显
+  - 大幅
+  - { word: 有效, exceptions: [有效期] }
+  - 高效
+  - 灵活
+  - 友好
+  - 完善
+  - 等等
+  - 之类
+  - 诸如此类
+
+# 安全提示（C-R7.2）：「警告」「注意」后的句子应以这些命令词或条件词开头。
+safetyStarts: [不要, 禁止, 不得, 必须, 只, 先, 确认, 检查, 停止, 关闭, 备份, 保存, 删除, 运行, 使用, 如果, 当, 在]

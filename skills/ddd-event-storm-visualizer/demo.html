@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>朋友圈业务 - DDD 事件风暴流程图</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f7fa;
+            overflow: hidden;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            cursor: grab;
+        }
+
+        #container.dragging {
+            cursor: grabbing;
+        }
+
+        #canvas {
+            position: absolute;
+            transform-origin: 0 0;
+            transition: transform 0.1s ease-out;
+        }
+
+        #mermaid-diagram {
+            display: inline-block;
+        }
+
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        #controls button {
+            display: block;
+            width: 40px;
+            height: 40px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.2s;
+        }
+
+        #controls button:hover {
+            background: #f0f0f0;
+            border-color: #999;
+        }
+
+        #zoom-level {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 12px;
+            color: #666;
+        }
+
+        #detail-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 350px;
+            max-height: 80vh;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: none;
+            overflow-y: auto;
+        }
+
+        #detail-panel.visible {
+            display: block;
+        }
+
+        #detail-header {
+            padding: 20px;
+            border-bottom: 2px solid #f0f0f0;
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10;
+        }
+
+        #detail-header h2 {
+            font-size: 18px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        #detail-header .subtitle {
+            font-size: 13px;
+            color: #666;
+        }
+
+        #detail-content {
+            padding: 20px;
+        }
+
+        #detail-content h3 {
+            font-size: 14px;
+            color: #666;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #detail-content p, #detail-content ul {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        #detail-content ul {
+            padding-left: 20px;
+        }
+
+        #detail-content li {
+            margin-bottom: 5px;
+        }
+
+        #close-detail {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 30px;
+            height: 30px;
+            border: none;
+            background: #f5f5f5;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 30px;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        #close-detail:hover {
+            background: #e0e0e0;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-right: 5px;
+        }
+
+        .badge-command {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-event {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .badge-aggregate {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .badge-policy {
+            background: #e2d9f3;
+            color: #5a3f7f;
+        }
+
+        #legend {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            margin-right: 8px;
+        }
+
+        /* Mermaid 节点样式覆盖 */
+        .node rect,
+        .node circle,
+        .node ellipse,
+        .node polygon {
+            stroke-width: 2px !important;
+        }
+
+        .node.highlighted rect,
+        .node.highlighted circle,
+        .node.highlighted ellipse,
+        .node.highlighted polygon {
+            stroke-width: 4px !important;
+            filter: drop-shadow(0 0 8px rgba(0,0,0,0.3));
+        }
+
+        .node.dimmed {
+            opacity: 0.2;
+        }
+
+        .edgePath.highlighted path {
+            stroke-width: 3px !important;
+            stroke: #333 !important;
+        }
+
+        .edgePath.dimmed {
+            opacity: 0.1;
+        }
+    </style>
+</head>
+<body>
+<div id="container">
+    <div id="canvas">
+        <div id="mermaid-diagram"></div>
+    </div>
+</div>
+
+<div id="controls">
+    <button id="zoom-in" title="放大">+</button>
+    <div id="zoom-level">100%</div>
+    <button id="zoom-out" title="缩小">−</button>
+    <button id="reset" title="重置" style="margin-top: 15px;">⟲</button>
+</div>
+
+<div id="legend">
+    <div class="legend-item">
+        <div class="legend-color" style="background: #FFD700;"></div>
+        <span>Command (命令)</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background: #FF6B6B;"></div>
+        <span>Event (事件)</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background: #4A90E2;"></div>
+        <span>Aggregate (聚合)</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background: #9B59B6;"></div>
+        <span>Policy (策略)</span>
+    </div>
+</div>
+
+<div id="detail-panel">
+    <button id="close-detail">×</button>
+    <div id="detail-header"></div>
+    <div id="detail-content"></div>
+</div>
+
+<script>
+    // 数据模型
+    const data = {
+        commands: {
+            C1: { id: 'C1', name: '创建朋友圈任务', className: 'CreateMomentTaskCommand', trigger: '运营人员', input: '任务名称、内容、类型、发布类型、托管账号列表、可见范围、提醒人', precondition: '托管账号有效、内容通过敏感词检查', aggregate: 'MomentTask', events: ['E1'] },
+            C2: { id: 'C2', name: '执行朋友圈发布', className: 'ExecuteMomentPublishCommand', trigger: '定时调度系统/MQ消费者', input: '任务ID、托管账号ID', precondition: '任务状态为待执行、托管账号在线、未超发圈限制、无新设备限制', aggregate: 'MomentTask', events: ['E2', 'E3', 'E4', 'E5'] },
+            C3: { id: 'C3', name: '上传朋友圈素材', className: 'UploadMomentMaterialCommand', trigger: '发布服务', input: '素材文件、素材类型', precondition: '素材格式合法', aggregate: 'MomentTask', events: ['E3'] },
+            C4: { id: 'C4', name: '删除朋友圈任务', className: 'DeleteMomentTaskCommand', trigger: '运营人员', input: '任务ID列表', precondition: '任务存在', aggregate: 'MomentTask', events: ['E6'] },
+            C5: { id: 'C5', name: '重新发布朋友圈', className: 'RepublishMomentCommand', trigger: '运营人员', input: '任务ID、托管账号列表', precondition: '原任务存在', aggregate: 'MomentTask', events: ['E1', 'E2'] },
+            C6: { id: 'C6', name: '添加朋友圈追评', className: 'AddMomentCommentCommand', trigger: '追评调度系统', input: '发布记录ID、评论内容', precondition: '朋友圈已发布成功', aggregate: 'MomentTask', events: ['E7'] },
+            C7: { id: 'C7', name: '创建跟圈任务', className: 'CreateMomentFollowCommand', trigger: '运营人员', input: '同步源、检测规则、过滤条件、发送策略、托管账号列表', precondition: '同步源有效、托管账号有效', aggregate: 'MomentFollow', events: ['E8'] },
+            C8: { id: 'C8', name: '执行跟圈检测', className: 'ExecuteFollowCheckCommand', trigger: '定时调度系统', input: '跟圈任务ID', precondition: '任务已启用、在生效时间段、规则匹配当前时间', aggregate: 'MomentFollow', events: ['E9', 'E10'] },
+            C9: { id: 'C9', name: '启用/禁用跟圈任务', className: 'ToggleFollowTaskCommand', trigger: '运营人员', input: '跟圈任务ID、启用状态', precondition: '任务存在', aggregate: 'MomentFollow', events: ['E11'] },
+            C10: { id: 'C10', name: '配置发圈限制', className: 'ConfigureMomentLimitCommand', trigger: '系统管理员', input: '配置类型、托管账号ID、每日限制次数', precondition: '-', aggregate: 'MomentConfig', events: ['E12'] },
+            C11: { id: 'C11', name: '设置自动发圈开关', className: 'SetAutoMomentSwitchCommand', trigger: '系统管理员', input: '托管账号ID、开关状态', precondition: '托管账号存在', aggregate: 'MomentConfig', events: ['E13'] },
+            C12: { id: 'C12', name: '添加敏感词', className: 'AddSensitiveWordCommand', trigger: '运营人员', input: '敏感词内容、级别', precondition: '敏感词未重复', aggregate: 'MomentConfig', events: ['E14'] },
+            C13: { id: 'C13', name: '删除敏感词', className: 'DeleteSensitiveWordCommand', trigger: '运营人员', input: '敏感词ID', precondition: '敏感词存在', aggregate: 'MomentConfig', events: ['E15'] },
+            C14: { id: 'C14', name: '点赞朋友圈', className: 'LikeMomentCommand', trigger: '托管账号/系统', input: '托管账号ID、朋友圈ID', precondition: '托管账号在线、朋友圈存在', aggregate: 'MomentInteraction', events: ['E16'] },
+            C15: { id: 'C15', name: '取消点赞朋友圈', className: 'UnlikeMomentCommand', trigger: '托管账号/系统', input: '托管账号ID、朋友圈ID', precondition: '已点赞', aggregate: 'MomentInteraction', events: ['E17'] },
+            C16: { id: 'C16', name: '评论朋友圈', className: 'CommentMomentCommand', trigger: '托管账号/系统', input: '托管账号ID、朋友圈ID、评论内容', precondition: '托管账号在线、朋友圈存在', aggregate: 'MomentInteraction', events: ['E18'] },
+            C17: { id: 'C17', name: '删除朋友圈评论', className: 'DeleteMomentCommentCommand', trigger: '托管账号/系统', input: '托管账号ID、朋友圈ID、评论ID', precondition: '评论存在', aggregate: 'MomentInteraction', events: ['E19'] },
+            C18: { id: 'C18', name: '删除朋友圈', className: 'DeleteMomentCommand', trigger: '托管账号/系统', input: '托管账号ID、朋友圈ID', precondition: '朋友圈存在且属于该托管账号', aggregate: 'MomentInteraction', events: ['E20'] },
+            C19: { id: 'C19', name: '补偿执行待发布任务', className: 'CompensatePublishCommand', trigger: '定时调度系统', input: '任务ID', precondition: '预计发布时间超过5分钟仍未执行', aggregate: 'MomentTask', events: ['E2'] },
+            C20: { id: 'C20', name: '标记任务超时失败', className: 'MarkTaskTimeoutCommand', trigger: '定时调度系统', input: '任务ID', precondition: '执行中超过1小时', aggregate: 'MomentTask', events: ['E5'] },
+            C21: { id: 'C21', name: '创建跟圈素材任务', className: 'CreateTaskFromFollowMaterialCommand', trigger: '跟圈检测服务', input: '跟圈任务ID、素材列表、托管账号列表', precondition: '跟圈检测发现新素材', aggregate: 'MomentTask', events: ['E1'] }
+        },
+        events: {
+            E1: { id: 'E1', name: '朋友圈任务已创建', className: 'MomentTaskCreatedEvent', meaning: '朋友圈发布任务已成功创建', aggregate: 'MomentTask' },
+            E2: { id: 'E2', name: '朋友圈发布已开始', className: 'MomentPublishStartedEvent', meaning: '朋友圈发布进入执行中状态', aggregate: 'MomentTask' },
+            E3: { id: 'E3', name: '朋友圈素材已上传', className: 'MomentMaterialUploadedEvent', meaning: '图片/视频等素材已上传到EIM', aggregate: 'MomentTask' },
+            E4: { id: 'E4', name: '朋友圈已发布成功', className: 'MomentPublishedEvent', meaning: '朋友圈已成功发布到企业微信', aggregate: 'MomentTask' },
+            E5: { id: 'E5', name: '朋友圈发布已失败', className: 'MomentPublishFailedEvent', meaning: '朋友圈发布失败（校验失败/EIM调用失败）', aggregate: 'MomentTask' },
+            E6: { id: 'E6', name: '朋友圈任务已删除', className: 'MomentTaskDeletedEvent', meaning: '朋友圈任务及相关记录已删除', aggregate: 'MomentTask' },
+            E7: { id: 'E7', name: '朋友圈追评已添加', className: 'MomentCommentAddedEvent', meaning: '已发布朋友圈的追评已添加', aggregate: 'MomentTask' },
+            E8: { id: 'E8', name: '跟圈任务已创建', className: 'MomentFollowCreatedEvent', meaning: '跟圈任务配置已创建', aggregate: 'MomentFollow' },
+            E9: { id: 'E9', name: '跟圈检测已执行', className: 'FollowCheckExecutedEvent', meaning: '跟圈检测已完成一次执行', aggregate: 'MomentFollow' },
+            E10: { id: 'E10', name: '跟圈素材已发现', className: 'FollowMaterialDiscoveredEvent', meaning: '跟圈检测发现新的朋友圈素材', aggregate: 'MomentFollow' },
+            E11: { id: 'E11', name: '跟圈任务状态已变更', className: 'FollowTaskStatusChangedEvent', meaning: '跟圈任务的启用状态已变更', aggregate: 'MomentFollow' },
+            E12: { id: 'E12', name: '发圈限制已配置', className: 'MomentLimitConfiguredEvent', meaning: '发圈次数限制规则已配置', aggregate: 'MomentConfig' },
+            E13: { id: 'E13', name: '自动发圈开关已设置', className: 'AutoMomentSwitchSetEvent', meaning: '托管账号的自动发圈开关已设置', aggregate: 'MomentConfig' },
+            E14: { id: 'E14', name: '敏感词已添加', className: 'SensitiveWordAddedEvent', meaning: '敏感词已添加到词库', aggregate: 'MomentConfig' },
+            E15: { id: 'E15', name: '敏感词已删除', className: 'SensitiveWordDeletedEvent', meaning: '敏感词已从词库删除', aggregate: 'MomentConfig' },
+            E16: { id: 'E16', name: '朋友圈已点赞', className: 'MomentLikedEvent', meaning: '朋友圈已被点赞', aggregate: 'MomentInteraction' },
+            E17: { id: 'E17', name: '朋友圈点赞已取消', className: 'MomentUnlikedEvent', meaning: '朋友圈的点赞已取消', aggregate: 'MomentInteraction' },
+            E18: { id: 'E18', name: '朋友圈已评论', className: 'MomentCommentedEvent', meaning: '朋友圈已添加评论', aggregate: 'MomentInteraction' },
+            E19: { id: 'E19', name: '朋友圈评论已删除', className: 'MomentCommentDeletedEvent', meaning: '朋友圈的评论已删除', aggregate: 'MomentInteraction' },
+            E20: { id: 'E20', name: '朋友圈已删除', className: 'MomentDeletedEvent', meaning: '朋友圈已从企业微信删除', aggregate: 'MomentInteraction' }
+        },
+        aggregates: {
+            MomentTask: { id: 'MomentTask', name: '朋友圈任务', description: '管理朋友圈发布任务的全生命周期', entities: ['MomentTaskDetail', 'MomentTaskPublishResult', 'MomentPublishTime'], valueObjects: ['TaskContent', 'VisibleScope', 'ReminderList', 'PublishSchedule'] },
+            MomentFollow: { id: 'MomentFollow', name: '跟圈任务', description: '管理跟圈任务配置和检测执行', entities: ['FollowCheckRecord'], valueObjects: ['SyncSource', 'FollowRule', 'FilterCondition', 'SendStrategy'] },
+            MomentInteraction: { id: 'MomentInteraction', name: '朋友圈互动', description: '管理朋友圈的点赞、评论、删除等互动操作', entities: [], valueObjects: ['InteractionRecord', 'MomentContent'] },
+            MomentConfig: { id: 'MomentConfig', name: '发圈配置', description: '管理发圈限制、自动开关、敏感词等配置', entities: ['AutoMomentSwitch', 'SensitiveWord'], valueObjects: ['LimitRule', 'SensitiveWordSet'] }
+        },
+        policies: {
+            P1: { id: 'P1', name: '定时发布策略', className: 'ScheduledPublishPolicy', listenEvents: ['E1'], triggerCommands: ['C2'], rule: '当朋友圈任务创建且发布类型为自定义时间或推荐时间时，在指定时间触发发布执行' },
+            P2: { id: 'P2', name: '立即发布策略', className: 'ImmediatePublishPolicy', listenEvents: ['E1'], triggerCommands: ['C2'], rule: '当朋友圈任务创建且发布类型为立即发送时，立即触发发布执行' },
+            P3: { id: 'P3', name: '跟圈自动发布策略', className: 'FollowAutoPublishPolicy', listenEvents: ['E10'], triggerCommands: ['C21', 'C2'], rule: '跟圈检测发现新素材后，根据发送策略（立即/延时）创建并执行朋友圈任务' },
+            P4: { id: 'P4', name: '追评策略', className: 'CommentAfterPublishPolicy', listenEvents: ['E4'], triggerCommands: ['C6'], rule: '朋友圈发布成功后，如有追评配置，则延时添加追评' },
+            P5: { id: 'P5', name: '待执行任务补偿策略', className: 'PendingTaskCompensationPolicy', listenEvents: [], triggerCommands: ['C19'], rule: '扫描预计发布时间超过当前时间5分钟仍为待执行状态的任务，触发补偿执行' },
+            P6: { id: 'P6', name: '执行中任务超时策略', className: 'ExecutingTaskTimeoutPolicy', listenEvents: [], triggerCommands: ['C20'], rule: '扫描执行中超过1小时的任务，强制标记为失败' },
+            P7: { id: 'P7', name: '延时发送调度策略', className: 'DelayedSendSchedulePolicy', listenEvents: ['E10'], triggerCommands: ['C2'], rule: '将延时发送的任务写入Redis ZSET，定时扫描score≤当前时间的任务并触发发布' },
+            P8: { id: 'P8', name: '跟圈定时检测策略', className: 'FollowScheduledCheckPolicy', listenEvents: [], triggerCommands: ['C8'], rule: '定时扫描启用的跟圈任务，在规则匹配时间段触发检测执行' },
+            P9: { id: 'P9', name: '追评任务补偿策略', className: 'CommentCompensationPolicy', listenEvents: [], triggerCommands: ['C6'], rule: '扫描待执行的追评任务，补偿执行失败或未执行的追评' },
+            P10: { id: 'P10', name: '检测记录清理策略', className: 'CheckRecordCleanupPolicy', listenEvents: [], triggerCommands: [], rule: '物理删除7天前的跟圈检测记录' },
+            P11: { id: 'P11', name: '卡住任务恢复策略', className: 'StuckTaskRecoveryPolicy', listenEvents: [], triggerCommands: [], rule: '将执行中超时的跟圈检测记录置回待执行状态' }
+        }
+    };
+
+    // 生成 Mermaid 图
+    function generateMermaidDiagram() {
+        let diagram = 'graph LR\n';
+
+        // 定义样式
+        diagram += '    classDef commandStyle fill:#FFD700,stroke:#333,stroke-width:2px,color:#000\n';
+        diagram += '    classDef eventStyle fill:#FF6B6B,stroke:#333,stroke-width:2px,color:#fff\n';
+        diagram += '    classDef aggregateStyle fill:#4A90E2,stroke:#333,stroke-width:2px,color:#fff\n';
+        diagram += '    classDef policyStyle fill:#9B59B6,stroke:#333,stroke-width:2px,color:#fff\n';
+
+        // 添加聚合节点
+        for (const [id, agg] of Object.entries(data.aggregates)) {
+            diagram += `    ${id}["${agg.name}<br/>${id}"]\n`;
+        }
+
+        // 添加命令节点和连接
+        for (const [id, cmd] of Object.entries(data.commands)) {
+            diagram += `    ${id}["${cmd.name}<br/>${id}"]\n`;
+            diagram += `    ${id} --> ${cmd.aggregate}\n`;
+        }
+
+        // 添加事件节点和连接
+        for (const [id, evt] of Object.entries(data.events)) {
+            diagram += `    ${id}["${evt.name}<br/>${id}"]\n`;
+        }
+
+        // 连接聚合到事件
+        for (const [cmdId, cmd] of Object.entries(data.commands)) {
+            for (const evtId of cmd.events) {
+                diagram += `    ${cmd.aggregate} --> ${evtId}\n`;
+            }
+        }
+
+        // 添加策略节点和连接
+        for (const [id, policy] of Object.entries(data.policies)) {
+            diagram += `    ${id}["${policy.name}<br/>${id}"]\n`;
+            for (const evtId of policy.listenEvents) {
+                diagram += `    ${evtId} --> ${id}\n`;
+            }
+            for (const cmdId of policy.triggerCommands) {
+                diagram += `    ${id} --> ${cmdId}\n`;
+            }
+        }
+
+        // 应用样式
+        const commandIds = Object.keys(data.commands).join(',');
+        const eventIds = Object.keys(data.events).join(',');
+        const aggregateIds = Object.keys(data.aggregates).join(',');
+        const policyIds = Object.keys(data.policies).join(',');
+
+        diagram += `    class ${commandIds} commandStyle\n`;
+        diagram += `    class ${eventIds} eventStyle\n`;
+        diagram += `    class ${aggregateIds} aggregateStyle\n`;
+        diagram += `    class ${policyIds} policyStyle\n`;
+
+        return diagram;
+    }
+
+    // 初始化 Mermaid
+    mermaid.initialize({
+        startOnLoad: false,
+        theme: 'default',
+        flowchart: {
+            useMaxWidth: false,
+            htmlLabels: true,
+            curve: 'basis'
+        }
+    });
+
+    // 渲染图表
+    async function renderDiagram() {
+        const diagramCode = generateMermaidDiagram();
+        const { svg } = await mermaid.render('mermaid-svg', diagramCode);
+        document.getElementById('mermaid-diagram').innerHTML = svg;
+
+        // 添加点击事件
+        attachNodeClickEvents();
+    }
+
+    // 缩放和拖拽
+    let scale = 1;
+    let translateX = 100;
+    let translateY = 100;
+    let isDragging = false;
+    let startX, startY;
+
+    const container = document.getElementById('container');
+    const canvas = document.getElementById('canvas');
+
+    function updateTransform() {
+        canvas.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+    }
+
+    document.getElementById('zoom-in').addEventListener('click', () => {
+        scale = Math.min(scale * 1.2, 3);
+        updateTransform();
+    });
+
+    document.getElementById('zoom-out').addEventListener('click', () => {
+        scale = Math.max(scale / 1.2, 0.3);
+        updateTransform();
+    });
+
+    document.getElementById('reset').addEventListener('click', () => {
+        scale = 1;
+        translateX = 100;
+        translateY = 100;
+        updateTransform();
+        clearHighlight();
+    });
+
+    container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        scale = Math.max(0.3, Math.min(3, scale * delta));
+        updateTransform();
+    });
+
+    container.addEventListener('mousedown', (e) => {
+        // 排除控制面板、详情面板和图例
+        if (e.target.closest('#controls') || e.target.closest('#detail-panel') || e.target.closest('#legend')) {
+            return;
+        }
+
+        isDragging = true;
+        startX = e.clientX - translateX;
+        startY = e.clientY - translateY;
+        container.classList.add('dragging');
+        e.preventDefault(); // 防止文本选择
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            translateX = e.clientX - startX;
+            translateY = e.clientY - startY;
+            updateTransform();
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+        container.classList.remove('dragging');
+    });
+
+    // 节点点击和高亮
+    let currentHighlighted = null;
+
+    function attachNodeClickEvents() {
+        const nodes = document.querySelectorAll('.node');
+        nodes.forEach(node => {
+            node.style.cursor = 'pointer';
+            node.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const nodeId = node.id.replace('flowchart-', '').replace(/-[0-9]+$/, '');
+                handleNodeClick(nodeId);
+            });
+        });
+    }
+
+    function handleNodeClick(nodeId) {
+        clearHighlight();
+
+        // 确定节点类型
+        let nodeType, nodeData;
+        if (data.commands[nodeId]) {
+            nodeType = 'command';
+            nodeData = data.commands[nodeId];
+        } else if (data.events[nodeId]) {
+            nodeType = 'event';
+            nodeData = data.events[nodeId];
+        } else if (data.aggregates[nodeId]) {
+            nodeType = 'aggregate';
+            nodeData = data.aggregates[nodeId];
+        } else if (data.policies[nodeId]) {
+            nodeType = 'policy';
+            nodeData = data.policies[nodeId];
+        }
+
+        if (!nodeData) return;
+
+        // 高亮逻辑
+        const toHighlight = new Set([nodeId]);
+
+        if (nodeType === 'command') {
+            // 命令 → 聚合 + 事件
+            toHighlight.add(nodeData.aggregate);
+            nodeData.events.forEach(e => toHighlight.add(e));
+        } else if (nodeType === 'event') {
+            // 事件 → 产生它的命令和聚合 + 监听它的策略 + 策略触发的命令（2层）
+            for (const [cmdId, cmd] of Object.entries(data.commands)) {
+                if (cmd.events.includes(nodeId)) {
+                    toHighlight.add(cmdId);
+                    toHighlight.add(cmd.aggregate);
+                }
+            }
+            for (const [policyId, policy] of Object.entries(data.policies)) {
+                if (policy.listenEvents.includes(nodeId)) {
+                    toHighlight.add(policyId);
+                    // 添加策略触发的命令（2层）
+                    policy.triggerCommands.forEach(c => toHighlight.add(c));
+                }
+            }
+        } else if (nodeType === 'policy') {
+            // 策略 → 监听的事件 + 触发的命令 + 命令的聚合（2层）
+            nodeData.listenEvents.forEach(e => toHighlight.add(e));
+            nodeData.triggerCommands.forEach(c => {
+                toHighlight.add(c);
+                // 添加命令的聚合（2层）
+                if (data.commands[c]) {
+                    toHighlight.add(data.commands[c].aggregate);
+                }
+            });
+        } else if (nodeType === 'aggregate') {
+            // 聚合 → 操作它的命令 + 它产生的事件
+            for (const [cmdId, cmd] of Object.entries(data.commands)) {
+                if (cmd.aggregate === nodeId) {
+                    toHighlight.add(cmdId);
+                    cmd.events.forEach(e => toHighlight.add(e));
+                }
+            }
+        }
+
+        // 应用高亮
+        applyHighlight(toHighlight);
+
+        // 显示详情
+        showDetailPanel(nodeId, nodeType, nodeData);
+
+        currentHighlighted = nodeId;
+    }
+
+    function applyHighlight(toHighlight) {
+        const nodes = document.querySelectorAll('.node');
+        const edges = document.querySelectorAll('.edgePath');
+
+        nodes.forEach(node => {
+            const nodeId = node.id.replace('flowchart-', '').replace(/-[0-9]+$/, '');
+            if (toHighlight.has(nodeId)) {
+                node.classList.add('highlighted');
+                node.classList.remove('dimmed');
+            } else {
+                node.classList.add('dimmed');
+                node.classList.remove('highlighted');
+            }
+        });
+
+        edges.forEach(edge => {
+            const edgeClasses = edge.classList;
+            let shouldHighlight = false;
+
+            // 检查边是否连接高亮的节点
+            for (const cls of edgeClasses) {
+                if (cls.startsWith('LS-') || cls.startsWith('LE-')) {
+                    const nodeId = cls.replace(/^L[SE]-/, '').replace(/-[0-9]+$/, '');
+                    if (!toHighlight.has(nodeId)) {
+                        shouldHighlight = false;
+                        break;
+                    } else {
+                        shouldHighlight = true;
+                    }
+                }
+            }
+
+            if (shouldHighlight) {
+                edge.classList.add('highlighted');
+                edge.classList.remove('dimmed');
+            } else {
+                edge.classList.add('dimmed');
+                edge.classList.remove('highlighted');
+            }
+        });
+    }
+
+    function clearHighlight() {
+        const nodes = document.querySelectorAll('.node');
+        const edges = document.querySelectorAll('.edgePath');
+
+        nodes.forEach(node => {
+            node.classList.remove('highlighted', 'dimmed');
+        });
+
+        edges.forEach(edge => {
+            edge.classList.remove('highlighted', 'dimmed');
+        });
+
+        hideDetailPanel();
+        currentHighlighted = null;
+    }
+
+    function showDetailPanel(nodeId, nodeType, nodeData) {
+        const panel = document.getElementById('detail-panel');
+        const header = document.getElementById('detail-header');
+        const content = document.getElementById('detail-content');
+
+        let badgeClass, typeText;
+        if (nodeType === 'command') {
+            badgeClass = 'badge-command';
+            typeText = 'Command';
+        } else if (nodeType === 'event') {
+            badgeClass = 'badge-event';
+            typeText = 'Event';
+        } else if (nodeType === 'aggregate') {
+            badgeClass = 'badge-aggregate';
+            typeText = 'Aggregate';
+        } else if (nodeType === 'policy') {
+            badgeClass = 'badge-policy';
+            typeText = 'Policy';
+        }
+
+        let headerHTML = `
+            <h2>${nodeData.name || nodeData.id}</h2>
+            <div class="subtitle">
+                <span class="badge ${badgeClass}">${typeText}</span>
+                <span>${nodeData.className || nodeData.id}</span>
+            </div>
+        `;
+
+        let contentHTML = '';
+
+        if (nodeType === 'command') {
+            contentHTML = `
+                <h3>触发者</h3>
+                <p>${nodeData.trigger}</p>
+                <h3>输入数据</h3>
+                <p>${nodeData.input}</p>
+                <h3>前置条件</h3>
+                <p>${nodeData.precondition}</p>
+                <h3>操作聚合</h3>
+                <p>${nodeData.aggregate}</p>
+                <h3>产生事件</h3>
+                <ul>
+                    ${nodeData.events.map(e => `<li>${e}: ${data.events[e].name}</li>`).join('')}
+                </ul>
+            `;
+        } else if (nodeType === 'event') {
+            contentHTML = `
+                <h3>业务含义</h3>
+                <p>${nodeData.meaning}</p>
+                <h3>所属聚合</h3>
+                <p>${nodeData.aggregate}</p>
+                <h3>由以下命令产生</h3>
+                <ul>
+                    ${Object.entries(data.commands)
+                        .filter(([_, cmd]) => cmd.events.includes(nodeId))
+                        .map(([id, cmd]) => `<li>${id}: ${cmd.name}</li>`)
+                        .join('') || '<li>无</li>'}
+                </ul>
+                <h3>被以下策略监听</h3>
+                <ul>
+                    ${Object.entries(data.policies)
+                        .filter(([_, policy]) => policy.listenEvents.includes(nodeId))
+                        .map(([id, policy]) => `<li>${id}: ${policy.name}</li>`)
+                        .join('') || '<li>无</li>'}
+                </ul>
+            `;
+        } else if (nodeType === 'aggregate') {
+            const relatedCommands = Object.entries(data.commands)
+                .filter(([_, cmd]) => cmd.aggregate === nodeId);
+            const relatedEvents = [...new Set(relatedCommands.flatMap(([_, cmd]) => cmd.events))];
+
+            contentHTML = `
+                <h3>描述</h3>
+                <p>${nodeData.description}</p>
+                <h3>内部实体</h3>
+                <ul>
+                    ${nodeData.entities.map(e => `<li>${e}</li>`).join('') || '<li>无</li>'}
+                </ul>
+                <h3>值对象</h3>
+                <ul>
+                    ${nodeData.valueObjects.map(v => `<li>${v}</li>`).join('') || '<li>无</li>'}
+                </ul>
+                <h3>相关命令</h3>
+                <ul>
+                    ${relatedCommands.map(([id, cmd]) => `<li>${id}: ${cmd.name}</li>`).join('')}
+                </ul>
+                <h3>产生事件</h3>
+                <ul>
+                    ${relatedEvents.map(e => `<li>${e}: ${data.events[e].name}</li>`).join('')}
+                </ul>
+            `;
+        } else if (nodeType === 'policy') {
+            contentHTML = `
+                <h3>业务规则</h3>
+                <p>${nodeData.rule}</p>
+                <h3>监听事件</h3>
+                <ul>
+                    ${nodeData.listenEvents.length > 0
+                        ? nodeData.listenEvents.map(e => `<li>${e}: ${data.events[e].name}</li>`).join('')
+                        : '<li>定时触发</li>'}
+                </ul>
+                <h3>触发命令</h3>
+                <ul>
+                    ${nodeData.triggerCommands.length > 0
+                        ? nodeData.triggerCommands.map(c => `<li>${c}: ${data.commands[c].name}</li>`).join('')
+                        : '<li>无</li>'}
+                </ul>
+            `;
+        }
+
+        header.innerHTML = headerHTML;
+        content.innerHTML = contentHTML;
+        panel.classList.add('visible');
+    }
+
+    function hideDetailPanel() {
+        document.getElementById('detail-panel').classList.remove('visible');
+    }
+
+    document.getElementById('close-detail').addEventListener('click', () => {
+        clearHighlight();
+    });
+
+    // 点击空白处清除高亮
+    container.addEventListener('click', (e) => {
+        if (e.target === container || e.target === canvas) {
+            clearHighlight();
+        }
+    });
+
+    // 初始化
+    renderDiagram().then(() => {
+        updateTransform();
+    });
+</script>
+</body>
+</html>

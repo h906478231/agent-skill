@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grill 访谈"
+  short_description: "Phase 1 决策树分轮访谈：消除隐含假设，沉淀 CONTEXT.md 术语与 ADR"
+  default_prompt: "Use $openspec-grill to run the decision-tree interview for this change before explore."

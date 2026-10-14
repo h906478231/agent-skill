@@ -1,0 +1,21 @@
+# 讲解视频场景运行器的 Python 依赖：由 uv 管理，环境建在用户缓存目录（UV_PROJECT_ENVIRONMENT），不写入 skill 目录。
+# 版本由 uv.lock 固定；render 以 `uv run --frozen` 运行，不更新锁文件。
+# Piper（piper-tts）新版仓库许可为 GPL：本 skill 只声明依赖、不内置也不分发 Piper 与音色模型。
+[project]
+name = "openspec-explainer-video"
+version = "0.1.0"
+description = "OpenSpec 讲解视频的固定场景运行器（Manim Community + manim-voiceover + Piper / edge-tts）"
+# 上限 3.13 以下：pydub（manim-voiceover 依赖）使用的 audioop 在 3.13 中已移除。
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "manim>=0.19,<0.20",
+    "manim-voiceover>=0.3.7,<0.4",
+    "piper-tts>=1.3,<2",
+    "edge-tts>=7,<8",
+    # manim-voiceover 0.3.7 在导入时使用 pkg_resources，setuptools 81 起已移除该模块。
+    "setuptools<81",
+]
+
+[tool.uv]
+# 只运行脚本，不把本目录打包安装。
+package = false

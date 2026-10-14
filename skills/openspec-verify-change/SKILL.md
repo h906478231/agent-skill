@@ -77,6 +77,18 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
        - Add CRITICAL issue: "Requirement not found: <requirement name>"
        - Recommendation: "Implement requirement X: <description>"
 
+   **切片证据与双轴评审闭环（本仓自加，非上游原文）**：
+   - 读取 `../openspec-technical-review/shared/implementation-gate-check.md`（相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-technical-review/shared/implementation-gate-check.md`），按其「Verify」一节执行
+   - 运行 `node <GATE> evidence <changeRoot>` 与 `node <GATE> review <changeRoot>`（`<GATE>` = `../openspec-technical-review/scripts/implementation-gate.mjs`）
+   - 缺失 / 不完整 / 失败 / 过期的切片证据，双轴评审 `BLOCKED` 或报告不完整 → CRITICAL；证据过期按 `changedSinceEvidence` 决定重跑或登记豁免
+   - 脚本返回「不适用」时把理由原样写进报告，不得把缺证据静默当作通过；历史变更不追溯补证据
+   - 运行 `node <GATE> hygiene <changeRoot>`：每条 `warnings` 记为一条 SUGGESTION（文件路径 + `reason`），建议把补充材料移到 `evidence/attachments/`、删除 `-roundN` 副本；不阻断归档
+   - 完整回归结论只写本次引入的失败数：`PASS_WITH_BASELINE`（本次引入的失败：0）记为通过；**禁止在报告中列出基线失败的测试名或数量**。本次引入的失败不为 0 → 每个测试记一条 CRITICAL，写明测试名与修复任务（规则见 `../openspec-apply-change/shared/slice-evidence.md`「结果取值」）
+
+   **STE 检查（本仓自加，非上游原文）** —— 运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Verify」列记录结果（每个阻断项记为 CRITICAL）；找不到脚本时在报告中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
+
+   **变更模型检查（本仓自加，非上游原文）** —— STE 检查之后、同一阶段运行 `node <CM> check <changeRoot>`（`<CM>` = `../openspec-change-overview/scripts/change-model.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-change-overview/scripts/change-model.mjs`），退出码按 `../openspec-ste/shared/gate-check.md` 的「Verify」列处理，与 STE 检查相同；每个阻断项记为 CRITICAL；修正方式见 `../openspec-change-overview/shared/change-model.md`「6 项检查」。找不到脚本时在报告中写明「变更模型检查已跳过：未找到 openspec-change-overview（<原因>）」，不得静默跳过。
+
 6. **Verify Correctness**
 
    **Requirement Implementation Mapping**:
@@ -116,6 +128,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
 8. **Generate Verification Report**
 
+   报告写入变更目录时固定为 `<changeRoot>/verification.md`，每次重跑**原地覆盖**，禁止生成 `verification-round2.md` 这类副本（本仓自加；规则见 `../openspec-code-quality/shared/dual-axis-review.md`「原地覆盖与 Finding 台账」）。
+
    **Summary Scorecard**:
    ```
    ## Verification Report: <change-name>
@@ -126,6 +140,11 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    | Completeness | X/Y tasks, N reqs|
    | Correctness  | M/N reqs covered |
    | Coherence    | Followed/Issues  |
+   | Evidence     | N/M slices fresh (or 不适用: reason) |
+   | Regression   | PASS / PASS_WITH_BASELINE（本次引入的失败：0）/ FAIL（本次引入：<测试名>） |
+   | Review       | PASSED/BLOCKED (or 不适用: reason)   |
+   | STE          | PASS/BLOCKED/ERROR (or 已跳过: reason) |
+   | Change Model | PASS/BLOCKED/ERROR (or 已跳过: reason) |
    ```
 
    **Issues by Priority**:
@@ -133,6 +152,9 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    1. **CRITICAL** (Must fix before archive):
       - Incomplete tasks
       - Missing requirement implementations
+      - Missing / incomplete / failed / stale slice evidence; dual-axis review BLOCKED or incomplete (本仓自加)
+      - STE check blocking findings, one CRITICAL per finding; STE check exit code 2 (environment error) as one CRITICAL (本仓自加)
+      - Change-model check blocking findings (CM-1~CM-6), one CRITICAL per finding; change-model check exit code 2 as one CRITICAL (本仓自加)
       - Each with specific, actionable recommendation
 
    2. **WARNING** (Should fix):
@@ -142,6 +164,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    3. **SUGGESTION** (Nice to fix):
       - Pattern inconsistencies
+      - Artifacts outside the allowlist (`hygiene` warnings, 本仓自加)
       - Minor improvements
       - Each with specific recommendation
 
@@ -152,30 +175,17 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
 9. **交叉验证 III：人工核对清单（超出自动校验范围）**
 
-   以下项目需要人工核对，`/opsx:verify` 不自动检查：
+   以下人工核对清单的**规则与条目以 skill `openspec-technical-review` 的 `../openspec-technical-review/shared/phase6-verification.md` 为唯一事实源**（本文件不复制条目）：
+   - **回溯第一性原理**：实现是否解决 `proposal.md` 的底层问题；是否引入未识别的新约束
+   - **方案选择一致性**：实现是否与 `design.md` 推荐方案一致；偏离是否已回填 `design.md`
+   - **评审条件闭环**：逐条核对 `review-summary.md` 的「有条件通过」条件；存在 `overview.md` 时先跑 `/opsx:overview` 刷新条件矩阵再核对（总览是按需产物，未生成时直接核对条件清单）
+   - **设计阶段可测试性 / 运维成本**：关键路径测试覆盖、mock 可行性、新增的运维成本与监控告警
 
-   **回溯第一性原理（Phase 1）**:
-   - [ ] 实现是否解决了 `proposal.md` 中识别的**底层问题**（而非仅表面需求）？
-   - [ ] 基本约束是否得到遵守（物理/业务/资源约束）？
-   - [ ] 如果当初识别了"更简单的替代方案"，为何最终选择开发而非采用替代方案？
-
-   **方案选择一致性（Phase 2）**:
-   - [ ] 实现是否与 `design.md` 的推荐方案一致？
-   - [ ] 如果偏离，偏离的理由是否记录在 `design.md` 更新中？
-   - [ ] 候选方案对比时提出的风险点是否在实现中得到规避？
-
-   **评审条件闭环（Phase 3）**:
-   - [ ] 运行 `/opsx:overview` 刷新条件矩阵，核对 `review-summary.md` 的「有条件通过」条件是否完成
-   - [ ] ⚠️ 标记的未落地项是否已在本次实现中闭环？
-
-   **可测试性与运维成本**:
-   - [ ] 关键路径是否有测试覆盖（单元测试/集成测试）？
-   - [ ] 新增的组件/服务是否有运维文档（部署/监控/故障排查）？
-   - [ ] 是否引入了新的运维成本（新的中间件/定时任务/资源消耗）？
+   逐项判据与「不通过视同 Blocker」的处理规则见该文件。
 
    **人工核对建议**：
    - 在完成自动校验后，逐项核对以上清单
-   - 不通过的项视同 BLOCKER，需补充实现或更新文档
+   - 不通过的项视同 **Blocker**，需补充实现或更新文档
    - 完成人工核对后再执行 `/opsx:archive`
 
 **Verification Heuristics**
@@ -209,7 +219,8 @@ Use clear markdown with:
 |------|---------|-----------|---------|
 | Phase 1 | 第一性原理分析 | 解决错误的问题 | `/opsx:explore` |
 | Phase 2 | 候选方案交叉验证 | 方案选择无依据 | `/opsx:explore` |
-| Phase 3 | 五维度交叉验证 | 方案存在盲区 | `/opsx:review` |
+| Phase 3 | 多维度交叉验证（维度数按分级） | 方案存在盲区 | `/opsx:review` |
+| Phase 5.5 | 实现后双轴独立评审（Standards + Spec Fidelity） | 工程规范问题 / 实现偏离需求与设计 | `/opsx:quality` |
 | Phase 6 | 实现与设计交叉验证（当前阶段） | 实现偏离设计意图 | `/opsx:verify` + 人工核对 |
 
 参考完整质量保障体系：`workflow/OpenSpec-AI-研发流程.md`

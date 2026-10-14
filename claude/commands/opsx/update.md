@@ -50,8 +50,11 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - Read the artifact(s) the request touches and the change's other existing artifacts.
    - Apply the requested edit. Then check every other existing artifact against it - in ANY direction: an edit to a later artifact may require revising an earlier one, not only the other way around. Build order is a useful reading order, not a constraint on which artifacts may be revised.
    - Note everything that is now inconsistent, missing, or contradictory.
-   - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/opsx:continue` to create them.
+   - When the revised artifact is `proposal.md` or `design.md`, keep the repository-mandated blocks intact and compliant: proposal 的「第一性原理分析」区块、design 的「候选方案交叉验证矩阵」（分级判据见 `cross-validation.md`：L2/L3 至少 2 个候选，L0/L1 允许单一方案 + 不选其他方案的理由）与（L2/L3）「测试 Seam 决策」区块。规则在 skill `openspec-explore` 的 `shared/`（找不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md`）：`first-principles.md`、`cross-validation.md`、`seam-decisions.md`。若某次修改会让这些区块缺失或不满足判据，等于把变更退回 Phase 1/2，必须向用户说明后再改，不得静默放行。
+   - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/opsx:propose` to create them.
    - If the change is already coherent, say so and make no edits.
+
+   **范围扩展拆分提示（本仓自加）** —— `tasks.md` 开头有 `基线任务数：N（…首次 apply）` 行时，写入修改前比较：新增任务 > N × 50%，或新增能力，或新增顶层模块 → 用 AskUserQuestion 提示「创建变更（推荐）/ 继续当前变更」，选择追加到 `discussion-log.md`。只提示，不阻断。规则见 skill `openspec-update-change` 的同名小节。
 
 5. **Confirm and apply, one artifact at a time**
    - Show each proposed revision and why. Write only after the user confirms.
@@ -61,8 +64,12 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
      openspec instructions <artifact-id> --change "<name>" --json
      ```
 
+   **STE 检查（本仓自加，非上游原文）** —— 修改产物后运行 `node <STE> check <changeRoot>`（`<STE>` = skill `openspec-ste` 的 `scripts/ste-lint.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按该 skill 的 `shared/gate-check.md` 的「Update」列处理结果；找不到脚本时在输出中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
+
+   **变更模型检查（本仓自加，非上游原文）** —— STE 检查之后（没有写入修改时不运行）运行 `node <CM> check <changeRoot>`（`<CM>` = skill `openspec-change-overview` 的 `scripts/change-model.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-change-overview/scripts/change-model.mjs`），退出码按 skill `openspec-ste` 的 `shared/gate-check.md` 的「Update」列处理，与 STE 检查相同；阻断项的修正与其他修改一样经用户确认后写入，重跑到退出码 `0`；修正方式见 skill `openspec-change-overview` 的 `shared/change-model.md`「6 项检查」。找不到脚本时在输出中写明「变更模型检查已跳过：未找到 openspec-change-overview（<原因>）」，不得静默跳过。
+
 6. **Point to the next step (guidance only - NEVER act on it)**
-   - Artifacts still missing -> suggest `/opsx:continue` to create them.
+   - Artifacts still missing -> suggest `/opsx:propose` to create them.
    - Change already implemented (tasks checked off / already applied) -> the code may no longer match the revised plan; suggest `/opsx:apply` to carry the delta into code.
    - Everything done and implemented -> suggest `/opsx:archive`.
 
@@ -70,13 +77,13 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
 
 After each invocation, show:
 - Which artifacts were revised (and which proposed revisions were rejected)
-- Anything deferred to `/opsx:continue` (not-yet-created artifacts or files)
+- Anything deferred to `/opsx:propose` (not-yet-created artifacts or files)
 - Where the change stands and the recommended next command
 
 **Guardrails**
 - Planning artifacts only - NEVER edit implementation code. If the revised plan implies code changes, stop and point to `/opsx:apply`.
 - Use the artifact ids and paths reported by `openspec status`; never branch on hardcoded artifact names.
 - Edit only the concrete files in `existingOutputPaths`; never write to a glob `resolvedOutputPath`.
-- Do not advance the build frontier: no new artifacts, no new files under glob artifacts - that is `/opsx:continue`'s job.
+- Do not advance the build frontier: no new artifacts, no new files under glob artifacts - that is `/opsx:propose`'s job.
 - Confirm every edit with the user before writing.
-- If the request changes the change's *intent* rather than refining it, recommend starting fresh with `/opsx:new` (the "Update vs. Start Fresh" heuristic).
+- If the request changes the change's *intent* rather than refining it, recommend starting fresh with a new change via `/opsx:propose` (the "Update vs. Start Fresh" heuristic).

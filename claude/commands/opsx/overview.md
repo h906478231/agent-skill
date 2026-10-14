@@ -12,7 +12,7 @@ tags: [workflow, overview, traceability]
 
 ## 执行
 
-加载 skill **`opsx-change-overview`**，按其中的前置校验与五块产出结构执行，不要在本文件里另行定义规则。
+加载 skill **`openspec-change-overview`**，按其中的前置校验与五块产出结构执行，不要在本文件里另行定义规则。
 
 关键约束（详见 skill）：
 
@@ -22,9 +22,11 @@ tags: [workflow, overview, traceability]
 
 ## 产物
 
-`<changeRoot>/overview.md` —— 提交 git，随 `openspec archive` 归档。
+`<changeRoot>/overview.md` —— 提交 git，随 `openspec archive` 归档。`design.md` 有变更模型时还生成 `<changeRoot>/overview.html`（离线交互式对比视图），第 2 块嵌入脚本派生的 Mermaid；变更模型检查不通过时停止并报告阻断项（详见 skill）。
 
 ## 刷新时机
+
+本命令是**按需入口**：L2/L3 或字段与规则条件较多的变更推荐在下列时机各刷新一次；L0/L1 与未生成 `overview.md` 的变更不要求，`/opsx:verify` 直接核对 `review-summary.md` 的条件清单。
 
 `design.md` 定稿后首次生成 → 门禁出 `review-summary.md` 后刷新 → `/opsx:verify` 前刷新并逐条核对条件落地情况。
 

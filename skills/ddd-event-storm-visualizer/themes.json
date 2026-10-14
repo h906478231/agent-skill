@@ -1,0 +1,62 @@
+{
+  "version": "1.0.0",
+  "default": "bootstrap",
+  "themes": {
+    "bootstrap": {
+      "name": "Bootstrap (柔和商务风格)",
+      "description": "适合长时间工作场景，降低视觉疲劳",
+      "command": {
+        "fill": "#fff3cd",
+        "stroke": "#ffc107",
+        "strokeWidth": "2px",
+        "color": "#856404"
+      },
+      "event": {
+        "fill": "#f8d7da",
+        "stroke": "#dc3545",
+        "strokeWidth": "2px",
+        "color": "#721c24"
+      },
+      "aggregate": {
+        "fill": "#d1ecf1",
+        "stroke": "#17a2b8",
+        "strokeWidth": "2px",
+        "color": "#0c5460"
+      },
+      "policy": {
+        "fill": "#e2d9f3",
+        "stroke": "#9c27b0",
+        "strokeWidth": "2px",
+        "color": "#5a3f7f"
+      }
+    },
+    "vibrant": {
+      "name": "Vibrant (鲜艳展示风格)",
+      "description": "适合演示和展示场景，视觉冲击力强",
+      "command": {
+        "fill": "#FFD700",
+        "stroke": "#333",
+        "strokeWidth": "2px",
+        "color": "#000"
+      },
+      "event": {
+        "fill": "#FF6B6B",
+        "stroke": "#333",
+        "strokeWidth": "2px",
+        "color": "#fff"
+      },
+      "aggregate": {
+        "fill": "#4A90E2",
+        "stroke": "#333",
+        "strokeWidth": "2px",
+        "color": "#fff"
+      },
+      "policy": {
+        "fill": "#9B59B6",
+        "stroke": "#333",
+        "strokeWidth": "2px",
+        "color": "#fff"
+      }
+    }
+  }
+}

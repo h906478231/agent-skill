@@ -5,8 +5,12 @@
 ## 目录结构
 
 ```
-skills/          跨 agent 通用能力（31 个），SKILL.md 标准格式
+skills/          跨 agent 通用能力（41 个），SKILL.md 标准格式
 claude/          Claude Code 专用资产（command / subagent），其他 agent 不支持
+workflow/        云舟编排脚本（`.workflow.js`）与研发流程文档
+mcp-servers/     云舟平台 MCP 集成服务器
+scripts/         打包、引用校验、配置向导
+docs/            接入与使用文档
 ```
 
 `skills/` 是 `npx skills` 扫描的目录；`claude/` 不会被扫描，需手动链接或复制。
@@ -16,9 +20,15 @@ claude/          Claude Code 专用资产（command / subagent），其他 agent
 [![skill.sh](https://img.shields.io/badge/skill.sh-agent--skills-blue?logo=github)](https://github.com/h906478231/agent-skill)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
+### 前置要求
+
+- ✅ Git（已添加到系统 PATH）
+- ✅ Node.js >= 16
+- ✅ 网络可访问 GitHub
+
 ### 一键安装（推荐）
 
-安装所有 33 个 skills 到支持的 AI 编码工具：
+安装所有 41 个 skills 到支持的 AI 编码工具：
 
 ```bash
 npx skills add h906478231/agent-skill -g -a '*'
@@ -80,38 +90,46 @@ npx skills remove --skill ddd-aggregate
 
 ## skills 清单
 
-### DDD 建模（19 个）
+### DDD 建模（23 个）
 
 `ddd-overview` `ddd-aggregate` `ddd-value-object` `ddd-domain-command` `ddd-domain-event`
 `ddd-domain-service` `ddd-application-orchestration-modeling` `ddd-artifact-contract`
 `ddd-coding-workflow` `ddd-modeling-workflow` `ddd-requirement-clarification`
 `ddd-event-storming` `ddd-event-sourcing-lmax` `ddd-cqrs` `ddd-saga`
 `ddd-persistence` `ddd-ports-adapters` `ddd-unit-testing`
+`ddd-suitability-analyzer` `ddd-code-doc-analyzer` `ddd-visual-modeling`
+`ddd-event-storm-visualizer` `ddd-flow-generator`
 
-### OpenSpec 工作流（8 个）
+### OpenSpec 工作流（7 个）
 
-`openspec-verify-change` `openspec-ff-change`
-`openspec-propose` `openspec-apply-change` `openspec-update-change`
-`openspec-archive-change` `openspec-explore` `openspec-sync-specs`
+`openspec-verify-change` `openspec-propose` `openspec-apply-change`
+`openspec-update-change` `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
-### OpenSpec 流程增强（4 个）
+### OpenSpec 流程增强（9 个）
 
-| skill | 作用 | 命令 |
+| skill                      | 作用 | 命令 |
 |---|---|---|
-| `opsx-technical-review` | 编码前五维度技术评审门禁（含 `shared/` 规则事实源、roles、hook、workflow） | `/opsx:review` |
-| `opsx-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵 | `/opsx:overview` |
-| `opsx-code-quality` | 实现层代码质量评审：对 diff 查重复率 / 可读性 / 死代码 / 复杂度 / 设计偏离 | `/opsx:quality` |
-| `opsx-discussion-sync` | 子 agent 讨论结论回流契约与落盘规则 | 无（由主 agent 加载） |
+| `openspec-grill`               | Phase 1 决策树分轮访谈：消除隐含假设，沉淀 CONTEXT.md 领域术语与 ADR（项目级资产） | `/opsx:grill` |
+| `openspec-grill-policy`        | **可选**的项目级 Grill 门禁（给需要访谈留痕与放行签字的团队）：判定表、模板、`grill-check.js` / `create-grill.js`，脚本与操作手册在仓库 `scripts/grill/` 与 `docs/` 下。默认流程用 `/opsx:grill`，不要求装它 | 由主 agent 加载 |
+| `openspec-technical-review`    | 编码前多维度技术评审门禁（含 `shared/` 规则事实源、roles、hook、workflow） | `/opsx:review` |
+| `openspec-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵 | `/opsx:overview` |
+| `openspec-code-quality`    | 实现后双轴独立评审：同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断 | `/opsx:quality` |
+| `openspec-discussion-sync` | OpenSpec 流程内子 agent 讨论结论回流契约与落盘规则 | 无（由主 agent 加载） |
+| `openspec-finding-explain` | 为单个 finding 生成业务场景解析文档，解释它对业务意味着什么 | `/opsx:explain` |
+| `openspec-ste` | 中文 STE 检查：propose / update / apply / verify 四个卡点阻断禁用别名、非受控通用词与模糊词；含 Claude Code Stop hook（需手动注册） | 无（由四个卡点调用） |
+| `openspec-explainer-video` | 按人工要求为含变更模型的变更生成讲解视频：AI 编写分镜，人工签署后用 Manim 渲染配音与中文硬字幕；默认离线 TTS，不进入默认流程。依赖由 `video.mjs doctor` 给出安装指引 | `/opsx:video` |
 
-### 其他
+### 其他（2 个）
 
-`concurrency-analysis`
+`concurrency-analysis` `flows-role-comment`
 
 ## 研发流程
 
+云舟编排的必要判定直接内置于 workflow 与 `skills/openspec-technical-review/shared/phases.md`：按未决项选择 grill/explore，已有共识直接复用，阶段通过需证据，Git 与外部操作单独授权，不额外加载编排 skill。可执行脚本见 `workflow/devops-automation-loop-yunzhou.workflow.js`，参数与用法见 `docs/yunzhou-automation-loop-readme.md`。opencode / Codex / Cursor 等非 Claude Code 环境统一通过 `npx skills` 安装到各自的 skills 目录使用；本仓不再提供 agent 级编排文件（早期的 YAML 形态已废弃）。
+
 `workflow/OpenSpec-AI-研发流程.md` —— OpenSpec + 技术评审门禁的完整研发流程：分级规则、门禁裁决、闭环留痕、签字责任、**门禁产物的 git 归属与生命周期**、门禁强制力边界与部署方法。
 
-规则的事实源划分：**面向人的策略**（分级 / 签字责任 / 强制力边界 / git 生命周期）只写在该流程文档；**面向 agent 的执行规则**（finding 字段 / 闭环验证 / 裁决判定 / apply 签字校验）只写在 `skills/opsx-technical-review/shared/`。其余文件一律引用，不复制 —— 改规则时只改事实源那一处。
+规则的事实源划分：**面向人的策略**（分级 / 签字责任 / 强制力边界 / git 生命周期）只写在 `workflow/OpenSpec-AI-研发流程.md`；**面向 agent 的执行规则**（分级判定 / finding 字段 / 闭环验证 / 裁决判定 / apply 签字校验）只写在 `skills/openspec-technical-review/shared/`。其余文件一律引用，不复制 —— 改规则时只改事实源那一处。唯一例外是 `workflow/devops-automation-loop-yunzhou.workflow.js`：workflow 运行时无法读取外部文件，所需的判定口令必须内联在脚本里。
 
 门禁 hook 需在 `~/.claude/settings.json` 注册后才生效，注册方法见该文档「门禁启用与部署」。
 
@@ -119,19 +137,20 @@ npx skills remove --skill ddd-aggregate
 
 | 资产 | 说明 | 手动安装位置 |
 |---|---|---|
-| `commands/opsx/` | opsx 命令组（11 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
+| `commands/opsx/` | opsx 命令组（14 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
 | `agents/ddd-modeler.md` | DDD 建模 subagent | `~/.claude/agents/` |
 | `agents/ddd-architect-claude.md` | DDD 主控 subagent（含子 agent 结论回流规则） | `~/.claude/agents/` |
+| `agents/ddd-architect.md` | 同上能力的 opencode 形态（`mode: primary` + permission 白名单） | 按目标 agent 的 agents 目录放置 |
 
 注意：`commands/opsx/` 与 `skills/openspec-*` 是同一套 OpenSpec 能力的两种形态。command 仅 Claude Code 可用，skill 跨平台可用。两者同时安装会出现重复能力，建议按平台择一。
 
 ### 关于 vendored 资产的重复
 
-`skills/openspec-*/SKILL.md` 与 `claude/commands/opsx/{explore,propose,apply,update,sync,archive,verify,ff}.md` 是 OpenSpec CLI 生成的上游副本（frontmatter 标 `generatedBy`），两两高度重复。**这部分刻意不做去重** —— 改动会在上游升级时产生冲突。
+`skills/openspec-{explore,propose,apply-change,update-change,sync-specs,archive-change,verify-change}/SKILL.md` 与 `claude/commands/opsx/{explore,propose,apply,update,sync,archive,verify,ff}.md` 是 OpenSpec CLI 生成的上游副本（`ff` 只有命令形态，没有对应 skill）（skill 侧 frontmatter 标 `generatedBy`，命令侧没有该字段），两两高度重复。**这部分刻意不做去重** —— 改动会在上游升级时产生冲突。
 
-唯一例外是 apply 的技术评审门禁校验块（本仓自加，非上游原文），已抽到 `skills/opsx-technical-review/shared/apply-gate-check.md`，两处改为引用。
+唯一例外是 apply 的技术评审门禁校验块（本仓自加，非上游原文），已抽到 `skills/openspec-technical-review/shared/apply-gate-check.md`，两处改为引用。propose / update / apply / verify 中的 STE 检查块同理（本仓自加），处理口径抽到 `skills/openspec-ste/shared/gate-check.md`，各处只保留一行引用。
 
-本仓自建资产（`opsx-*` 四个 skill 与 `review/overview/quality` 三个命令）则严格遵守单一事实源，命令文件均为薄壳。
+本仓自建资产（9 个 `openspec-*` 流程增强 skill 与 `grill`/`review`/`overview`/`quality`/`explain`/`video` 六个命令）则严格遵守单一事实源，命令文件均为薄壳。
 
 ## 编写规范
 

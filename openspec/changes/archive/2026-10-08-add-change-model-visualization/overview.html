@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  变更总览图模板（openspec-change-overview）。由 change-model.mjs render 填充后写入 <changeRoot>/overview.html。
+  约束：单个离线文件，不引用任何外部 URL、字体、脚本或样式表；SVG 由脚本按并集布局生成，本模板只负责样式与交互。
+  占位（render 整体替换）：双花括号 TITLE 为标题；CHANGE_MODEL_BODY 注释为各图的 SVG；CHANGE_MODEL_DATA 注释为布局 JSON。
+-->
+<title>变更总览图：add-change-model-visualization</title>
+<style>
+  /* 配色：白底；其余元素用低对比度配色，变动颜色降低饱和度，长时间阅读不刺眼。不跟随系统深色模式。 */
+  :root {
+    --bg: #ffffff; --panel: #ffffff; --text: #3f4a5a; --muted: #9aa5b4; --border: #e8ecf1;
+    --node: #f7f9fb; --node-stroke: #c9d2dd; --line: #aab4c2; --accent: #6f8fd0; --link: #a58ad6;
+    --added: #6bb486; --added-bg: #edf7f0; --added-text: #4e9468;
+    --changed: #d4ae5a; --changed-bg: #fbf5e3; --changed-text: #a8842f;
+    --removed: #de8c8c; --removed-bg: #fcf0f0; --removed-text: #bf6b6b;
+  }
+  * { box-sizing: border-box; }
+  /* 字体：字重 500（标题 600），笔画更饱满；优先使用系统中文字体，不加载外部字体。 */
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 500 14px/1.5 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", -apple-system, BlinkMacSystemFont, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center;
+    padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  .views { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .views button { border: 0; padding: 6px 14px; background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+  .views button + button { border-left: 1px solid var(--border); }
+  .views button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .legend { display: flex; gap: 14px; color: var(--muted); font-size: 13px; }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px;
+    border: 2px solid var(--c); background: var(--bg-c); border-radius: 3px; }
+  .legend .added { --c: var(--added); --bg-c: var(--added-bg); }
+  .legend .changed { --c: var(--changed); --bg-c: var(--changed-bg); }
+  .legend .removed { --c: var(--removed); --bg-c: var(--removed-bg); }
+  .legend .removed::before { border-style: dashed; }
+  body:not([data-view="diff"]) .legend { visibility: hidden; }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+  nav a { color: var(--accent); text-decoration: none; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; padding: 20px; align-items: start; }
+  .diagram { margin-bottom: 24px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .diagram h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+  .diagram h2 code { color: var(--muted); font-weight: normal; font-size: 12px; }
+  .canvas { overflow: auto; }
+  aside { position: sticky; top: 76px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+    max-height: calc(100vh - 96px); overflow: auto; }
+  aside h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  aside h4 { font-weight: 600; }
+  aside .hint { color: var(--muted); }
+  aside dl { display: grid; grid-template-columns: 84px 1fr; gap: 6px 10px; margin: 12px 0; }
+  aside dt { color: var(--muted); }
+  aside dd { margin: 0; word-break: break-all; }
+  aside ul { margin: 0; padding-left: 18px; }
+  aside .old { color: var(--removed-text); text-decoration: line-through; }
+  aside .new { color: var(--added-text); }
+  aside button.ref { border: 0; padding: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+  .badge { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; border: 1px solid var(--c, var(--border)); background: var(--bg-c, transparent); }
+  .badge.added { --c: var(--added); --bg-c: var(--added-bg); }
+  .badge.changed { --c: var(--changed); --bg-c: var(--changed-bg); }
+  .badge.removed { --c: var(--removed); --bg-c: var(--removed-bg); }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } aside { position: static; max-height: none; } }
+
+  /* ---- 图形：默认（变更前、变更后视图）为中性样式 ---- */
+  svg.graph { display: block; font-size: 13px; font-weight: 500; }
+  .cm-el { cursor: pointer; outline: none; }
+  .cm-shape { fill: var(--node); stroke: var(--node-stroke); stroke-width: 1.5; }
+  .cm-inner { fill: none; stroke: var(--node-stroke); stroke-width: 1; }
+  .cm-start { fill: var(--line); }
+  .cm-node text { fill: var(--text); text-anchor: middle; dominant-baseline: central; }
+  .cm-badge { fill: var(--muted); font-size: 11px; text-anchor: end !important; }
+  .cm-line { fill: none; stroke: var(--line); stroke-width: 1.5; marker-end: url(#cm-arrow); }
+  .cm-hit { fill: none; stroke: transparent; stroke-width: 12; }
+  .cm-label rect { fill: var(--bg); opacity: 0.92; }
+  .cm-label text { fill: var(--text); font-size: 12px; text-anchor: middle; dominant-baseline: central; }
+
+  /* ---- 视图切换：只改显示与样式，坐标不变（并集布局） ---- */
+  body[data-view="before"] .diff-added,
+  body[data-view="before"] .cm-moved,
+  body[data-view="after"] .diff-removed,
+  body[data-view="after"] .route-before { display: none; }
+  .route-before { display: none; }
+  body[data-view="before"] .route-before, body[data-view="diff"] .route-before { display: inline; }
+  .cm-text-before { display: none; }
+  body[data-view="before"] .cm-text-before { display: inline; }
+  body[data-view="before"] .cm-text-after { display: none; }
+
+  /* ---- 对比视图：新增绿色、修改黄色、删除红色虚线，连线同样着色；旧路线按删除样式 ---- */
+  body[data-view="diff"] .cm-node.diff-added .cm-shape { fill: var(--added-bg); stroke: var(--added); stroke-width: 2; }
+  body[data-view="diff"] .cm-node.diff-changed .cm-shape { fill: var(--changed-bg); stroke: var(--changed); stroke-width: 2; }
+  body[data-view="diff"] .cm-node.diff-removed .cm-shape { fill: var(--removed-bg); stroke: var(--removed); stroke-width: 2; stroke-dasharray: 6 4; }
+  body[data-view="diff"] .cm-edge.diff-added .cm-line { stroke: var(--added); stroke-width: 2; marker-end: url(#cm-arrow-added); }
+  body[data-view="diff"] .cm-edge.diff-changed .cm-line { stroke: var(--changed); stroke-width: 2; marker-end: url(#cm-arrow-changed); }
+  body[data-view="diff"] .cm-edge.diff-removed .cm-line,
+  body[data-view="diff"] .cm-edge.route-before .cm-line { stroke: var(--removed); stroke-width: 2; stroke-dasharray: 6 4; marker-end: url(#cm-arrow-removed); }
+  body[data-view="diff"] .cm-edge.diff-added .cm-label text { fill: var(--added-text); }
+  body[data-view="diff"] .cm-edge.diff-changed .cm-label text { fill: var(--changed-text); }
+  body[data-view="diff"] .cm-edge.diff-removed .cm-label text,
+  body[data-view="diff"] .cm-edge.route-before .cm-label text { fill: var(--removed-text); }
+
+  /* ---- 选中与 causes 联动高亮 ---- */
+  .cm-node.is-selected .cm-shape { stroke: var(--accent) !important; stroke-width: 3 !important; }
+  .cm-edge.is-selected .cm-line { stroke: var(--accent) !important; stroke-width: 3 !important; marker-end: url(#cm-arrow-selected) !important; }
+  .cm-node.is-linked .cm-shape { stroke: var(--link) !important; stroke-width: 3 !important; filter: drop-shadow(0 0 4px var(--link)); }
+  .cm-edge.is-linked .cm-line { stroke: var(--link) !important; stroke-width: 3.5 !important; marker-end: url(#cm-arrow-linked) !important;
+    filter: drop-shadow(0 0 3px var(--link)); }
+  .cm-el:focus-visible .cm-shape, .cm-el:focus-visible .cm-line { stroke: var(--accent); }
+</style>
+</head>
+<body data-view="diff">
+<!-- 箭头标记：各视图与状态的颜色不同，由 CSS 切换 marker-end 引用 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="cm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--line)"/></marker>
+    <marker id="cm-arrow-added" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--added)"/></marker>
+    <marker id="cm-arrow-changed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--changed)"/></marker>
+    <marker id="cm-arrow-removed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--removed)"/></marker>
+    <marker id="cm-arrow-selected" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--accent)"/></marker>
+    <marker id="cm-arrow-linked" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--link)"/></marker>
+  </defs>
+</svg>
+<header>
+  <h1>变更总览图：add-change-model-visualization</h1>
+  <div class="views" role="group" aria-label="视图">
+    <button type="button" data-view="before" aria-pressed="false">变更前</button>
+    <button type="button" data-view="diff" aria-pressed="true">对比</button>
+    <button type="button" data-view="after" aria-pressed="false">变更后</button>
+  </div>
+  <div class="legend"><span class="added">新增</span><span class="changed">修改</span><span class="removed">删除</span></div>
+  <nav id="cm-nav" aria-label="图"></nav>
+</header>
+<div class="layout">
+  <main>
+<section class="diagram" id="flow-generate-overview">
+<h2>流程：生成变更总览 <code>generate-overview</code></h2>
+<div class="canvas"><svg class="graph" viewBox="0 0 412 636" width="412" height="636" role="img" aria-label="流程 生成变更总览">
+<g class="cm-el cm-edge diff-added route-current" data-key="flow/generate-overview/F1-&gt;F2" tabindex="0" role="button" aria-label="F1-&gt;F2"><path class="cm-line" d="M158,60 L158,116"/><path class="cm-hit" d="M158,60 L158,116"/></g>
+<g class="cm-el cm-edge diff-removed route-current" data-key="flow/generate-overview/F1-&gt;F5" tabindex="0" role="button" aria-label="F1-&gt;F5"><path class="cm-line" d="M190.7,60 L190.7,70 L387,70 L387,522 L203,522 L203,558"/><path class="cm-hit" d="M190.7,60 L190.7,70 L387,70 L387,522 L203,522 L203,558"/></g>
+<g class="cm-el cm-edge diff-added route-current" data-key="flow/generate-overview/F2-&gt;F3" tabindex="0" role="button" aria-label="有"><path class="cm-line" d="M128.3,152 L128.3,282"/><path class="cm-hit" d="M128.3,152 L128.3,282"/><g class="cm-label"><rect x="100.3" y="208" width="22" height="18" rx="3"/><text><tspan x="111.3" y="217">有</tspan></text></g></g>
+<g class="cm-el cm-edge diff-added route-current" data-key="flow/generate-overview/F2-&gt;F5" tabindex="0" role="button" aria-label="无"><path class="cm-line" d="M187.7,152 L187.7,162 L376,162 L376,512 L154,512 L154,558"/><path class="cm-hit" d="M187.7,152 L187.7,162 L376,162 L376,512 L154,512 L154,558"/><g class="cm-label"><rect x="348" y="291" width="22" height="18" rx="3"/><text><tspan x="359" y="300">无</tspan></text></g></g>
+<g class="cm-el cm-edge diff-added route-current" data-key="flow/generate-overview/F3-&gt;F4" tabindex="0" role="button" aria-label="通过"><path class="cm-line" d="M105,318 L105,448"/><path class="cm-hit" d="M105,318 L105,448"/><g class="cm-label"><rect x="63" y="374" width="36" height="18" rx="3"/><text><tspan x="81" y="383">通过</tspan></text></g></g>
+<g class="cm-el cm-edge diff-added route-current" data-key="flow/generate-overview/F3-&gt;F6" tabindex="0" role="button" aria-label="阻断"><path class="cm-line" d="M151.7,318 L151.7,328 L296,328 L296,448"/><path class="cm-hit" d="M151.7,318 L151.7,328 L296,328 L296,448"/><g class="cm-label"><rect x="254" y="374" width="36" height="18" rx="3"/><text><tspan x="272" y="383">阻断</tspan></text></g></g>
+<g class="cm-el cm-edge diff-added route-current" data-key="flow/generate-overview/F4-&gt;F5" tabindex="0" role="button" aria-label="F4-&gt;F5"><path class="cm-line" d="M105,502 L105,558"/><path class="cm-hit" d="M105,502 L105,558"/></g>
+<g class="cm-el cm-node diff-unchanged" data-key="flow/generate-overview/F1" transform="translate(125.3,24)" tabindex="0" role="button" aria-label="读取事实源"><rect class="cm-shape" width="98" height="36" rx="4"/><text><tspan x="49" y="18">读取事实源</tspan></text></g>
+<g class="cm-el cm-node diff-added cm-decision" data-key="flow/generate-overview/F2" transform="translate(69,116)" tabindex="0" role="button" aria-label="判断是否有变更模型"><polygon class="cm-shape" points="12,0 166,0 178,18 166,36 12,36 0,18"/><text><tspan x="89" y="18">判断是否有变更模型</tspan></text></g>
+<g class="cm-el cm-node diff-added" data-key="flow/generate-overview/F3" transform="translate(58.3,282)" tabindex="0" role="button" aria-label="运行变更模型检查"><rect class="cm-shape" width="140" height="36" rx="4"/><text><tspan x="70" y="18">运行变更模型检查</tspan></text></g>
+<g class="cm-el cm-node diff-added" data-key="flow/generate-overview/F4" transform="translate(24,448)" tabindex="0" role="button" aria-label="计算并集布局并写入 overview.html"><rect class="cm-shape" width="162" height="54" rx="4"/><text><tspan x="81" y="18">计算并集布局并写入 </tspan><tspan x="81" y="36">overview.html</tspan></text></g>
+<g class="cm-el cm-node diff-changed" data-key="flow/generate-overview/F5" transform="translate(56,558)" tabindex="0" role="button" aria-label="写入 overview.md"><rect class="cm-shape" width="196" height="54" rx="4"/><text class="cm-text-after"><tspan x="98" y="27">写入 overview.md</tspan></text><text class="cm-text-before"><tspan x="98" y="18">写入 overview.md（第 2</tspan><tspan x="98" y="36"> 块为 ASCII 流程）</tspan></text></g>
+<g class="cm-el cm-node diff-added" data-key="flow/generate-overview/F6" transform="translate(226,448)" tabindex="0" role="button" aria-label="停止并报告阻断项"><rect class="cm-shape" width="140" height="36" rx="4"/><text><tspan x="70" y="18">停止并报告阻断项</tspan></text></g>
+</svg></div>
+</section>
+  </main>
+  <aside id="cm-panel" aria-live="polite">
+    <h3>详情</h3>
+    <p class="hint">点击图中的状态、迁移、步骤或连线，查看触发条件、guard、变更前的旧值与 Scenario；选中步骤时高亮它触发的迁移。</p>
+  </aside>
+</div>
+<script type="application/json" id="cm-data">{"version":1,"machines":[],"flows":[{"id":"generate-overview","name":"生成变更总览","width":412,"height":636,"nodes":[{"id":"F1","name":"读取事实源","actor":null,"kind":null,"async":false,"causes":[],"diff":"unchanged","before":null,"scenarios":[],"x":125.3,"y":24,"width":98,"height":36},{"id":"F2","name":"判断是否有变更模型","actor":null,"kind":"decision","async":false,"causes":[],"diff":"added","before":null,"scenarios":["change-model-rendering/Overview with a change model","change-model-rendering/Overview without a change model"],"x":69,"y":116,"width":178,"height":36},{"id":"F3","name":"运行变更模型检查","actor":null,"kind":null,"async":false,"causes":[],"diff":"added","before":null,"scenarios":["change-model-rendering/Blocking finding exists"],"x":58.3,"y":282,"width":140,"height":36},{"id":"F4","name":"计算并集布局并写入 overview.html","actor":null,"kind":null,"async":false,"causes":[],"diff":"added","before":null,"scenarios":["change-model-rendering/No external resources"],"x":24,"y":448,"width":162,"height":54},{"id":"F5","name":"写入 overview.md","actor":null,"kind":null,"async":false,"causes":[],"diff":"changed","before":{"name":"写入 overview.md（第 2 块为 ASCII 流程）"},"scenarios":["change-model-rendering/Overview with a change model"],"x":56,"y":558,"width":196,"height":54},{"id":"F6","name":"停止并报告阻断项","actor":null,"kind":null,"async":false,"causes":[],"diff":"added","before":null,"scenarios":["change-model-rendering/Blocking finding exists"],"x":226,"y":448,"width":140,"height":36}],"edges":[{"id":"F1->F2","from":"F1","to":"F2","label":null,"diff":"added","before":null,"text":null,"points":[{"x":158,"y":60},{"x":158,"y":116}],"labelBox":null},{"id":"F1->F5","from":"F1","to":"F5","label":null,"diff":"removed","before":null,"text":null,"points":[{"x":190.7,"y":60},{"x":190.7,"y":70},{"x":387,"y":70},{"x":387,"y":522},{"x":203,"y":522},{"x":203,"y":558}],"labelBox":null},{"id":"F2->F3","from":"F2","to":"F3","label":"有","diff":"added","before":null,"text":"有","points":[{"x":128.3,"y":152},{"x":128.3,"y":282}],"labelBox":{"x":100.3,"y":208,"width":22,"height":18}},{"id":"F2->F5","from":"F2","to":"F5","label":"无","diff":"added","before":null,"text":"无","points":[{"x":187.7,"y":152},{"x":187.7,"y":162},{"x":376,"y":162},{"x":376,"y":512},{"x":154,"y":512},{"x":154,"y":558}],"labelBox":{"x":348,"y":291,"width":22,"height":18}},{"id":"F3->F4","from":"F3","to":"F4","label":"通过","diff":"added","before":null,"text":"通过","points":[{"x":105,"y":318},{"x":105,"y":448}],"labelBox":{"x":63,"y":374,"width":36,"height":18}},{"id":"F3->F6","from":"F3","to":"F6","label":"阻断","diff":"added","before":null,"text":"阻断","points":[{"x":151.7,"y":318},{"x":151.7,"y":328},{"x":296,"y":328},{"x":296,"y":448}],"labelBox":{"x":254,"y":374,"width":36,"height":18}},{"id":"F4->F5","from":"F4","to":"F5","label":null,"diff":"added","before":null,"text":null,"points":[{"x":105,"y":502},{"x":105,"y":558}],"labelBox":null}]}]}</script>
+<script>
+(function () {
+  'use strict'
+  // 布局 JSON 与 SVG 来自同一次布局；这里只建立索引、切换视图、显示详情与联动高亮。
+  var data = JSON.parse(document.getElementById('cm-data').textContent)
+  var DIFF_TEXT = { added: '新增', changed: '修改', removed: '删除', unchanged: '未变' }
+  var FIELD_TEXT = { name: '名称', initial: '初始状态', final: '终止状态', from: '起点', to: '终点', trigger: '触发条件',
+    guard: 'guard', actor: '执行者', kind: '类型', async: '异步', causes: '触发迁移', label: '标签' }
+  var index = {}
+
+  // 索引：key = 类型/图 ID/元素 ID，与 SVG 中 data-key 一致。旧路线 <id>@before 指向所属迁移。
+  data.machines.forEach(function (machine) {
+    machine.nodes.forEach(function (node) { index['machine/' + machine.id + '/' + node.id] = { type: 'state', diagram: machine, item: node } })
+    machine.edges.forEach(function (edge) { index['machine/' + machine.id + '/' + edge.id] = { type: 'transition', diagram: machine, item: edge } })
+  })
+  data.flows.forEach(function (flow) {
+    flow.nodes.forEach(function (node) { index['flow/' + flow.id + '/' + node.id] = { type: 'step', diagram: flow, item: node } })
+    flow.edges.forEach(function (edge) { index['flow/' + flow.id + '/' + edge.id] = { type: 'edge', diagram: flow, item: edge } })
+  })
+
+  /** 迁移 ID 在全部状态机内唯一：按 ID 找到迁移（含其旧路线）的 key。 */
+  function transitionKeys(id) {
+    return Object.keys(index).filter(function (key) {
+      var entry = index[key]
+      return entry.type === 'transition' && (entry.item.id === id || entry.item.of === id)
+    })
+  }
+
+  /** 触发某迁移的步骤 key。 */
+  function causingSteps(id) {
+    return Object.keys(index).filter(function (key) {
+      var entry = index[key]
+      return entry.type === 'step' && entry.item.causes.indexOf(id) >= 0
+    })
+  }
+
+  function setView(view) {
+    document.body.setAttribute('data-view', view)
+    document.querySelectorAll('.views button').forEach(function (button) {
+      button.setAttribute('aria-pressed', String(button.getAttribute('data-view') === view))
+    })
+  }
+
+  function el(tag, text, className) {
+    var node = document.createElement(tag)
+    if (text !== undefined && text !== null) node.textContent = text
+    if (className) node.className = className
+    return node
+  }
+
+  function show(value) {
+    if (value === null || value === undefined || value === '') return '（无）'
+    if (value === true) return '是'
+    if (value === false) return '否'
+    if (Array.isArray(value)) return value.length ? value.join('、') : '（无）'
+    return String(value)
+  }
+
+  function refButton(key, text) {
+    var button = el('button', text, 'ref')
+    button.type = 'button'
+    button.addEventListener('click', function () { select(key) })
+    return button
+  }
+
+  function render(key, linked) {
+    var entry = index[key]
+    var item = entry.item
+    var panel = document.getElementById('cm-panel')
+    panel.textContent = ''
+    var typeText = { state: '状态', transition: '迁移', step: '步骤', edge: '连线' }[entry.type]
+    var title = el('h3', typeText + ' ' + (item.of || item.id) + ' ')
+    var badge = el('span', DIFF_TEXT[item.diff], 'badge ' + item.diff)
+    title.appendChild(badge)
+    panel.appendChild(title)
+    panel.appendChild(el('div', (entry.type === 'state' || entry.type === 'transition' ? '状态机 ' : '流程 ') + entry.diagram.name, 'hint'))
+    if (item.route === 'before') panel.appendChild(el('p', '这是该迁移变更前的路线。', 'hint'))
+
+    var dl = el('dl')
+    function row(label, value) { dl.appendChild(el('dt', label)); var dd = el('dd'); if (value instanceof Node) dd.appendChild(value); else dd.textContent = show(value); dl.appendChild(dd) }
+    if (entry.type === 'state' || entry.type === 'step') row('名称', item.name)
+    if (entry.type === 'state') { row('初始状态', item.initial); row('终止状态', item.final) }
+    if (entry.type === 'transition') {
+      var source = item.route === 'before' ? index['machine/' + entry.diagram.id + '/' + item.of].item : item
+      row('起点 → 终点', item.from + ' → ' + item.to)
+      row('触发条件', source.trigger)
+      row('guard', source.guard)
+      item = source
+    }
+    if (entry.type === 'step') { row('执行者', item.actor); row('类型', item.kind === 'decision' ? '判断' : '普通'); row('异步', item.async) }
+    if (entry.type === 'edge') { row('起点 → 终点', item.from + ' → ' + item.to); row('标签', item.label) }
+    panel.appendChild(dl)
+
+    if (item.before) {
+      panel.appendChild(el('h4', '变更前 → 变更后'))
+      var changes = el('dl')
+      Object.keys(item.before).forEach(function (field) {
+        changes.appendChild(el('dt', FIELD_TEXT[field] || field))
+        var dd = el('dd')
+        dd.appendChild(el('span', show(item.before[field]), 'old'))
+        dd.appendChild(document.createTextNode(' → '))
+        dd.appendChild(el('span', show(item[field]), 'new'))
+        changes.appendChild(dd)
+      })
+      panel.appendChild(changes)
+    }
+    if (item.scenarios) {
+      panel.appendChild(el('h4', 'Scenario'))
+      var list = el('ul')
+      if (!item.scenarios.length) list.appendChild(el('li', '（无）'))
+      item.scenarios.forEach(function (ref) { list.appendChild(el('li', ref)) })
+      panel.appendChild(list)
+    }
+    if (linked.length) {
+      panel.appendChild(el('h4', entry.type === 'step' ? '触发的迁移（已高亮）' : '由以下步骤触发（已高亮）'))
+      var links = el('ul')
+      linked.forEach(function (linkKey) {
+        var li = el('li')
+        var target = index[linkKey].item
+        li.appendChild(refButton(linkKey, (target.of || target.id) + (target.route === 'before' ? '（旧路线）' : '') + ' ' + (target.name || target.trigger || '')))
+        links.appendChild(li)
+      })
+      panel.appendChild(links)
+    }
+  }
+
+  function select(key) {
+    var entry = index[key]
+    if (!entry) return
+    // 旧路线与所属迁移是同一个迁移：选中时显示迁移详情。
+    if (entry.item.route === 'before') key = 'machine/' + entry.diagram.id + '/' + entry.item.of
+    document.querySelectorAll('.is-selected, .is-linked').forEach(function (node) { node.classList.remove('is-selected', 'is-linked') })
+    var item = index[key].item
+    // 迁移连同其旧路线一起选中：变更前视图只显示旧路线，也要能看到选中效果。
+    var selected = index[key].type === 'transition' ? transitionKeys(item.id) : [key]
+    selected.forEach(function (selectedKey) {
+      document.querySelectorAll('[data-key="' + selectedKey + '"]').forEach(function (node) { node.classList.add('is-selected') })
+    })
+    var linked = []
+    if (index[key].type === 'step') item.causes.forEach(function (id) { linked = linked.concat(transitionKeys(id)) })
+    if (index[key].type === 'transition') linked = causingSteps(item.id)
+    linked.forEach(function (linkKey) {
+      document.querySelectorAll('[data-key="' + linkKey + '"]').forEach(function (node) { node.classList.add('is-linked') })
+    })
+    render(key, linked)
+  }
+
+  document.querySelectorAll('.views button').forEach(function (button) {
+    button.addEventListener('click', function () { setView(button.getAttribute('data-view')) })
+  })
+  document.querySelectorAll('[data-key]').forEach(function (node) {
+    node.addEventListener('click', function () { select(node.getAttribute('data-key')) })
+    node.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(node.getAttribute('data-key')) } })
+  })
+
+  // 多个图时提供页内导航。
+  var nav = document.getElementById('cm-nav')
+  var sections = document.querySelectorAll('section.diagram')
+  if (sections.length > 1) {
+    sections.forEach(function (section) {
+      var link = el('a', section.querySelector('h2').firstChild.textContent.trim())
+      link.href = '#' + section.id
+      nav.appendChild(link)
+    })
+  }
+})()
+</script>
+</body>
+</html>

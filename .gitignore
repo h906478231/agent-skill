@@ -6,3 +6,9 @@ node_modules/
 skills/skills-rebuild/
 claude/claude-rebuild/
 /.idea/
+
+# 本地工作流评测整体不进 git（add-workflow-eval-harness）：评测用例、阶段快照、runner、认可结果与运行结果
+/evals
+
+# OpenSpec 目录整体不进 git（仓库决策）：变更规划产物、评审报告、证据，以及讲解视频的分镜、字幕、音频、视频与 Manim 缓存
+/openspec

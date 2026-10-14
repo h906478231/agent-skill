@@ -79,6 +79,17 @@ When ready to implement, run /opsx:apply
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
+   **任务切片纪律（生成 `tasks` artifact 之前）**：完整规则见 skill `openspec-propose` 自己的 `shared/task-slicing.md`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-propose/shared/`、Codex CLI `~/.codex/skills/openspec-propose/shared/`、opencode `~/.config/opencode/skills/openspec-propose/shared/` 等；找不到时用 Glob 搜 `**/openspec-propose/shared/task-slicing.md`），**生成 tasks.md 前先读取并遵守**。要点：L2/L3 变更必须按**垂直切片**组织（每个切片打穿 schema→逻辑→API→测试，独立可演示；`Blocked by:` 显式声明；`Seam:` 行引用 design.md「测试 Seam 决策」区块），禁止按技术层水平拆分；生成后按「发布前三问」（粒度 / 阻塞边 / 合并拆分）用 **AskUserQuestion** 向用户确认后才算定稿。L0 无要求，L1 建议。checkbox 行保持 `- [ ]` 格式不变（apply 与 verify 依赖它解析进度，切片分组写在 checkbox 之外）。
+
+   **Phase 1/2 产物区块（创建 proposal / design artifact 之前）**：规则文件在 skill `openspec-explore` 的 `shared/`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-explore/shared/`、Codex CLI `~/.codex/skills/openspec-explore/shared/`、opencode `~/.config/opencode/skills/openspec-explore/shared/` 等；找不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md`），**创建前先读取并遵守**：
+   - `proposal.md` 必须包含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证），见 `first-principles.md`；缺失时继续澄清需求，不要直接落盘。
+   - `design.md` 必须包含「候选方案交叉验证矩阵」（L2/L3：至少 2 个有实质差异的方案 × 成本/性能/复杂度/风险四维，并回答「为什么不选其他方案」；L0/L1 允许单一方案 + 不选其他方案的理由），见 `cross-validation.md`；L2/L3 变更还必须包含「测试 Seam 决策」区块，见 `seam-decisions.md`。
+   - `design.md` 必须包含「可视化判定」小节（本仓自加），逐条声明状态变动、流程变动是否命中；命中时按 skill `openspec-change-overview` 的 `shared/change-model.md`（找不到时用 Glob 搜 `**/openspec-change-overview/shared/change-model.md`）在同一 design.md 中编写变更模型（`change-model` 代码块）：删除的元素保留并标 `diff: removed`，新增与修改的迁移、步骤必须引用 Scenario。判定不依赖变更等级。
+
+   **STE 检查（本仓自加，非上游原文）** —— 全部产物写完后、输出总结前运行 `node <STE> check <changeRoot>`（`<STE>` = skill `openspec-ste` 的 `scripts/ste-lint.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按该 skill 的 `shared/gate-check.md` 的「Propose」列处理结果；找不到脚本时在总结中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
+
+   **变更模型检查（本仓自加，非上游原文）** —— STE 检查之后、输出总结前运行 `node <CM> check <changeRoot>`（`<CM>` = skill `openspec-change-overview` 的 `scripts/change-model.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-change-overview/scripts/change-model.mjs`），退出码按 skill `openspec-ste` 的 `shared/gate-check.md` 的「Propose」列处理，与 STE 检查相同；按「6 项检查」表修正阻断项并重跑，直到退出码 `0` 才输出总结；修正方式见 skill `openspec-change-overview` 的 `shared/change-model.md`「6 项检查」。找不到脚本时在总结中写明「变更模型检查已跳过：未找到 openspec-change-overview（<原因>）」，不得静默跳过。
+
 5. **Show final status**
    ```bash
    openspec status --change "<name>"
@@ -104,7 +115,9 @@ After completing all artifacts, summarize:
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
+- **生成 `tasks` artifact 时遵守 skill `openspec-propose` 自己的 `shared/task-slicing.md` 切片规则**（Step 4）—— L2/L3 垂直切片 + 显式阻塞边，checkbox 格式不变，发布前三问用户确认后才定稿
 - Always read dependency artifacts before creating a new one
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one
 - Verify each artifact file exists after writing before proceeding to next
+- **STE 检查按 skill `openspec-ste` 的 `shared/gate-check.md`「Propose」列处理后才输出完成总结**（本仓自加）—— 找不到 `openspec-ste` 时写明已跳过及原因
