@@ -7,6 +7,11 @@ description: OpenSpec Grill 门禁助手：创建标准化模板、验证完整�
 
 跨 coding agent 通用的 Grill 门禁助手 skill。
 
+> **定位**：可选的项目级 Grill 门禁，给需要「访谈留痕 + 放行签字」的团队用（`grill-policy.yml` 定义强制 Grill 条件，`grill-check.js` 做校验）。
+> **与默认流程的关系**：本仓默认的 OpenSpec 流程用 `/opsx:grill` 做未决决策访谈，**不要求**装本门禁。分级与访谈规则以 `../openspec-technical-review/shared/gate-levels.md` 与 `../openspec-grill/SKILL.md` 为事实源，本文档与它们冲突时以它们为准。
+> **调用方式**：支持斜杠命令的 agent 用 `/openspec-grill-policy <change-name>` 等命令；其他 agent 直接加载本 skill 并给出同样的参数。
+> **分发限制**：`grill-policy.yml` 与 `templates/` 随 skill 分发；`grill-check.js`、`create-grill.js`、`install.sh` 在仓库 `scripts/grill/` 下，不随 skill 分发，按下文「安装到项目」从本仓获取。
+
 ## 使用方式
 
 ```bash
@@ -181,20 +186,6 @@ npx skills add h906478231/agent-skill --skill openspec-grill-policy -a opencode
 
 ---
 
-## 与 openspec-grill 的配合
-
-```text
-openspec-grill（访谈执行）
-  ↓ 读取
-openspec/changes/grill-<name>/discussion-log.md（本 skill 创建）
-  ↓ 验证
-openspec-grill-policy validate（本 skill 检查）
-```
-
-两者配合使用，互不冲突。
-
----
-
 ## 跨 Agent 兼容性
 
 ### 支持的 Coding Agent
@@ -233,29 +224,6 @@ openspec-grill-policy validate（本 skill 检查）
   2. /path/to/project/openspec/changes/         ← 再查父目录
   3. /path/to/openspec/changes/                 ← 最多向上3层
 ```
-
----
-
-## 门禁规则（内置）
-
-### 强制 Grill 条件（供参考）
-
-虽然本 skill 不再执行"判断是否需要 Grill"的功能，但提供以下参考规则：
-
-| 条件 | 说明 |
-|------|------|
-| L3 | 核心变更（认证、授权、隔离） |
-| L2 | 跨域变更（HTTP契约、跨模块） |
-| BREAKING | 破坏性变更 |
-
-### 门禁检查点
-
-| 检查项 | 阻塞性 |
-|--------|--------|
-| discussion-log.md 存在 | 是 |
-| Grill 总结存在 | 是 |
-| 风险等级标注 | 是 |
-| 门禁决策明确 | 是 |
 
 ---
 
@@ -340,258 +308,6 @@ Claude:
 
 ---
 
-**零配置，跨 agent 通用，开箱即用！**
-
----
-
-## 三大功能
-
-### 1. 创建标准化 Grill（最常用）
-
-```bash
-/openspec-grill-policy <change-name>
-# 或
-/openspec-grill-policy create <change-name>
-```
-
-效果：
-- 创建 `openspec/changes/grill-<change-name>/discussion-log.md`
-- 使用标准模板
-- 自动填充基本信息（风险等级、日期、BREAKING）
-- 提示下一步：`/openspec-grill`
-
-**用户调用此 skill = 需要 Grill**，无需判断。
-
----
-
-### 2. 验证完整性
-
-```bash
-/openspec-grill-policy validate <change-name>
-```
-
-检查：
-- 必须章节是否存在
-- 风险标注是否完整
-- 门禁决策是否明确
-
----
-
-### 3. 生成报告
-
-```bash
-/openspec-grill-policy report
-```
-
-输出：
-- Grill 完成率
-- 问题清单
-- 建议行动
-
----
-
-## 执行逻辑
-
-### 当调用 `<name>` 或 `create <name>` 时
-
-1. 检查 `openspec/changes/grill-<name>/` 是否已存在
-2. 创建目录
-3. 从内置模板生成 `discussion-log.md`
-4. 自动填充：
-   - 变更名称
-   - 风险等级（从 proposal.md 提取）
-   - BREAKING 状态
-   - 当前日期
-
-**内置模板结构**：
-```markdown
-# {变更名称} Grill 访谈记录
-
-## 访谈基本信息
-| 项目 | 内容 |
-|------|------|
-| 变更名称 | {自动填充} |
-| 风险等级 | {自动提取} |
-| BREAKING | {自动提取} |
-
-## 讨论轮次记录
-## 事实依据
-## 关键决策问题
-## 识别的假设
-## 术语沉淀
-## Grill总结（必须补充）
-```
-
----
-
-### 当调用 `validate <name>` 时
-
-1. 读取 `openspec/changes/grill-<name>/discussion-log.md`
-2. 检查必须章节：
-   - [ ] `## Grill总结`
-   - [ ] `### ✓ 已验证的假设`
-   - [ ] `### ✗ 未验证的假设`
-   - [ ] `### Grill门禁决策`
-3. 检查风险标注（🔴/🟡/🟢）
-4. 检查门禁决策状态（✓/⚠️/✗）
-5. 输出验证结果
-
----
-
-### 当调用 `report` 时
-
-1. 扫描 `openspec/changes/` 下所有变更
-2. 对每个变更：
-   - 判断是否需要 Grill
-   - 检查是否有 grill-<name>/
-   - 验证完整性
-3. 统计：
-   - 需要 Grill 的变更数
-   - 已有 Grill 的数量
-   - 完整 Grill 的数量
-4. 计算 Grill 完成率
-5. 列出问题清单
-6. 给出建议
-
----
-
-## 与 openspec-grill 的配合
-
-```text
-openspec-grill（访谈执行）
-  ↓ 读取
-grill-<name>/discussion-log.md（本 skill 创建）
-  ↓ 验证
-openspec-grill-policy validate（本 skill 检查）
-```
-
-两者配合使用，互不冲突。
-
----
-
-## 门禁规则（内置）
-
-### 强制 Grill 条件
-
-| 条件 | 说明 |
-|------|------|
-| L3 | 核心变更（认证、授权、隔离） |
-| L2 | 跨域变更（HTTP契约、跨模块） |
-| BREAKING | 破坏性变更 |
-| 新增模块 | 独立模块 |
-| 安全敏感 | 认证/授权/加密 |
-| 协议变更 | HTTP/RPC 协议 |
-
-### 门禁检查点
-
-| 检查项 | 阻塞性 |
-|--------|--------|
-| discussion-log.md 存在 | 是 |
-| Grill 总结存在 | 是 |
-| 风险等级标注 | 是 |
-| 门禁决策明确 | 是 |
-
----
-
-## 标准模板（内置）
-
-完整模板见 `templates/grill-discussion-log-template.md`
-
-关键章节：
-1. 访谈基本信息
-2. 讨论轮次记录
-3. 事实依据
-4. 关键决策问题（Q1-QN）
-5. 识别的假设（H1-HN，风险等级）
-6. 术语沉淀
-7. **Grill总结**（必须）
-   - ✓ 已验证的假设
-   - ✗ 未验证的假设
-   - 建议行动
-   - **Grill门禁决策**
-
----
-
-## 完整工作流
-
-```text
-1. /openspec-explore
-   产出: proposal.md + design.md
-   
-2. /openspec-grill-policy my-feature
-   创建: grill-my-feature/discussion-log.md（自动填充基本信息）
-   
-3. /openspec-grill
-   执行: 访谈（填写 discussion-log.md）
-   
-4. /openspec-grill-policy validate my-feature
-   验证: ✅ 完整 or ❌ 缺失XXX
-   
-5. openspec propose my-feature
-   实施
-```
-
-**核心简化**：调用 skill = 需要 Grill，直接创建即可。
-
----
-
-## 优势
-
-### ✅ 简单
-
-- 无需安装脚本
-- 无需复制文件
-- 无需 npm 依赖
-- 直接调用即可
-
-### ✅ 标准化
-
-- 统一的模板
-- 统一的规则
-- 统一的检查
-
-### ✅ 可追溯
-
-- 自动生成报告
-- 健康度可视化
-
----
-
-## 示例对话
-
-```
-用户: /openspec-grill-policy add-auth
-
-Claude:
-✅ 创建 Grill: add-auth
-
-读取 openspec/changes/add-auth/proposal.md...
-提取信息：
-  • 风险等级: L3
-  • BREAKING: 是
-
-创建文件: openspec/changes/grill-add-auth/discussion-log.md
-
-已自动填充：
-  ✓ 变更名称: add-auth
-  ✓ 风险等级: L3
-  ✓ BREAKING: 是
-  ✓ 开始日期: 2026-09-24
-
-📋 标准模板章节已创建：
-  ✓ 访谈基本信息
-  ✓ 讨论轮次记录
-  ✓ 识别的假设
-  ✓ Grill总结（待补充）
-
-🚀 下一步:
-  /openspec-grill  ← 开始访谈
-```
-
----
-
-**零配置，开箱即用！**
-
 ## 使用场景
 
 ### 场景1: 判断是否需要 Grill
@@ -657,11 +373,12 @@ openspec-grill-policy（规则和工具）
 ### 方式1: 使用安装脚本（推荐）
 
 ```bash
-# 在你的项目根目录
-cd /path/to/your/project
+# 前置：克隆本仓（安装脚本在 scripts/grill/，不随 skill 分发）
+git clone https://github.com/h906478231/agent-skill
+cd agent-skill
 
-# 运行安装脚本
-bash ~/.claude/skills/openspec-grill-policy/install.sh
+# 运行安装脚本，参数是目标项目目录
+bash scripts/grill/install.sh /path/to/your/project
 ```
 
 安装内容：
@@ -676,16 +393,14 @@ bash ~/.claude/skills/openspec-grill-policy/install.sh
 ### 方式2: 手动复制
 
 ```bash
-# 复制配置
+# 配置与模板：取自安装后的 skill 目录
 cp ~/.claude/skills/openspec-grill-policy/grill-policy.yml \
    your-project/.claude/
-
-# 复制模板
 cp -r ~/.claude/skills/openspec-grill-policy/templates \
       your-project/.claude/
 
-# 复制脚本
-cp ~/.claude/skills/openspec-grill-policy/scripts/*.js \
+# 脚本：取自本仓 scripts/grill/（不随 skill 分发）
+cp scripts/grill/grill-check.js scripts/grill/create-grill.js \
    your-project/scripts/
 ```
 

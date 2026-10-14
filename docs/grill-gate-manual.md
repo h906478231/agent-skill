@@ -2,6 +2,8 @@
 
 OpenSpec Grill 门禁的完整操作依据：从判断是否需要访谈，到放行实施。每一步都给出**自动路径**（skill / 脚本）与**人工路径**（检查清单）两条走法。
 
+> **这是可选的项目级 Grill 门禁**：本仓默认的 OpenSpec 流程用 `/opsx:grill` 做未决决策访谈，**不要求**装本门禁。分级与访谈规则的事实源是 `skills/openspec-technical-review/shared/gate-levels.md` 与 `skills/openspec-grill/SKILL.md`；本文档只在两者未覆盖的门禁操作细节上补充。
+
 本文档合并自 lokra 项目的 `grill-checklist.md` 与 `grill-system-usage.md`，并校准到 skill 的实际形态。
 
 ---
