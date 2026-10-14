@@ -34,8 +34,6 @@ docs/            接入与使用文档
 npx skills add h906478231/agent-skill -g -a '*'
 ```
 
-> 💡 安装与接入问题，请查看 [skill.sh 接入说明](docs/skill-sh-integration.md)
-
 ### 安装到特定 agent
 
 ```bash
@@ -112,7 +110,7 @@ npx skills remove --skill ddd-aggregate
 | skill                      | 作用 | 命令 |
 |---|---|---|
 | `openspec-grill`               | Phase 1 决策树分轮访谈：消除隐含假设，沉淀 CONTEXT.md 领域术语与 ADR（项目级资产） | `/opsx:grill` |
-| `openspec-grill-policy`        | Grill 门禁规则事实源与检查工具：判定表、模板、`grill-check.js` / `create-grill.js`，含 install.sh 与门禁操作手册 | 由主 agent 加载 |
+| `openspec-grill-policy`        | **可选**的项目级 Grill 门禁（给需要访谈留痕与放行签字的团队）：判定表、模板、`grill-check.js` / `create-grill.js`，脚本与操作手册在仓库 `scripts/grill/` 与 `docs/` 下。默认流程用 `/opsx:grill`，不要求装它 | 由主 agent 加载 |
 | `openspec-technical-review`    | 编码前多维度技术评审门禁（含 `shared/` 规则事实源、roles、hook、workflow） | `/opsx:review` |
 | `openspec-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵 | `/opsx:overview` |
 | `openspec-code-quality`    | 实现后双轴独立评审：同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断 | `/opsx:quality` |

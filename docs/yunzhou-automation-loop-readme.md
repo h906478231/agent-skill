@@ -472,8 +472,6 @@ console.log(JSON.stringify({
 ### 文档
 
 - [DevOps-OpenSpec 集成使用指南](./devops-openspec-integration-guide.md)
-- [集成规格文档（历史设计稿）](./specs/devops-openspec-integration.md)
-- [文档中心](./README-yunzhou.md)
 
 ### 工具
 

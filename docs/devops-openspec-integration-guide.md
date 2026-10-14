@@ -268,5 +268,4 @@ Route 会读取已有 change、`CONTEXT.md`、ADR 与 `discussion-log.md`，恢�
 ## 相关文档
 
 - [OpenSpec AI 研发流程](../workflow/OpenSpec-AI-研发流程.md)
-- [集成规格文档（历史设计稿）](./specs/devops-openspec-integration.md)
 - [云舟自动化 Loop 使用指南](./yunzhou-automation-loop-readme.md)
