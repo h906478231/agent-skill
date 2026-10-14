@@ -15,7 +15,7 @@ tags: [workflow, review, gate, experimental, cross-validation]
 ## 参数
 
 - **变更名**（可选）：如 `/opsx:review add-auth`。省略则从对话上下文推断；仅一个活跃变更时自动选中；模糊或有多个时运行 `openspec list --json` 并用 **AskUserQuestion** 让用户选。始终声明 "Using change: `<name>`"。
-- `--roles <a,b>`（可选）：增量重走，只重跑指定维度，其余沿用上轮 `review/<role>.md`。
+- `--roles <a,b>`（可选）：增量重走，只重跑指定维度（须在本变更等级的纳入维度内），其余纳入维度沿用上轮 `review/<role>.md`。
 
 ## 执行
 

@@ -14,11 +14,32 @@
 | 任一维度 `verdict = 打回`，或存在**未闭环 Blocker**（findings 表中 `严重级别 = Blocker` 且 `闭环状态 = open`，含缺省） | `BLOCKED` |
 | 全部 `通过` / `有条件通过`，且无未闭环 Blocker | `READY_FOR_HUMAN_APPROVAL` |
 
-三条补充判定：
+四条补充判定：
 
 - **「声称已闭环但实际未闭环」一律按未闭环 Blocker 计入裁决**（见 `closed-loop-verification.md`）。
 - **映射不到 `tasks.md` 的「有条件通过」条件视同 Blocker** —— 没有落地路径的条件等于失效。
+- **纳入维度没有评审产物时裁决为 `BLOCKED`**（如增量重走时某个沿用维度上轮没有 `review/<role>.md`）—— 没评审过的维度无法求值，不得推测或编造上轮结论，把该维度加入重跑范围。
 - **人工确认是硬门禁**：裁决为 `READY_FOR_HUMAN_APPROVAL` 只代表可以交人审，不代表可以 apply。人工在 `review-summary.md` 写入 `Technical Review Approved` 之前，禁止进入实现。
+
+### 机器可读裁决行（唯一出口）
+
+`review-summary.md` 的人工确认区必须在签字行之前写下面两行。每行只写键和一个枚举值，不加说明文字；hook 与 apply 前置校验按行首键名读取：
+
+```markdown
+Gate-Level: L2
+Gate-Verdict: BLOCKED
+Technical Review Approved: __________
+```
+
+| 键 | 取值 | 说明 |
+|----|------|------|
+| `Gate-Level` | `L1` / `L2` / `L3` / `MVP` | 与分级结论项一致（规则见 `gate-levels.md`） |
+| `Gate-Verdict` | `READY_FOR_HUMAN_APPROVAL` / `BLOCKED` | 按本节上表判定，与门禁裁决项一致；理由写在门禁裁决项，不写进这一行 |
+
+- 重走门禁、驳回或 risk accepted 改变裁决时，同步更新 `Gate-Verdict` 行。
+- `Gate-Verdict: BLOCKED` 时，**即使签字行已签也禁止 apply**（hook 与 `apply-gate-check.md` 都按此拦截）。
+- L3 在签字行后追加 `复核: __________`，对应分级表的「建议第二人复核」。**这一行是建议项**：留空不拦截，hook 与 apply 前置校验都不检查它。
+- 本格式引入前生成的 `review-summary.md` 没有 `Gate-Verdict` 行：hook 只校验签字行，apply 前置校验从门禁裁决项读裁决。
 
 裁决为 `BLOCKED` 时，必须在输出中明确告知用户：回改 `design.md` 后要在其末尾 `## 评审意见闭环记录` 区块登记每条 Blocker，格式 `finding ID | 维度 | 原始问题 | 处理方式 | 落在 design 的哪一节 | 轮次`（首轮 R1，依次 R2…）。**不登记，下一轮评审 agent 就会重复报同一个问题。**
 
@@ -29,7 +50,7 @@
 | 场景 | 做法 |
 |------|------|
 | 改动牵动跨维度地基（模块归属、一致性口径、表模型） | **全量重走**，纳入范围的维度全跑 |
-| 改动只碰单一维度（纯转义、纯索引调整） | **增量重走**，只重跑受影响维度，其余沿用上轮 `review/<role>.md` |
+| 改动只碰单一维度（纯转义、纯索引调整） | **增量重走**，只重跑受影响维度，其余纳入维度沿用上轮 `review/<role>.md` |
 | 不认可结论（误报 / 知情接受） | **不重走**，留驳回痕迹，仅更新裁决计数 |
 | 仅改文案措辞、补充说明，未动技术决策 | **不重走** |
 | 实现阶段改了技术方案（换存储、改并发模型、改表结构） | **重走**，按下方牵连关系表确定范围 |

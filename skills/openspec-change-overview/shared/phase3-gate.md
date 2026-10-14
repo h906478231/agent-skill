@@ -50,7 +50,7 @@ Phase 6 验证时逐条核对条件是否真的满足，未满足不得归档。
 
 ```bash
 /opsx:review <change>                          # 全量重走
-/opsx:review <change> --roles security         # 增量重走，其余沿用上轮 review/<role>.md
+/opsx:review <change> --roles security         # 增量重走，其余纳入维度沿用上轮 review/<role>.md
 ```
 
 **裁决始终对全部纳入维度求值**：沿用维度若仍有未闭环 Blocker，门禁仍 `BLOCKED`。

@@ -1,6 +1,6 @@
 ---
 name: openspec-technical-review
-description: OpenSpec 技术评审门禁（Technical Review Gate，交叉验证 II）。在 OpenSpec Explore 阶段、技术方案已确定（design.md 完成）但尚未进入代码实现（openspec apply）之前，调度架构/并发/性能/数据库/安全五个专项评审 Agent 对同一方案做多维度交叉验证（维度数按分级），汇总为 review-summary.md，并停在人工确认门禁。核心原则：需求未明确不分析性能，方案未确定不开始编码。用于任何 OpenSpec 变更在编码前的质量门禁。
+description: OpenSpec 技术评审门禁（Technical Review Gate，交叉验证 II）。在 OpenSpec Explore 阶段、技术方案已确定（design.md 完成）但尚未进入代码实现（openspec apply）之前，调度架构/并发/性能/数据库/安全五个专项评审 Agent 对同一方案做多维度交叉验证（维度数按分级），汇总为 review-summary.md，并停在人工确认门禁。核心原则：需求未明确不分析性能，方案未确定不开始编码。用于 L1–L3 与 MVP 命中升级信号的 OpenSpec 变更在编码前的质量门禁；L0 与 MVP 未命中信号可豁免，豁免在 overview.md 留分级行。
 ---
 
 # OpenSpec 技术评审门禁（Technical Review Gate）
@@ -80,7 +80,7 @@ done
 ## 铁律（Guardrails）
 
 - **本阶段不写业务代码**。所有评审 Agent 只识别问题、给建议，产出评审文档。
-- **前置条件**：变更必须已有 `proposal.md`（需求已澄清）和 `design.md`（方案已确定且含推荐方案）。缺任一则拒绝启动门禁，提示先补齐。
+- **前置条件**：变更必须已有 `proposal.md`（需求已澄清，含第一性原理分析）和 `design.md`（方案已确定且含推荐方案；L2/L3 还须含候选方案交叉验证矩阵与测试 Seam 决策）。缺任一则拒绝启动门禁，提示先补齐（见「前置校验」第 3、5 步）。
 - **人工门禁不可跳过**：产出 `review-summary.md` 后必须停下，等待人工写入批准标记，禁止自动继续 `apply`。
 
 ### 门禁的真实强制力（别高估）
@@ -96,7 +96,12 @@ done
    ```bash
    openspec status --change "<name>" --json
    ```
-3. 确认 `proposal.md` 与 `design.md` 均存在且非空；`design.md` 含「推荐方案」。否则中止并提示补齐（体现「方案未确定，不开始编码」）。
+3. 确认 `proposal.md` 与 `design.md` 均存在且非空，并含 Phase 1/2 的必选区块；任一缺失即中止，提示先用 `/opsx:update` 补齐（需求或方案还没想清时回 `/opsx:explore`），体现「方案未确定，不开始编码」。生成侧（propose / ff / explore）只是提示词约束，本步是这些「必须」在编码前的唯一执行点，不因生成侧已有提示而跳过：
+   ```bash
+   grep -q '第一性原理分析' <changeRoot>/proposal.md   # Phase 1，见 ../openspec-explore/shared/first-principles.md
+   grep -q '推荐方案' <changeRoot>/design.md           # Phase 2 的推荐方案
+   ```
+   L2/L3 追加的两项要等第 5 步判定等级后再查。
 4. **识别用户选择的方案类型与升级信号**：
    - 读取 `design.md` 的"推荐方案"或"Decisions"部分
    - 判断是否为 **MVP 方案**（标志：推荐方案标为 MVP，或明确说明"优先复用现有能力"/"最小化实现"/"快速验证"）；没有写明时按完整方案处理
@@ -104,7 +109,13 @@ done
 5. 按「方案类型 × 升级信号」判定评审范围（规则见 `shared/gate-levels.md`「方案类型维度」），向用户确认：
    - **MVP 且未命中信号**：不做技术评审，不创建 `review-summary.md`，也不创建 `review/` 目录。在 `overview.md` 开头写 `方案类型：MVP；升级信号：无；判定人：…；日期：…`，提示可直接 `/opsx:apply`，然后**结束本 skill**。实现后双轴评审（`/opsx:quality`）照常执行。
    - **MVP 且命中信号**：只跑映射表得出的维度（各信号维度的并集），使用 MVP 评审标准（Step 1 第 3 项）；workflow 传 `{ change, tier: 'mvp', roles: [<映射出的维度>] }`。`review-summary.md` 把其余维度列为「不适用」，理由引用命中的信号行。
-   - **完整方案**：沿用 L0–L3。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动评审角色。
+   - **完整方案**：沿用 L0–L3。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动评审角色。L1–L3 的 workflow 传 `{ change, level: 'L1' | 'L2' | 'L3' }`，纳入维度由脚本按 `shared/gate-levels.md` 分级表推导，不手工翻译成 `roles`。
+     **L2/L3 追加区块检查**（`../openspec-explore/shared/cross-validation.md` 与 `../openspec-explore/shared/seam-decisions.md` 的分级要求；L1 允许单一方案，不查这两项）：
+     ```bash
+     grep -q '候选方案交叉验证矩阵' <changeRoot>/design.md
+     grep -q '测试 Seam 决策' <changeRoot>/design.md
+     ```
+     缺任一即中止，提示同第 3 步。
    - 判定不确定时取较大的范围。
 6. 在 `changeRoot` 下创建 `review/` 目录。
 
@@ -135,7 +146,7 @@ done
 
 finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一句话白话 / 触发场景可复现 / 不修的后果）与维度结论取值，统一见 `shared/finding-format.md`，此处不重复。
 
-> 若当前环境支持 Pi Workflow，可改用 `technical-review-gate.workflow.js` 一次性并行 fan-out（`args = { change, roles, skillDir }`；`skillDir` 省略时脚本会让子 agent 自行探测，显式传入更省一次探测）。**二者产物必须一致**：workflow 的 finding 结构化 schema 与汇总项以本文件 Step 2 与 `shared/finding-format.md` 为准，改动任一侧必须同步另一侧。
+> 若当前环境支持 Pi Workflow，可改用 `technical-review-gate.workflow.js` 一次性并行 fan-out（`args = { change, level, roles, skillDir }`：完整方案必传 `level`，MVP 传 `tier: 'mvp'` 与 `roles`；`change` 缺省时脚本直接报错；`skillDir` 省略时脚本会让子 agent 自行探测，显式传入更省一次探测）。**二者产物必须一致**：workflow 的 finding 结构化 schema 与汇总项以本文件 Step 2 与 `shared/finding-format.md` 为准，改动任一侧必须同步另一侧。
 >
 > 注：`shared/`、`roles/`、workflow、门禁 hook 全部位于 `<SKILL_DIR>` 内，随 skill 一起安装，不依赖任何单个项目的目录结构。
 
@@ -161,7 +172,7 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
    ```
 4. **执行误报检测**：按 `shared/gate-policy.md` 第 4 节「不认可评审结论：驳回与 risk accepted」的规则检测可能的误报或过度建议（判据之一见 `shared/finding-format.md` 硬规则 4：写不出可复现触发场景的问题降级为 Major）。生成"疑似误报检测"区块，列出需要人工复核的 finding。
 5. **门禁裁决**：判定规则见 `shared/gate-policy.md`。**未闭环 Blocker 的判据是 findings 表中 `严重级别 = Blocker` 且 `闭环状态 = open`（含缺省）的项**；`closed` / `risk-accepted` / `false-positive` 一律不计入。**注意**：在计算裁决时，应考虑误报检测建议降级后的级别（如果用户选择应用自动降级）。
-6. **各维度结论一览表**：维度 | 结论 | Blocker 数 | Major 数 | Minor 数 | 本轮重跑/沿用上轮。
+6. **各维度结论一览表**：维度 | 结论 | Blocker 数 | Major 数 | Minor 数 | 本轮重跑/沿用上轮/未纳入/不适用。
 7. **疑似误报检测**：列出可能的误报、过度建议、跨维度矛盾等，供人工复核。包含"自动降级建议"和"需人工判断"两类。
 8. **已确认风险详细清单**：按维度 + 严重级别汇总，使用完整的 10 字段表格（含"影响业务功能"、"涉及代码模块"和"闭环状态"）。
 9. **修改建议执行计划**：合并各维度建议，去重，明确标注：
@@ -174,7 +185,7 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 13. **术语表**：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。
 14. **分级结论**：变更等级（L1/L2/L3，判定规则见 `shared/gate-levels.md`）+ 判定人 + 依据。L0 不进入本门禁，故此处的等级至少为 L1。**同时确保变更目录 `overview.md` 开头有这一行**（没有该文件时创建只含文件头与分级行的最小 `overview.md`）—— 实现阶段的归档门禁从 `overview.md` 读等级，判定双轴评审是否必需（格式见 `../../openspec-change-overview/SKILL.md`）。
 15. **评审输入版本**：列出本轮评审依据的 `proposal.md` / `design.md` / `specs` / `tasks.md` 的版本依据（如 `git rev-parse HEAD` 或文件哈希），供重走门禁与恢复时判断输入是否已变化。
-16. **人工确认区**：留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply。
+16. **人工确认区**：先按 `shared/gate-policy.md`「机器可读裁决行」写 `Gate-Level: <L1|L2|L3|MVP>` 与 `Gate-Verdict: <第 5 项裁决>` 两行，再留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply；L3 追加一行 `复核: __________`（建议第二人复核，非必填）。
 
 裁决为 `BLOCKED` 时的告知内容与闭环记录格式，见 `shared/gate-policy.md`。
 
@@ -195,9 +206,9 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 
 判定规则、牵连关系表、驳回与 risk accepted 留痕格式，全部见 `shared/gate-policy.md`。执行层面：
 
-- **全量重走**：Workflow `{ "change": "<name>" }`；交互式则重启全部纳入维度的子 agent。
-- **增量重走**：Workflow `{ "change": "<name>", "roles": ["security"] }`；交互式只对指定维度重启子 agent，其余读取上轮 `review/<role>.md` 参与汇总。
-- **裁决始终对全部纳入维度求值**：沿用维度若仍有未闭环 Blocker，门禁仍 `BLOCKED`。
+- **全量重走**：Workflow `{ "change": "<name>", "level": "L2" }`；交互式则重启全部纳入维度的子 agent。
+- **增量重走**：Workflow `{ "change": "<name>", "level": "L2", "roles": ["security"] }`（`roles` 必须在该等级的纳入维度内）；交互式只对指定维度重启子 agent，其余**纳入维度**读取上轮 `review/<role>.md` 参与汇总。未纳入维度不读取，在一览表标「未纳入」。
+- **裁决始终对全部纳入维度求值**：沿用维度若仍有未闭环 Blocker，门禁仍 `BLOCKED`；沿用维度上轮没有 `review/<role>.md` 时不得推测，标「缺上轮产物」并裁决 `BLOCKED`（`shared/gate-policy.md` 第 1 节）。
 
 ## 与整体流程的关系
 
