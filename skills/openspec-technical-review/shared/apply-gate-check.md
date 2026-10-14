@@ -9,19 +9,27 @@
 
 **无 `review-summary.md` → 直接放行，跳过本校验** —— 该变更未启用门禁，无需审批即可实现。
 
-**L0 豁免的变更不创建 `review-summary.md`**，因此天然走上面的「直接放行」分支 —— 这是设计意图，不是漏检（L0 落点见 `gate-levels.md`）。
+**L0 豁免的变更不创建 `review-summary.md`**，因此天然走上面的「直接放行」分支 —— 这是设计意图，不是漏检（L0 落点见 `gate-levels.md`）。MVP 且未命中升级信号的变更同理。
+
+是否该走门禁由 `gate-levels.md` 分级决定：提醒放在 `/opsx:propose`、`/opsx:ff` 的收尾输出，豁免在 `overview.md` 开头留分级行。本节口径与 `hooks/check-review-approval.sh` 的放行分支一致，改动时两处同步。
 
 ## 校验动作（仅在 review-summary.md 存在时执行）
 
 ```bash
+grep -m1 -E '^[-*>[:space:]]*Gate-Verdict:' "openspec/changes/<name>/review-summary.md"
 grep -m1 'Technical Review Approved:' "openspec/changes/<name>/review-summary.md"
 ```
 
+`Gate-Verdict` 行的格式见 `gate-policy.md`「机器可读裁决行」。
+
 | 情况 | 处理 |
 |------|------|
+| **`Gate-Verdict: BLOCKED`** | 即使有签字也**停止**。未闭环 Blocker 必须先回 `design.md` 闭环并重走门禁 |
 | **签字行仍是空白占位**（空、`____`、`<签名>`、以下划线开头再补括号说明如 `__________ （签字 / 日期）`） | 门禁跑过但无人批准。**停止**，请用户审阅 `review/*.md` 后签字（判定规则与 `hooks/check-review-approval.sh` 一致） |
-| **裁决为 `BLOCKED`** | 即使有签字也**停止**。未闭环 Blocker 必须先回 `design.md` 闭环并重走门禁 |
-| **已签字且 `READY_FOR_HUMAN_APPROVAL`** | 放行，继续实现 |
+| **缺 `Gate-Verdict` 行**（本格式引入前生成的旧版产物） | 从门禁裁决项读裁决：`BLOCKED` 或读不出裁决时**停止**并请用户确认；`READY_FOR_HUMAN_APPROVAL` 再按签字行判断 |
+| **已签字且 `Gate-Verdict: READY_FOR_HUMAN_APPROVAL`** | 放行，继续实现 |
+
+L3 的 `复核:` 行是建议项，留空不影响放行。
 
 ## 禁止事项
 

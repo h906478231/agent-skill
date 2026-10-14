@@ -8,14 +8,18 @@ export const meta = {
 }
 
 // args:
-//   { change: '<change-name>' }                       全量重走：5 维度全跑（默认）
-//   { change: '<name>', roles: ['security'] }          增量重走：只重跑指定维度，其余沿用上轮 review/<role>.md
-//   { change: '<name>', skillDir: '/abs/path/...' }    显式指定本 skill 的安装目录，省去子 agent 自行探测
+//   { change: '<change-name>', level: 'L2' }           完整方案全量重走：按等级推导纳入维度，纳入维度全跑
+//   { change: '<name>', level: 'L2', roles: ['security'] }
+//                                                     增量重走：只重跑 roles（必须在纳入维度内），其余纳入维度沿用上轮 review/<role>.md
 //   { change: '<name>', tier: 'mvp', roles: ['security', 'concurrency'] }
 //                                                     MVP 且命中升级信号：roles 取 shared/gate-levels.md 映射表的结果，
 //                                                     只跑这些维度并使用 MVP 评审标准，其余维度记为「不适用」而非沿用上轮
-// 缺省 change 时用 demo 变更；缺省 roles 时视为全量。
-const change = (args && args.change) || 'add-contact-batch-import'
+//   以上任一形态都可加 skillDir: '/abs/path/...'      显式指定本 skill 的安装目录，省去子 agent 自行探测
+// change 必填：缺省时报错，不回落到任何默认变更（否则会把评审产物静默写进同名变更目录）。
+if (!args || !args.change) {
+  throw new Error("缺少必填参数 change：请传入 OpenSpec 变更名，例如 { change: 'add-ste-gate', level: 'L2' }")
+}
+const change = args.change
 const base = `openspec/changes/${change}`
 
 // skills 根目录随 agent 而不同（~/.claude/skills、~/.codex/skills、~/.config/opencode/skills、
@@ -44,18 +48,52 @@ const ROLES = [
   { key: 'security', title: '安全评审', focus: '权限越权(IDOR)/数据泄露脱敏/参数校验/接口限流/CSV注入/加密合规' },
 ]
 
-// 解析增量重走范围：roles 未指定或为空 → 全量重走 5 维度；否则只重跑交集维度，其余沿用上轮结论。
-const requested = args && Array.isArray(args.roles) ? args.roles.filter(Boolean) : null
-const matched = requested ? ROLES.filter(r => requested.includes(r.key)) : []
-const rerun = requested && requested.length > 0 ? matched : ROLES
-// MVP 分层：未纳入的维度不适用（不是沿用上轮），见 shared/gate-levels.md「方案类型维度」。
-const mvp = Boolean(args && args.tier === 'mvp')
-// MVP 的维度来自 gate-levels.md 映射表；没有有效 roles 说明调用方漏传映射结果，不能静默按 5 维度全跑。
-if (mvp && matched.length === 0) {
-  throw new Error(`tier: 'mvp' 必须传 roles（按 gate-levels.md「信号到维度的映射表」得出的维度），当前 roles 为 ${JSON.stringify(requested)}`)
+// 完整方案的等级 → 纳入维度，与 shared/gate-levels.md 分级表一致（改动时两边同步，scripts/test-doc-consistency.mjs 会比对）。
+// L0 豁免门禁，不进入本脚本。
+const LEVEL_ROLES = {
+  L1: ['database', 'security'],
+  L2: ['architecture', 'database', 'security', 'performance'],
+  L3: ['architecture', 'concurrency', 'performance', 'database', 'security'],
 }
-const skipped = ROLES.filter(r => !rerun.includes(r))
-const reuse = mvp ? [] : skipped
+
+// 纳入范围由脚本推导，不交给调用方手工翻译：翻译错一次，评审范围就静默错一次。
+//   MVP：纳入维度 = roles（映射表结果），其余「不适用」；
+//   完整方案：纳入维度 = LEVEL_ROLES[level]，roles 只能在纳入维度内收窄为增量重走，其余「未纳入」。
+if (args.roles !== undefined && !Array.isArray(args.roles)) {
+  throw new Error(`roles 必须是数组，例如 ['security']，当前为 ${JSON.stringify(args.roles)}`)
+}
+const requested = (args.roles || []).filter(Boolean)
+const unknown = requested.filter(k => !ROLES.some(r => r.key === k))
+if (unknown.length > 0) {
+  throw new Error(`roles 含未知维度 ${JSON.stringify(unknown)}，可选值：${ROLES.map(r => r.key).join(', ')}`)
+}
+// MVP 分层：未纳入的维度不适用（不是沿用上轮），见 shared/gate-levels.md「方案类型维度」。
+const mvp = args.tier === 'mvp'
+const level = args.level || null
+if (mvp && level) {
+  throw new Error(`tier: 'mvp' 不使用 L 等级，纳入维度由 roles 给出；请去掉 level（当前 ${level}）`)
+}
+// MVP 的维度来自 gate-levels.md 映射表；没有有效 roles 说明调用方漏传映射结果，不能静默按 5 维度全跑。
+if (mvp && requested.length === 0) {
+  throw new Error(`tier: 'mvp' 必须传 roles（按 gate-levels.md「信号到维度的映射表」得出的维度），当前 roles 为 ${JSON.stringify(args.roles)}`)
+}
+if (!mvp && level === 'L0') {
+  throw new Error('L0 豁免技术评审门禁，不运行本脚本；豁免理由写在变更目录 overview.md 开头（见 shared/gate-levels.md）')
+}
+if (!mvp && !LEVEL_ROLES[level]) {
+  throw new Error(`完整方案必须传 level（L1 / L2 / L3，按 shared/gate-levels.md 判定），当前为 ${JSON.stringify(args.level)}`)
+}
+const scope = mvp
+  ? ROLES.filter(r => requested.includes(r.key))
+  : ROLES.filter(r => LEVEL_ROLES[level].includes(r.key))
+const outOfScope = mvp ? [] : requested.filter(k => !LEVEL_ROLES[level].includes(k))
+if (outOfScope.length > 0) {
+  throw new Error(`roles ${JSON.stringify(outOfScope)} 不在 ${level} 的纳入维度 [${LEVEL_ROLES[level].join(', ')}] 内；等级判定有变时先改 level`)
+}
+// 增量重走：roles 非空时只重跑这些维度；MVP 的 roles 即纳入范围，总是全跑。
+const rerun = !mvp && requested.length > 0 ? scope.filter(r => requested.includes(r.key)) : scope
+const reuse = scope.filter(r => !rerun.includes(r))
+const excluded = ROLES.filter(r => !scope.includes(r))
 const incremental = reuse.length > 0
 
 const REVIEW_SCHEMA = {
@@ -98,10 +136,11 @@ const REVIEW_SCHEMA = {
 
 phase('Review')
 
+const keys = rs => rs.map(r => r.key).join(', ')
 if (mvp) {
-  log(`MVP 分层评审：只跑 [${rerun.map(r => r.key).join(', ')}]；不适用 [${skipped.map(r => r.key).join(', ')}]。`)
-} else if (incremental) {
-  log(`增量重走：重跑 [${rerun.map(r => r.key).join(', ')}]；沿用上轮 [${reuse.map(r => r.key).join(', ')}]。`)
+  log(`MVP 分层评审：只跑 [${keys(rerun)}]；不适用 [${keys(excluded)}]。`)
+} else {
+  log(`${level}：纳入 [${keys(scope)}]；本轮重跑 [${keys(rerun)}]${incremental ? `；沿用上轮 [${keys(reuse)}]` : ''}${excluded.length ? `；未纳入 [${keys(excluded)}]` : ''}。`)
 }
 
 const mvpNote = mvp
@@ -135,11 +174,21 @@ const reviews = await parallel(rerun.map(r => () =>
 phase('Summarize')
 
 // 汇总裁决对全部纳入维度求值：重跑维度用本轮结构化结论；沿用维度由汇总人读取上轮 review/<key>.md 参与裁决。
+// 脚本环境没有文件系统 API，无法预判沿用维度的上轮产物是否存在，因此把「不存在时怎么办」写成确定指令，
+// 防止汇总人为一个从未跑过的维度编造上轮结论。
 const reuseNote = mvp
-  ? `本轮为 MVP 分层评审（方案类型 MVP 且命中升级信号）。以下维度不适用，不参与裁决，在一览表中标注「不适用」，理由引用 ${SD}/shared/gate-levels.md「信号到维度的映射表」中命中的信号行：${skipped.map(r => r.key).join(', ')}。`
-  : incremental
-    ? `本轮为增量重走。以下维度沿用上一轮结论，请读取其 ${base}/review/<key>.md 参与裁决，并在一览表中标注「沿用上轮」：${reuse.map(r => r.key).join(', ')}。`
-    : `本轮为全量重走，纳入维度均为本轮最新结论。`
+  ? `本轮为 MVP 分层评审（方案类型 MVP 且命中升级信号）。以下维度不适用，不参与裁决，在一览表中标注「不适用」，理由引用 ${SD}/shared/gate-levels.md「信号到维度的映射表」中命中的信号行：${keys(excluded)}。`
+  : [
+      `本轮变更等级 ${level}，纳入维度：${keys(scope)}。`,
+      excluded.length
+        ? `以下维度不在 ${level} 的纳入范围，不参与裁决，不要读取其 review 文件，在一览表中标注「未纳入」：${keys(excluded)}。`
+        : '',
+      incremental
+        ? `本轮为增量重走。以下纳入维度沿用上一轮结论，读取其 ${base}/review/<key>.md 参与裁决，并在一览表中标注「沿用上轮」：${keys(reuse)}。` +
+          `若某个沿用维度的 review/<key>.md 不存在：不要推测、不要编造上轮结论，在一览表中标注「缺上轮产物」，` +
+          `并按 ${SD}/shared/gate-policy.md 第 1 节把门禁裁决定为 BLOCKED，提示把该维度加入 roles 重跑。`
+        : `本轮为全量重走，纳入维度均为本轮最新结论。`,
+    ].filter(Boolean).join('\n')
 
 const summary = await agent(
   [
@@ -155,7 +204,7 @@ const summary = await agent(
     `3) 代码改动范围：按代码模块聚合改动类型与预估影响，用于工作量评估。`,
     `4) 执行误报检测：按 gate-policy.md 第 4 节「不认可评审结论：驳回与 risk accepted」的规则检测可能的误报或过度建议（写不出可复现触发场景的问题降级为 Major）。`,
     `5) 门禁裁决：对全部纳入维度（重跑+沿用）求值，判定规则见 gate-policy.md。未闭环 Blocker = findings 表中 severity=Blocker 且 status=open（含缺省）的项。`,
-    `6) 各维度结论一览表（维度 | 结论 | Blocker数 | Major数 | Minor数 | 本轮重跑/沿用上轮）。`,
+    `6) 各维度结论一览表（维度 | 结论 | Blocker数 | Major数 | Minor数 | 本轮重跑/沿用上轮/未纳入/不适用）。`,
     `7) 疑似误报检测：列出可能的误报、过度建议、跨维度矛盾，分「自动降级建议」与「需人工判断」两类。`,
     `8) 已确认风险详细清单：按维度+严重级别汇总，使用完整 10 字段表格（含「影响业务功能」「涉及代码模块」「闭环状态」）。`,
     `9) 修改建议执行计划：合并去重，标注需在 design.md / tasks.md 落实的项与建议优先级。`,
@@ -163,9 +212,9 @@ const summary = await agent(
     `11) 「有条件通过」的条件清单（条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态）。映射不到 tasks 的条件视同 Blocker。`,
     `12) 上轮闭环验证结果（仅当各维度 review 中存在「上轮闭环验证」小节时）：汇总哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环，并给出各自的 status 取值。任何「声称已闭环但实际未闭环」的项一律按未闭环 Blocker 计入裁决。`,
     `13) 术语表：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。`,
-    `14) 分级结论：方案类型（MVP / 完整方案）+ 命中的升级信号 + 变更等级（完整方案为 L1/L2/L3）或纳入维度（MVP，按映射表）+ 判定人 + 依据，规则见 ${SD}/shared/gate-levels.md。同时确保变更目录 overview.md 开头也写有这一行（还没有该文件时，创建只含文件头与分级行的最小 overview.md）——实现阶段的归档门禁从 overview.md 读等级判定双轴评审是否必需。`,
+    `14) 分级结论：方案类型（MVP / 完整方案）+ 命中的升级信号 + 变更等级（完整方案为 L1/L2/L3，必须与本轮的 ${mvp ? 'MVP 分层' : level} 一致）或纳入维度（MVP，按映射表）+ 判定人 + 依据，规则见 ${SD}/shared/gate-levels.md。同时确保变更目录 overview.md 开头也写有这一行（还没有该文件时，创建只含文件头与分级行的最小 overview.md）——实现阶段的归档门禁从 overview.md 读等级判定双轴评审是否必需。`,
     `15) 评审输入版本：列出本轮依据的 proposal.md / design.md / specs / tasks.md 的版本依据（如 git rev-parse HEAD 或文件哈希），供重走与恢复时判断输入是否变化。`,
-    `16) 人工确认区：留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply。`,
+    `16) 人工确认区：按 gate-policy.md「机器可读裁决行」的格式先写 "Gate-Level: ${mvp ? 'MVP' : level}" 与 "Gate-Verdict: <READY_FOR_HUMAN_APPROVAL 或 BLOCKED，取第 5 项裁决>" 两行，再留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply；L3 追加一行 "复核: __________"（建议第二人复核，非必填）。`,
     `若本轮裁决为 BLOCKED，按 gate-policy.md 的闭环记录格式明确提示：回改 design.md 后必须登记每条 Blocker 的闭环记录，下一轮评审 Agent 依赖该区块验证闭环。`,
   ].join('\n'),
   { label: 'summarize', phase: 'Summarize' }
@@ -173,5 +222,5 @@ const summary = await agent(
 
 log(`技术评审门禁完成（${mvp ? 'MVP 分层' : incremental ? '增量重走' : '全量'}），产物：review/*.md 与 review-summary.md。请人工审阅后在 review-summary.md 写入 Technical Review Approved，再运行 /opsx:apply。`)
 
-return { change, mode: mvp ? 'mvp' : incremental ? 'incremental' : 'full', rerun: rerun.map(r => r.key), reuse: reuse.map(r => r.key),
-  notApplicable: mvp ? skipped.map(r => r.key) : [], reviews, summary }
+return { change, level: mvp ? 'MVP' : level, mode: mvp ? 'mvp' : incremental ? 'incremental' : 'full',
+  rerun: rerun.map(r => r.key), reuse: reuse.map(r => r.key), notApplicable: excluded.map(r => r.key), reviews, summary }

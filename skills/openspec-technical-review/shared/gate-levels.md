@@ -7,7 +7,9 @@
 | **L0 豁免** | 纯文案/注释/日志文案、配置值调整、格式化、依赖小版本升级、纯测试补充 | **跳过门禁**，直接 apply | 不需要；**不要创建 `review-summary.md`**（该文件存在即视为已启用门禁，hook 会要求签字行） |
 | **L1 轻量** | 单表单接口 CRUD、新增非核心字段、既有能力的小范围扩展 | 只跑 **database + security** | 需要 |
 | **L2 标准** | 新增业务流程、跨模块调用、引入缓存、批量操作 | 跑 **architecture + database + security + performance** | 需要 |
-| **L3 全量** | 涉及 MQ/异步、并发消费、分布式一致性、状态机、大数据量、新建核心表、对外开放接口 | **五维度全跑** | 需要，且建议第二人复核 |
+| **L3 全量** | 涉及 MQ/异步、并发消费、分布式一致性、状态机、大数据量、新建核心表、对外开放接口 | **五维度全跑** | 需要，且建议第二人复核（`review-summary.md` 的 `复核:` 行，建议项，不拦截） |
+
+> 「门禁要求」列的维度同时写在 `../technical-review-gate.workflow.js` 的 `LEVEL_ROLES` 常量里，workflow 按调用参数 `level` 推导纳入维度。改动本表时两边同步（本仓的文档一致性测试会比对两者）。
 
 
 > **L0 的落点（勿与门禁产物混用）**：L0 豁免**不要创建 `review-summary.md`** —— 该文件的存在本身就是「本变更已启用技术评审门禁」的开关（见 `apply-gate-check.md`「何时执行」与 `hooks/check-review-approval.sh`），创建了就必须有非空签字行，与「跳过门禁」的初衷矛盾。豁免理由写在变更目录的 `overview.md` 开头一行，注明豁免人与日期，供事后追溯；**还没进 OpenSpec 的纯小改（改文案、调配置、格式化）直接改代码即可，不必为留痕单独建变更目录**。记录只需文件头与分级行，**不必为这一行跑完整总览生成**（格式见 `../../openspec-change-overview/SKILL.md`）。
@@ -56,7 +58,7 @@
 - 命中「租户隔离」「MQ 重试」→ security + concurrency；
 - 命中「新建表」「批量 ≥ 1 万」→ database + performance。
 
-workflow 的 `roles` 参数直接取映射结果（如 `["security","concurrency"]`），见 `../SKILL.md` 前置第 4、5 步。
+MVP 时 workflow 的 `roles` 参数直接取映射结果（如 `["security","concurrency"]`）；完整方案传 `level`，不传映射结果。见 `../SKILL.md` 前置第 4、5 步。
 
 ## 分级决策责任
 

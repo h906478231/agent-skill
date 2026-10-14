@@ -17,7 +17,7 @@ I'll create a change with artifacts:
 - design.md (how)
 - tasks.md (implementation steps)
 
-When ready to implement, run /opsx:apply
+When ready to implement, run /opsx:apply（本仓自加：先按下文 Output 一节的门禁提示判定是否需要 `/opsx:review`）
 
 ---
 
@@ -106,6 +106,7 @@ After completing all artifacts, summarize:
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
 - Prompt: "Run `/opsx:apply` or ask me to implement to start working on the tasks."
+- **门禁提示（本仓自加，非上游原文）**：在 Prompt 之前先给出下一步，按 `../openspec-technical-review/shared/gate-levels.md` 判定等级（相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-technical-review/shared/gate-levels.md`）：「L1–L3，或 MVP 且命中升级信号 → 先 `/opsx:review`，人工签字后再 `/opsx:apply`；L0，或 MVP 且未命中信号 → 可直接 `/opsx:apply`，但要在 `overview.md` 开头写一行分级结论（判定人与日期）。拿不准就升一级。」缺 `review-summary.md` 时 apply 按设计放行，这条提示是 apply 之前唯一的门禁提醒，不得省略。
 
 **Artifact Creation Guidelines**
 

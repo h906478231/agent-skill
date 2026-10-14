@@ -82,6 +82,7 @@ After completing all artifacts, summarize:
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
 - Prompt: "Run `/opsx:apply` to start implementing."
+- **门禁提示（本仓自加，非上游原文）**：在 Prompt 之前先给出下一步，按 skill `openspec-technical-review` 的 `shared/gate-levels.md` 判定等级（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-technical-review/shared/gate-levels.md`）：「L1–L3，或 MVP 且命中升级信号 → 先 `/opsx:review`，人工签字后再 `/opsx:apply`；L0，或 MVP 且未命中信号 → 可直接 `/opsx:apply`，但要在 `overview.md` 开头写一行分级结论（判定人与日期）。拿不准就升一级。」缺 `review-summary.md` 时 apply 按设计放行，这条提示是 apply 之前唯一的门禁提醒，不得省略。
 
 **Artifact Creation Guidelines**
 
