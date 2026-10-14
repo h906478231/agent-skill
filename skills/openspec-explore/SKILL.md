@@ -35,7 +35,7 @@ Enter explore mode. Think deeply. Visualize freely. Follow the conversation wher
 
 Depending on what the user brings, you might:
 
-**Explore the problem space (Phase 1: 需求澄清 - 应用第一性原理)**
+**Explore the problem space (Phase 1: 需求澄清 - 应用第一性原理；Phase 标注与加粗项为本仓自加)**
 - Ask clarifying questions that emerge from what they said
 - **区分表面需求与底层问题**：追问"为什么"，识别用户真正要解决的本质问题
 - **识别基本约束**：物理约束（网络延迟、IOPS）、业务约束（监管、SLA）、资源约束（时间、预算）
@@ -50,7 +50,7 @@ Depending on what the user brings, you might:
 - Identify patterns already in use
 - Surface hidden complexity
 
-**Compare options (Phase 2: 方案探索 - 交叉验证)**
+**Compare options (Phase 2: 方案探索 - 交叉验证；Phase 标注、MVP 规则与加粗项为本仓自加)**
 - Brainstorm multiple approaches（L2/L3 至少 2 个有实质差异的方案；L0/L1 允许单一方案 + 不选其他方案的理由，分级判据见 `shared/cross-validation.md`「分级要求」。**必须包含 MVP 方案作为第一选项**）
 - **方案生成规则**：
   - **方案 MVP（必选）**：最小化实现，优先复用现有能力
@@ -134,7 +134,7 @@ If the user mentions a change or you detect one is relevant:
 
 3. **Offer to capture when decisions are made**
 
-    | Insight Type               | Where to Capture               | 质量检查点 |
+    | Insight Type               | Where to Capture               | 质量检查点（本仓自加） |
     |----------------------------|--------------------------------|-----------|
     | New requirement discovered | `specs/<capability>/spec.md` | - |
     | Requirement changed        | `specs/<capability>/spec.md` | - |
@@ -150,7 +150,7 @@ If the user mentions a change or you detect one is relevant:
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
    - **"我们已经识别了底层问题和基本约束。要把第一性原理分析写入 proposal.md 吗？"**
-   - **"我们有了几个候选方案。要做四维对比并写入 design.md 吗？"**
+   - **"我们有了几个候选方案。要做四维对比并写入 design.md 吗？"**（以上两条为本仓自加）
 
 4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 
@@ -313,7 +313,7 @@ But this summary is optional. Sometimes the thinking IS the value.
 
 ---
 
-## 质量保障原则
+## 质量保障原则（本仓自加，非上游原文）
 
 详见 shared 模块：
 - [Phase 1 第一性原理分析](shared/first-principles.md) - 表面需求 vs 底层问题 / 基本约束 / 必要性验证

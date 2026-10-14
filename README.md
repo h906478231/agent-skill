@@ -148,7 +148,9 @@ npx skills remove --skill ddd-aggregate
 
 `skills/openspec-{explore,propose,apply-change,update-change,sync-specs,archive-change,verify-change}/SKILL.md` 与 `claude/commands/opsx/{explore,propose,apply,update,sync,archive,verify,ff}.md` 是 OpenSpec CLI 生成的上游副本（`ff` 只有命令形态，没有对应 skill）（skill 侧 frontmatter 标 `generatedBy`，命令侧没有该字段），两两高度重复。**这部分刻意不做去重** —— 改动会在上游升级时产生冲突。
 
-唯一例外是 apply 的技术评审门禁校验块（本仓自加，非上游原文），已抽到 `skills/openspec-technical-review/shared/apply-gate-check.md`，两处改为引用。propose / update / apply / verify 中的 STE 检查块同理（本仓自加），处理口径抽到 `skills/openspec-ste/shared/gate-check.md`，各处只保留一行引用。
+**例外：本仓在其中追加了增强。** 范围是 explore / propose / apply / update / archive / verify 六个 skill、对应的六个命令，再加 `ff` 命令，共 13 个文件；`sync` 的两份保持上游原样。增强内容包括 Phase 1/2 检查点、技术评审门禁校验、STE 与变更模型检查、任务切片与 TDD 纪律、切片证据、基线任务数、归档前置校验、交叉验证 III 核对清单、门禁提示等。其中门禁校验与 STE 处理口径已抽到 `skills/openspec-technical-review/shared/apply-gate-check.md`、`skills/openspec-ste/shared/gate-check.md`，各处只保留引用。增强段落大多带「本仓自加」标注；步骤重新编号这类连带改动没有逐行标注。
+
+**升级 OpenSpec 时**：重新生成会整文件覆盖上述增强。`scripts/test-upstream-additions.mjs`（已接入 `npm test`）为每个增强主题登记了一句锚点原文，覆盖后测试会失败并列出丢失的增强。按列表用 git diff 找回内容，与新版上游合并后再提交。
 
 本仓自建资产（9 个 `openspec-*` 流程增强 skill 与 `grill`/`review`/`overview`/`quality`/`explain`/`video` 六个命令）则严格遵守单一事实源，命令文件均为薄壳。
 

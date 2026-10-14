@@ -38,7 +38,7 @@ Enter explore mode. Think deeply. Visualize freely. Follow the conversation wher
 
 Depending on what the user brings, you might:
 
-**Explore the problem space (Phase 1: 需求澄清 - 应用第一性原理)**
+**Explore the problem space (Phase 1: 需求澄清 - 应用第一性原理；Phase 标注与加粗项为本仓自加)**
 - Ask clarifying questions that emerge from what they said
 - **区分表面需求与底层问题**：追问"为什么"，识别用户真正要解决的本质问题
 - **识别基本约束**：物理约束（网络延迟、IOPS）、业务约束（监管、SLA）、资源约束（时间、预算）
@@ -53,7 +53,7 @@ Depending on what the user brings, you might:
 - Identify patterns already in use
 - Surface hidden complexity
 
-**Compare options (Phase 2: 方案探索 - 交叉验证)**
+**Compare options (Phase 2: 方案探索 - 交叉验证；Phase 标注、MVP 规则与加粗项为本仓自加)**
 - Brainstorm multiple approaches（L2/L3 至少 2 个有实质差异的候选方案；L0/L1 允许单一方案 + 不选其他方案的理由）
 - **Build comparison tables（四维对比矩阵）**：
   - 成本（开发成本 + 资源成本）
@@ -129,7 +129,7 @@ If the user mentions a change or you detect one is relevant:
 
 3. **Offer to capture when decisions are made**
 
-    | Insight Type               | Where to Capture               | 质量检查点 |
+    | Insight Type               | Where to Capture               | 质量检查点（本仓自加） |
     |----------------------------|--------------------------------|-----------|
     | New requirement discovered | `specs/<capability>/spec.md` | - |
     | Requirement changed        | `specs/<capability>/spec.md` | - |
@@ -145,7 +145,7 @@ If the user mentions a change or you detect one is relevant:
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
    - **"我们已经识别了底层问题和基本约束。要把第一性原理分析写入 proposal.md 吗？"**
-   - **"我们有了几个候选方案。要做四维对比并写入 design.md 吗？"**
+   - **"我们有了几个候选方案。要做四维对比并写入 design.md 吗？"**（以上两条为本仓自加）
 
 4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 
@@ -186,7 +186,7 @@ When things crystallize, you might offer a summary - but it's optional. Sometime
 - **Do explore the codebase** - Ground discussions in reality
 - **Do question assumptions** - Including the user's and your own
 
-### 质量保障原则（参考 workflow/OpenSpec-AI-研发流程.md）
+### 质量保障原则（本仓自加，参考 workflow/OpenSpec-AI-研发流程.md）
 
 **Phase 1 第一性原理检查点**：
 - [ ] 是否区分了表面需求与底层问题？
