@@ -118,7 +118,7 @@ done
 | 共识（根问题、约束、必要性） | proposal.md「第一性原理分析」区块（由 explore/propose 生成时写入） |
 | 领域术语 | `CONTEXT.md`（项目根，跨变更复用） |
 | 重大权衡决策 | `docs/adr/NNNN-<slug>.md`（项目根） |
-| 未决问题 | discussion-log.md 或带入 explore 继续 |
+| 未决问题 | discussion-log.md（条目格式见 `../openspec-discussion-sync/SKILL.md`「条目类型」）或带入 explore 继续 |
 | 切片边界线索 | tasks.md 任务拆分（规则见 `../openspec-propose/shared/task-slicing.md`，生成 tasks 时加载） |
 
 ## 铁律
