@@ -87,7 +87,7 @@ When ready to implement, run /opsx:apply
 
    **Phase 1/2 产物区块（创建 proposal / design artifact 时必读）** —— 规则文件在 `../openspec-explore/shared/`（相对本 SKILL.md 解析，装了 openspec-explore 就一定存在；读不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md`）：
    - `proposal.md` 必须包含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证），格式与判据见 `../openspec-explore/shared/first-principles.md`。缺失时继续澄清需求，不要直接落盘。
-   - `design.md` 必须包含「候选方案交叉验证矩阵」（至少 2 个有实质差异的方案 × 成本/性能/复杂度/风险四维，并回答「为什么不选其他方案」），见 `../openspec-explore/shared/cross-validation.md`；L2/L3 变更还必须包含「测试 Seam 决策」区块，见 `../openspec-explore/shared/seam-decisions.md`。
+   - `design.md` 必须包含「候选方案交叉验证矩阵」（L2/L3：至少 2 个有实质差异的方案 × 成本/性能/复杂度/风险四维，并回答「为什么不选其他方案」；L0/L1 允许单一方案 + 不选其他方案的理由），见 `../openspec-explore/shared/cross-validation.md`；L2/L3 变更还必须包含「测试 Seam 决策」区块，见 `../openspec-explore/shared/seam-decisions.md`。
    - `design.md` 必须包含「可视化判定」小节（本仓自加），逐条声明状态变动、流程变动是否命中；命中时按 `../openspec-change-overview/shared/change-model.md`（相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-change-overview/shared/change-model.md`）在同一 design.md 中编写变更模型（`change-model` 代码块）：删除的元素保留并标 `diff: removed`，新增与修改的迁移、步骤必须引用 Scenario。判定不依赖变更等级。
 
    **STE 检查（本仓自加，非上游原文）** —— 全部产物写完后、输出总结前运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Propose」列处理结果；找不到脚本时在总结中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。

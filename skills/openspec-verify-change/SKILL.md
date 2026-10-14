@@ -178,7 +178,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    以下人工核对清单的**规则与条目以 skill `openspec-technical-review` 的 `../openspec-technical-review/shared/phase6-verification.md` 为唯一事实源**（本文件不复制条目）：
    - **回溯第一性原理**：实现是否解决 `proposal.md` 的底层问题；是否引入未识别的新约束
    - **方案选择一致性**：实现是否与 `design.md` 推荐方案一致；偏离是否已回填 `design.md`
-   - **评审条件闭环**：先跑 `/opsx:overview` 刷新条件矩阵，逐条核对 `review-summary.md` 的「有条件通过」条件
+   - **评审条件闭环**：逐条核对 `review-summary.md` 的「有条件通过」条件；存在 `overview.md` 时先跑 `/opsx:overview` 刷新条件矩阵再核对（总览是按需产物，未生成时直接核对条件清单）
    - **设计阶段可测试性 / 运维成本**：关键路径测试覆盖、mock 可行性、新增的运维成本与监控告警
 
    逐项判据与「不通过视同 Blocker」的处理规则见该文件。

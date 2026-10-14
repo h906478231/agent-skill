@@ -183,7 +183,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - [ ] 候选方案对比时提出的风险点是否在实现中得到规避？
 
    **评审条件闭环（Phase 3）**:
-   - [ ] 运行 `/opsx:overview` 刷新条件矩阵，核对 `review-summary.md` 的「有条件通过」条件是否完成
+   - [ ] 核对 `review-summary.md` 的「有条件通过」条件是否完成；存在 `overview.md` 时先运行 `/opsx:overview` 刷新条件矩阵
    - [ ] ⚠️ 标记的未落地项是否已在本次实现中闭环？
 
    **可测试性与运维成本**:

@@ -54,7 +54,7 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - Read the artifact(s) the request touches and the change's other existing artifacts.
    - Apply the requested edit. Then check every other existing artifact against it - in ANY direction: an edit to a later artifact may require revising an earlier one, not only the other way around. Build order is a useful reading order, not a constraint on which artifacts may be revised.
    - Note everything that is now inconsistent, missing, or contradictory.
-   - When the revised artifact is `proposal.md` or `design.md`, keep the repository-mandated blocks intact and compliant: proposal 的「第一性原理分析」区块、design 的「候选方案交叉验证矩阵」与（L2/L3）「测试 Seam 决策」区块。规则见 `../openspec-explore/shared/first-principles.md`、`cross-validation.md`、`seam-decisions.md`。若某次修改会让这些区块缺失或不满足判据，等于把变更退回 Phase 1/2，必须向用户说明后再改，不得静默放行。
+   - When the revised artifact is `proposal.md` or `design.md`, keep the repository-mandated blocks intact and compliant: proposal 的「第一性原理分析」区块、design 的「候选方案交叉验证矩阵」（分级判据见 `cross-validation.md`：L2/L3 至少 2 个候选，L0/L1 允许单一方案 + 不选其他方案的理由）与（L2/L3）「测试 Seam 决策」区块。规则见 `../openspec-explore/shared/first-principles.md`、`cross-validation.md`、`seam-decisions.md`。若某次修改会让这些区块缺失或不满足判据，等于把变更退回 Phase 1/2，必须向用户说明后再改，不得静默放行。
    - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/opsx:propose` to create them.
    - If the change is already coherent, say so and make no edits.
 

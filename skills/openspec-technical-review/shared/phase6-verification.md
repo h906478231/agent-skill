@@ -18,7 +18,7 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 
 `/opsx:verify` 不认识 `review-summary.md`（那是门禁的产物，非 OpenSpec 原生 artifact），因此它**不会**核对「有条件通过」的条件。这一步需单独做：
 
-先跑一次 `/opsx:overview <change>` 刷新「规则条件可追溯矩阵」，再逐条核对矩阵中每项是否真的实现 —— **这是门禁闭环的最后一环，也最容易被跳过**。矩阵已把 `proposal` 验收条件、`spec` scenario、`design` 约束、`review-summary` 的「有条件通过」四类来源合并到一张表，逐行看即可，不必再翻四份文档。标 `⚠️ 未落地` 的行视同 Blocker，不得归档。
+存在 `overview.md` 时（总览是按需产物）先跑一次 `/opsx:overview <change>` 刷新「规则条件可追溯矩阵」，再逐条核对矩阵中每项是否真的实现；未生成总览时直接核对 `review-summary.md` 的「有条件通过」条件清单 —— **这是门禁闭环的最后一环，也最容易被跳过**。矩阵已把 `proposal` 验收条件、`spec` scenario、`design` 约束、`review-summary` 的「有条件通过」四类来源合并到一张表，逐行看即可，不必再翻四份文档。标 `⚠️ 未落地` 的行视同 Blocker，不得归档。
 
 条件既然映射到了 `tasks.md` 的勾选项，此处即核对这些任务是否真的完成而非只是打了勾。
 

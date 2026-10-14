@@ -139,7 +139,7 @@ If the user mentions a change or you detect one is relevant:
     | New requirement discovered | `specs/<capability>/spec.md` | - |
     | Requirement changed        | `specs/<capability>/spec.md` | - |
     | **Phase 1 需求澄清完成** | `proposal.md` | **必须包含「第一性原理分析」区块**（表面需求 vs 底层问题 / 基本约束 / 必要性验证）；不通过不得进入 Phase 2 |
-    | **Phase 2 方案探索完成** | `design.md` | **必须包含「候选方案交叉验证矩阵」**（至少 2 个候选方案 × 四维对比 + 推荐理由）**与「测试 Seam 决策」区块**；未通过交叉验证不得进入 Phase 3 门禁 |
+    | **Phase 2 方案探索完成** | `design.md` | **必须包含「候选方案交叉验证矩阵」**（L2/L3 至少 2 个候选方案 × 四维对比 + 推荐理由；L0/L1 允许单一方案 + 不选其他方案的理由）**与「测试 Seam 决策」区块**；未通过交叉验证不得进入 Phase 3 门禁 |
     | Design decision made       | `design.md`                  | - |
     | Scope changed              | `proposal.md`                | - |
     | New work identified        | `tasks.md`                   | - |
@@ -317,7 +317,7 @@ But this summary is optional. Sometimes the thinking IS the value.
 
 详见 shared 模块：
 - [Phase 1 第一性原理分析](shared/first-principles.md) - 表面需求 vs 底层问题 / 基本约束 / 必要性验证
-- [Phase 2 候选方案交叉验证](shared/cross-validation.md) - 至少 2 个候选方案 × 四维对比矩阵
+- [Phase 2 候选方案交叉验证](shared/cross-validation.md) - L2/L3 至少 2 个候选方案 × 四维对比矩阵；L0/L1 允许单一方案 + 不选其他方案的理由
 - [Phase 2 测试 Seam 决策](shared/seam-decisions.md) - 从哪些公共边界验证行为；L2/L3 变更 design.md 必含
 - [质量保障体系总览](shared/quality-framework.md) - 完整检查点与处理流程
 
@@ -331,8 +331,8 @@ But this summary is optional. Sometimes the thinking IS the value.
 - [ ] 是否包含 MVP 方案作为第一候选项？
 - [ ] MVP 方案是否体现了"优先复用现有能力"的原则？
 - [ ] 如果 MVP 新增了表/依赖/接口，是否在 design.md 中说明了必要性？
-- [ ] 是否有至少 3 个有实质差异的候选方案（MVP + 2 个完整方案）？
-- [ ] 是否从成本/性能/复杂度/风险四维对比，并增加了工作量和上线时间？
+- [ ] 是否有至少 2 个有实质差异的候选方案（L2/L3 必含，MVP + 完整方案各至少 1 个；L0/L1 允许单一方案 + 不选其他方案的理由）？
+- [ ] 是否从成本/性能/复杂度/风险四维对比，并增加了工作量和上线时间（L0/L1 可用简短取舍说明代替矩阵）？
 - [ ] 每个方案是否明确了"适用场景"？
 - [ ] 是否回答了"为什么不选其他方案"？
 - [ ] 推荐方案是否回溯验证了 Phase 1 的底层问题？

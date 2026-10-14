@@ -54,7 +54,7 @@ Depending on what the user brings, you might:
 - Surface hidden complexity
 
 **Compare options (Phase 2: 方案探索 - 交叉验证)**
-- Brainstorm multiple approaches（至少 2 个有实质差异的候选方案）
+- Brainstorm multiple approaches（L2/L3 至少 2 个有实质差异的候选方案；L0/L1 允许单一方案 + 不选其他方案的理由）
 - **Build comparison tables（四维对比矩阵）**：
   - 成本（开发成本 + 资源成本）
   - 性能（延迟/吞吐/资源消耗）
@@ -134,7 +134,7 @@ If the user mentions a change or you detect one is relevant:
     | New requirement discovered | `specs/<capability>/spec.md` | - |
     | Requirement changed        | `specs/<capability>/spec.md` | - |
     | **Phase 1 需求澄清完成** | `proposal.md` | **必须包含「第一性原理分析」区块**（表面需求 vs 底层问题 / 基本约束 / 必要性验证）；不通过不得进入 Phase 2 |
-    | **Phase 2 方案探索完成** | `design.md` | **必须包含「候选方案交叉验证矩阵」**（至少 2 个有实质差异的候选方案 × 四维对比 + 推荐理由）；**L2/L3 还必须包含「测试 Seam 决策」区块**；未通过交叉验证不得进入 Phase 3 门禁 |
+    | **Phase 2 方案探索完成** | `design.md` | **必须包含「候选方案交叉验证矩阵」**（L2/L3：至少 2 个有实质差异的候选方案 × 四维对比 + 推荐理由；L0/L1：允许单一方案 + 不选其他方案的理由）；**L2/L3 还必须包含「测试 Seam 决策」区块**；未通过交叉验证不得进入 Phase 3 门禁 |
     | Design decision made       | `design.md`                  | - |
     | Scope changed              | `proposal.md`                | - |
     | New work identified        | `tasks.md`                   | - |
@@ -195,8 +195,8 @@ When things crystallize, you might offer a summary - but it's optional. Sometime
 - [ ] 是否能量化"不做会怎样"和"做了能带来什么"？
 
 **Phase 2 交叉验证检查点**：
-- [ ] 是否有至少 2 个有实质差异的候选方案？
-- [ ] 是否从成本/性能/复杂度/风险四维对比？
+- [ ] 是否有至少 2 个有实质差异的候选方案（L2/L3 必含；L0/L1 允许单一方案 + 不选其他方案的理由）？
+- [ ] 是否从成本/性能/复杂度/风险四维对比（L0/L1 可用简短取舍说明代替矩阵）？
 - [ ] 是否回答了"为什么不选其他方案"？
 - [ ] 推荐方案是否回溯验证了 Phase 1 的底层问题？
 - [ ] 是否确定了测试 Seam 并写入 `design.md` 的「测试 Seam 决策」区块（L2/L3 必含）？
