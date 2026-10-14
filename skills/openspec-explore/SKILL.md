@@ -51,7 +51,7 @@ Depending on what the user brings, you might:
 - Surface hidden complexity
 
 **Compare options (Phase 2: 方案探索 - 交叉验证)**
-- Brainstorm multiple approaches（至少 3 个方案，**必须包含 MVP 方案作为第一选项**）
+- Brainstorm multiple approaches（L2/L3 至少 2 个有实质差异的方案；L0/L1 允许单一方案 + 不选其他方案的理由，分级判据见 `shared/cross-validation.md`「分级要求」。**必须包含 MVP 方案作为第一选项**）
 - **方案生成规则**：
   - **方案 MVP（必选）**：最小化实现，优先复用现有能力
     * 优先复用现有数据模型（如：扩展现有表，而非新建业务表）
@@ -59,7 +59,7 @@ Depending on what the user brings, you might:
     * 优先使用现有接口（减少跨模块新接口）
     * 明确列出"接受的权衡"（哪些风险暂时接受）
     * **注**：以上是"优先"原则，不是绝对禁止。如果业务必需（如新增独立业务域），可以适当新增，但需要在 design.md 中明确说明必要性
-  - **方案 A/B**：不同技术路线的完整方案
+  - **方案 A/B**：不同技术路线的完整方案（L2/L3 至少两条；L0/L1 允许只有一条）
 - **Build comparison tables（四维对比矩阵 + 工作量/上线时间）**：
   - 成本（开发成本 + 资源成本 + **工作量人日**）
   - 性能（延迟/吞吐/资源消耗）

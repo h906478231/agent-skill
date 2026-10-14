@@ -112,7 +112,7 @@
 | MVP | 命中 | 只跑信号映射出的维度（MVP 评审标准），其余维度记为「不适用」，仍需签字 |
 | 完整方案 | 任意 | 按上表 L0–L3 |
 
-信号到维度：异步/MQ/重试/幂等/状态机 → concurrency；租户隔离/权限/敏感数据/对外接口/用户上传 → security；新建表/唯一索引/改字段类型 → database；批量 ≥ 1 万 → performance；新增跨模块依赖/新建模块 → architecture。实现后双轴评审不受分层影响（只有 L0 豁免）。规则唯一事实源：`skills/openspec-technical-review/shared/gate-levels.md`。
+信号到维度：异步/MQ/重试/幂等/状态机 → concurrency；租户隔离/权限/敏感数据/对外接口/用户上传 → security；新建表/唯一索引/改字段类型 → database；批量 ≥ 1 万 → performance；新增跨模块依赖/新建模块 → architecture。实现后双轴评审按变更自身分级：L2/L3 必需，L0/L1 推荐（未生成不阻断归档）；**MVP 且未命中信号时仍必需** —— 它已跳过编码前评审，双轴是唯一的代码侧评审。规则唯一事实源：`skills/openspec-technical-review/shared/gate-levels.md`。
 
 ---
 
