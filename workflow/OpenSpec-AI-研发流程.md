@@ -58,7 +58,7 @@
 
 **三层质量保障**：
 1. **Phase 1 第一性原理**：确保解决正确的问题（表面需求 vs 底层问题）
-2. **Phase 2 交叉验证 I**：至少2个候选方案四维对比（成本/性能/复杂度/风险）
+2. **Phase 2 交叉验证 I**：候选方案四维对比（成本/性能/复杂度/风险）—— L2/L3 至少 2 个候选方案，L0/L1 允许单一方案 + 不选其他方案的理由
 3. **Phase 3 交叉验证 II**：多角色并行评审同一方案（多维度互证）
 4. **Phase 6 交叉验证 III**：实现与设计一致性核对（Coherence）
 
@@ -125,6 +125,8 @@
 - 涉及租户隔离、权限判定、敏感数据
 
 **分级结论必须写进变更目录 `overview.md` 开头（等级 + 判定人 + 依据）；若本变更走了门禁（存在 `review-summary.md`），同时写进该文件 —— 分级本身也是一个需要负责的决策。**
+
+记录只需一行：变更目录里有含文件头与分级行的 `overview.md` 即可，**不必为这一行跑完整总览生成**（格式见 `skills/openspec-change-overview/SKILL.md`）；跑过 `/opsx:overview` 的变更，该行在重跑时保留。
 
 ---
 
@@ -246,7 +248,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   → openspec/changes/<change-name>/proposal.md
 #      ※ 必含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证）
 #   → openspec/changes/<change-name>/design.md
-#      ※ 必含「候选方案交叉验证矩阵」（至少2个候选方案 × 四维对比）
+#      ※ 必含「候选方案交叉验证矩阵」（L2/L3：至少2个候选方案 × 四维对比；L0/L1：允许单一方案 + 不选其他方案的理由）
 #      ※ 必含「测试 Seam 决策」区块（L2/L3；从哪些公共边界验证行为）
 #      ※ 必含「可视化判定」小节；状态变动或流程变动命中时写 change-model 代码块
 #        （规则：skills/openspec-change-overview/shared/change-model.md）
@@ -261,12 +263,13 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   ◆ 卡点①：产物写完后跑 STE 检查 → 变更模型检查，退出码 0 才输出总结
 #     （处理口径：skills/openspec-ste/shared/gate-check.md）
 
-# ── 生成变更总览（可选但推荐）──────────────────────────
+# ── 生成变更总览（按需：L2/L3 或字段与条件较多时推荐）──────
 /opsx:overview <change-name>
 #   → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
 #   → overview.html（有变更模型时；变更前 / 对比 / 变更后三个视图）
 #   一页看懂流程、字段变更与规则条件是否遗漏
 #   标 ⚠️ 未落地 的条目视同 Blocker
+#   未生成时不阻断：verify 直接核对 review-summary.md 的条件清单
 
 # ── 分级判定 ────────────────────────────────────────
 # 根据上面的决策树判断：L0 / L1 / L2 / L3
@@ -296,7 +299,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   ※ 证据先于勾选：每个切片写 evidence/slice-<id>.md，绑定实现指纹
 #     （规则：skills/openspec-apply-change/shared/slice-evidence.md）
 
-# ── Phase 5.5：双轴独立评审 ──────────────────────────
+# ── Phase 5.5：双轴独立评审（L2/L3 必跑；L0/L1 推荐）────
 /opsx:quality <change-name>
 #   同一固定基线，两个子 agent 并行、互不读取对方报告：
 #   → review/standards.md       Standards Review：重复/可读性/死代码/复杂度/测试可维护性/项目约定
@@ -305,18 +308,18 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   （规则：skills/openspec-code-quality/shared/dual-axis-review.md）
 
 # ── Phase 6：验证 ──────────────────────────────────
-/opsx:overview <change-name>     # 先刷新条件矩阵
+/opsx:overview <change-name>     # 已生成 overview.md 时先刷新条件矩阵（按需）
 /opsx:verify <change-name>
 #   → 三维校验（Completeness / Correctness / Coherence）
 #      ※ Coherence 维度：实现与设计交叉核对
-#   → 再逐条核对 overview.md 的条件矩阵，⚠️ 未落地项视同 Blocker
+#   → 再逐条核对条件矩阵（有 overview.md 时）或 review-summary.md 的条件清单，⚠️ 未落地项视同 Blocker
 #   → 切片证据新鲜度 + 双轴裁决核对：缺失/过期证据、评审 BLOCKED 均为 CRITICAL
 #   → ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL
 #   → 补充人工核对清单（回溯第一性原理 / 方案选择一致性 / 可测试性 / 运维成本）
 
 # ── 收口 ─────────────────────────────────────────────
 /opsx:archive <change-name>
-#   归档前置阻断：双轴评审 Blocker、缺失/过期切片证据时拒绝归档
+#   归档前置阻断：L2/L3 的双轴评审 Blocker 或报告缺失、L0/L1 已生成但未闭环、缺失/过期切片证据时拒绝归档
 #   变更归档，能力沉淀进 specs
 #   评审/证据/讨论/总览产物随变更整体归档到 changes/archive/<name>/
 ```
@@ -516,7 +519,7 @@ BLOCKED必须先闭环Blocker并重走门禁 → 变成READY → 才能签字 �
 
 **A**: Phase 2必须输出「候选方案交叉验证矩阵」。
 
-至少2个候选方案从成本/性能/复杂度/风险四维对比，推荐方案必须回答「为什么不选其他方案」。
+L2/L3 至少2个候选方案从成本/性能/复杂度/风险四维对比；L0/L1 允许单一方案，但要写明「为什么不考虑其他方案」。推荐方案必须回答「为什么不选其他方案」。
 
 未通过交叉验证的design不得进入门禁。
 </details>
@@ -618,7 +621,7 @@ OpenSpec Explore
       │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户三问确认后定稿
       │    ◆ 卡点①（/opsx:propose）：STE 检查 → 变更模型检查，退出码 0 才输出总结
       │
-      ├─ /opsx:overview → overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
+      ├─ /opsx:overview（按需）→ overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
       │                    + overview.html（有变更模型时）
       ▼
    【分级判定】L0 豁免 ──────────────────────────┐
@@ -653,7 +656,7 @@ OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/
 双轴独立评审（Phase 5.5）→ /opsx:quality → review/standards.md + review/spec-fidelity.md + review/code-review-summary.md
       │  同一固定基线、两轴并行互不读取；任一轴未闭环 Blocker 不得归档
       ▼
-验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（用 overview.md 条件矩阵）+ 项目自有测试 + 切片证据新鲜度
+验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（有 overview.md 时用其条件矩阵，未生成时核对 review-summary.md 条件清单）+ 项目自有测试 + 切片证据新鲜度
       │  ※ 交叉验证 III：实现与设计交叉核对（Coherence 一致性校验）
       │  ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL
       ▼
@@ -672,9 +675,9 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 |------|------|--------|------|-----------|
 | Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查共识充分性，已有决策不重复访谈；沉淀术语与决策 | 共识 + `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
 | Phase 1 需求澄清 | `/opsx:explore` | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
-| Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；命中时含 `change-model` 代码块） | 否 |
+| Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**（L2/L3 至少 2 个方案，L0/L1 允许单一方案 + 不选其他方案的理由）；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；命中时含 `change-model` 代码块） | 否 |
 | （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
-| 变更总览 | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
+| 变更总览（按需） | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
 | 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前三问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 产物检查（四个卡点） | `/opsx:propose`、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查，再跑变更模型检查；阻断时 propose / update 修正后重跑，apply 停止，verify 记 CRITICAL | 无独立产物 | 否 |
 | 分级判定 | 人工（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md` | 否 |
@@ -682,10 +685,12 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply` | 开始前通过签字校验、STE 检查、变更模型检查；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**；**证据先于勾选** | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
-| Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
+| Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；L2/L3 必跑，L0/L1 推荐 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + 切片证据与双轴裁决核对 + STE / 变更模型检查；**实现与设计交叉核对** | 校验报告（对话内） | 修复项 |
 | 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video` | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕 | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
+
+> 表中标「按需」的环节（Grill 访谈、讨论回流、变更总览、讲解视频）只在触发条件命中时运行，**不进入每次变更的默认路径**。默认路径是：explore → propose → 分级判定 → （纳入范围时）review + 人工签字 → apply → quality → verify → archive。
 
 ---
 
@@ -762,7 +767,7 @@ Phase 1 的核心任务是**确保方向正确**。在明确业务目标、边�
 
 ### 核心任务
 
-Phase 2 的核心任务是**在多个候选方案之间做出有依据的选择**。单一方案无法交叉验证，至少需要 2 个候选方案。
+Phase 2 的核心任务是**在多个候选方案之间做出有依据的选择**。单一方案无法交叉验证，L2/L3 至少需要 2 个候选方案；L0/L1 允许单一方案，但要写明「为什么不考虑其他方案」（分级判据的唯一事实源：`skills/openspec-explore/shared/cross-validation.md`）。
 
 ### design.md 必须包含的矩阵
 
@@ -792,7 +797,7 @@ Phase 2 的核心任务是**在多个候选方案之间做出有依据的选择*
 
 | 判据 | 通过标准 | 不通过示例 |
 |------|---------|-----------|
-| **候选数量** | 至少 2 个有实质差异的方案 | 只有 1 个方案，或多个方案只是参数微调 |
+| **候选数量** | L2/L3：至少 2 个有实质差异的方案；L0/L1：1 个方案 + 不选其他方案的理由 | 只有 1 个方案且没写不选其他方案的理由，或多个方案只是参数微调 |
 | **维度完整性** | 至少覆盖成本/性能/复杂度/风险四维 | 只比较「哪个更快」 |
 | **决策可追溯** | 能回答「为什么不选其他方案」 | 只说「方案 B 最好」，未说明为什么 |
 | **回溯验证** | 推荐方案确实解决 proposal.md 中的底层问题 | 推荐方案偏离了第一性原理分析的结论 |
@@ -1050,6 +1055,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - `review/code-review-summary.md`：只做索引与裁决，不改写原始 finding
 
 **要求**：
+- 适用范围按分级：**L2/L3 必须跑**；**L0/L1 推荐跑**，未生成不阻断归档（等级取变更目录 `overview.md` 的分级行；读不到等级时按 L2/L3 处理）。一旦创建了任一双轴产物，就必须按规则完整产出三份报告
 - 任一轴存在未闭环 Blocker 即 `BLOCKED`，不得归档
 - Blocker 只能按判据 B1–B5 判定（写错数据 / 越权 / 假勾选 / 正常输入下已有功能失败 / 吞异常记成功），触发场景以 `[Bn]` 开头；只在依赖故障或边界输入下出现的问题为 Major
 - 修复走 `tasks.md` 勾选（门禁外提交先登记任务）；修复后用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
@@ -1087,8 +1093,8 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 **必须单独做**：
 
-1. 先跑一次 `/opsx:overview <change>` 刷新「规则条件可追溯矩阵」
-2. 再逐条核对矩阵中每项是否真的实现
+1. 存在 `overview.md` 时先跑一次 `/opsx:overview <change>` 刷新「规则条件可追溯矩阵」；未生成时直接核对 `review-summary.md` 的「有条件通过」条件清单
+2. 再逐条核对该矩阵或清单中每项是否真的实现
 
 矩阵已把 `proposal` 验收条件、`spec` scenario、`design` 约束、`review-summary` 的「有条件通过」四类来源合并到一张表。
 
@@ -1133,7 +1139,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 ### 3. 评审条件闭环（实现 → 评审）
 - [ ] `review-summary.md` 的「有条件通过」条件是否都映射到 `tasks.md` 并完成
-- [ ] 用 `overview.md` 的条件矩阵逐行核对，标 `⚠️ 未落地` 的行视同 Blocker
+- [ ] 用 `overview.md` 的条件矩阵逐行核对（未生成 `overview.md` 时直接核对 `review-summary.md` 的条件清单），标 `⚠️ 未落地` 的行视同 Blocker
 
 ### 4. 设计阶段可测试性验证（补充设计盲区）
 - [ ] 关键业务逻辑是否可单测（外部依赖是否可 mock）

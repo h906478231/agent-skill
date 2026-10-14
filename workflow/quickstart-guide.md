@@ -87,7 +87,7 @@ Q3: 命中以下任一？
 - 允许重复吗？→ 允许
 - 允许为空吗？→ 允许，默认显示用户名
 - 需要审核吗？→ 不需要
-- 有敏感词过滤吗？→ 前端已过滤，后端不再检查
+- 有违规词过滤吗？→ 前端已过滤，后端不再检查
 
 **产出**：
 - `openspec/changes/add-user-nickname/proposal.md`（需求澄清）
@@ -219,7 +219,7 @@ Technical Review Approved: 你的名字  2026-08-23
 
 ### Step 6: 双轴独立评审
 
-`tasks.md` 切片声明了 `Evidence:` 时必跑，缺少双轴评审产物不能归档；平铺任务清单与历史变更不强制，推荐运行。
+L2/L3 必跑，缺少双轴评审产物不能归档；L0/L1 推荐跑（`overview.md` 分级行写明等级），平铺任务清单与历史变更不强制。
 
 ```bash
 /opsx:quality add-user-nickname
@@ -380,7 +380,7 @@ Technical Review Approved: 你的名字  2026-08-23
 
 ### 想了解新架构（方案设计）？
 
-→ OpenSpec 工作流对比（原 `docs/openspec-workflow-comparison.md` 已不在仓库中）
+→ [OpenSpec-AI-研发流程.md](OpenSpec-AI-研发流程.md) 的「📐 Phase 1: 需求澄清」「📐 Phase 2: 方案探索」（第二部分：完整流程）
 
 ### 想在团队推广？
 
