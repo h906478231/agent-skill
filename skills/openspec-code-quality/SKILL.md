@@ -1,6 +1,6 @@
 ---
 name: openspec-code-quality
-description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec apply 编码完成之后、verify 校验之前，以同一固定代码基线并行调度 Standards Review（重复/复用、可读性、死代码、复杂度、测试可维护性、项目约定）与 Spec Fidelity Review（需求、场景、任务、设计决策、Seam 的实现忠实度）两个互不读取对方报告的评审 agent，分别产出 review/standards.md 与 review/spec-fidelity.md，再汇总为 review/code-review-summary.md 并按任一轴未闭环 Blocker 阻断归档。只报告不改代码，修复走 tasks 勾选。
+description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec apply 编码完成之后、verify 校验之前，以同一固定代码基线并行调度 Standards Review（重复/复用、可读性、死代码、复杂度、测试可维护性、项目约定）与 Spec Fidelity Review（需求、场景、任务、设计决策、Seam 的实现忠实度）两个互不读取对方报告的评审 agent，分别产出 review/standards.md 与 review/spec-fidelity.md，再汇总为 review/code-review-summary.md 并按任一轴未闭环 Blocker 阻断归档。L2/L3 必需，L0/L1 推荐（未生成不阻断归档）。只报告不改代码，修复走 tasks 勾选。
 ---
 
 # 实现后双轴独立评审（Standards + Spec Fidelity）
