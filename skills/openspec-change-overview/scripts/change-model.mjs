@@ -851,7 +851,7 @@ async function computeLayout(model) {
 // ============================================================================
 
 const TEMPLATE_FILE = path.join(SKILL_DIR, 'assets', 'overview-template.html')
-/** 输出文件（相对 changeRoot）：提交 git，随 archive 归档；只由 render 生成，禁止手改。 */
+/** 输出文件（相对 changeRoot）：随 archive 归档，是否提交由用户决定；只由 render 生成，禁止手改。 */
 const OUTPUT_FILE = 'overview.html'
 /** 模板占位，与 assets/overview-template.html 一致。 */
 const PLACEHOLDER = Object.freeze({ TITLE: '{{TITLE}}', BODY: '<!--CHANGE_MODEL_BODY-->', DATA: '<!--CHANGE_MODEL_DATA-->' })

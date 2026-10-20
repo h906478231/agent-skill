@@ -171,4 +171,4 @@ openspec-change-overview/
 - 上游：`/opsx:explore`、`/opsx:propose` 产出事实源。
 - 下游：`/opsx:review` 评审者用它对齐；`/opsx:verify` 用第 4 块做条件核对。
 - 下游：讲解视频读取 `node <CM> layout <changeRoot>` 输出的布局 JSON，与 `overview.html` 画面一致。
-- 产物（`overview.md`，有变更模型时还有 `overview.html`）提交 git，随 `openspec archive` 归档到 `changes/archive/<name>/`。
+- 产物（`overview.md`，有变更模型时还有 `overview.html`）随 `openspec archive` 归档到 `changes/archive/<name>/`。本 skill 不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。

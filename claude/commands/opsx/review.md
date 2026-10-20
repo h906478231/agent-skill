@@ -37,7 +37,7 @@ tags: [workflow, review, gate, experimental, cross-validation]
 | `<changeRoot>/review/<role>.md` | 各维度评审详情 |
 | `<changeRoot>/review-summary.md` | 摘要 / 裁决 / 风险 / 条件清单 / 术语表 / 人工确认区 |
 
-产物提交 git，随 `openspec archive` 整体归档到 `changes/archive/<name>/`。
+产物写在变更目录内，随 `openspec archive` 整体归档到 `changes/archive/<name>/`。本命令不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。
 
 ## 关联
 

@@ -230,4 +230,4 @@ node <GATE> review <changeRoot>
 
 ## 产物的 git 归属
 
-三份报告提交 git，随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。本评审**只报告不改代码**，也不执行 push、PR、部署或任何外部任务回写。
+三份报告随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。本评审不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。本评审**只报告不改代码**，也不执行 push、PR、部署或任何外部任务回写。

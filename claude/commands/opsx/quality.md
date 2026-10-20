@@ -26,7 +26,7 @@ tags: [workflow, review, quality]
 
 ## 产物
 
-`<changeRoot>/review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md` —— 提交 git，随 `openspec archive` 归档。历史变更的 `review/code-quality.md` 仍被归档校验识别，不要求补跑。
+`<changeRoot>/review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md` —— 随 `openspec archive` 归档。本命令不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。历史变更的 `review/code-quality.md` 仍被归档校验识别，不要求补跑。
 
 ## 关联
 

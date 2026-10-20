@@ -1232,6 +1232,8 @@ Technical Review Approved: 张三  2026-08-26
 
 `openspec archive` 把整个 `changes/<name>/` 目录搬到 `changes/archive/<name>/`，上述提交 git 的文件**自动随之归档，不需要额外操作，也不要在归档前手工删除**。
 
+**项目决定优先，agent 不执行提交**：上表是项目的保留策略，不是 agent 的操作步骤，项目 `.gitignore` 的决定优先。agent 写完产物后不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。
+
 **双轴评审与切片证据的两条边界**：一是**不追溯**——只对按新规则创建的变更生效（`tasks.md` 切片声明了 `Evidence:`，或已生成双轴评审产物），历史变更与历史 archive 不补造证据、不补跑双轴；二是**不外发**——证据与评审动作只在本地读写变更目录，不自动执行 git push、创建 PR、部署、发布或云舟等外部任务回写，这些动作需另行授权。
 
 ---

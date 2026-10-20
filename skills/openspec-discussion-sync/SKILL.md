@@ -99,7 +99,7 @@ description: OpenSpec 流程内子 agent 讨论结论回流主 agent 的契约�
 
 ## 产物的 git 归属
 
-`discussion-log.md` 与门禁产物同策略：提交 git，随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。
+`discussion-log.md` 与门禁产物同策略：随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。本 skill 不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。
 
 理由：它是「为什么当初这么定 / 为什么否掉那个方案」的唯一记录。删掉之后，半年后接手的人只能看到结论，看不到弃案 —— 于是把弃案再实现一遍。
 

@@ -329,6 +329,7 @@ L2/L3 必跑，缺少双轴评审产物不能归档；L0/L1 推荐跑（`overvie
 **A**: 
 - ✅ 提交git
 - ❌ 不删除
+- ⚠️ 提交由人决定：agent 写完产物后不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。
 
 **理由**：
 - 签字是责任凭证
