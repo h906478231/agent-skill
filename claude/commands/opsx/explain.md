@@ -38,7 +38,7 @@ tags: [workflow, review, finding, documentation]
 - `<changeRoot>/review/finding-details/<ID>.md` —— 单个 finding 的详细解析文档
 - `<changeRoot>/review/finding-details-summary.md` —— 批量模式的汇总文档（含目录、按业务功能/改动模块/优先级分类）
 
-产物提交 git，随 `openspec archive` 归档。
+产物随 `openspec archive` 归档。本命令不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。
 
 ## 使用场景
 

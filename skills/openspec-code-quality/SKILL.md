@@ -115,4 +115,4 @@ node <GATE> review <changeRoot>
 
 ## 产物的 git 归属
 
-与门禁产物同策略：三份报告提交 git，随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。
+与门禁产物同策略：三份报告随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。本 skill 不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。

@@ -22,7 +22,7 @@ tags: [workflow, overview, traceability]
 
 ## 产物
 
-`<changeRoot>/overview.md` —— 提交 git，随 `openspec archive` 归档。`design.md` 有变更模型时还生成 `<changeRoot>/overview.html`（离线交互式对比视图），第 2 块嵌入脚本派生的 Mermaid；变更模型检查不通过时停止并报告阻断项（详见 skill）。
+`<changeRoot>/overview.md` —— 随 `openspec archive` 归档。本命令不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。`design.md` 有变更模型时还生成 `<changeRoot>/overview.html`（离线交互式对比视图），第 2 块嵌入脚本派生的 Mermaid；变更模型检查不通过时停止并报告阻断项（详见 skill）。
 
 ## 刷新时机
 

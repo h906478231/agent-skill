@@ -15,6 +15,46 @@ const GATE_LEVELS = 'skills/openspec-technical-review/shared/gate-levels.md'
 const PROCESS_DOC = 'workflow/OpenSpec-AI-研发流程.md'
 const ROLE_KEYS = ['architecture', 'concurrency', 'performance', 'database', 'security']
 
+/**
+ * git 边界说明（guard-agent-git-on-artifacts）。
+ * 命令与 skill 曾写「产物提交 git」，执行 agent 把这句生命周期说明当作步骤，对被 .gitignore 忽略的
+ * openspec/ 执行了 git add -f。下列文件说明变更目录产物的去向时，必须逐字带这句话；改措辞时全部文件一起改。
+ */
+const GIT_GUARD = '不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。'
+const GIT_GUARD_FILES = [
+  'claude/commands/opsx/review.md',
+  'claude/commands/opsx/quality.md',
+  'claude/commands/opsx/overview.md',
+  'claude/commands/opsx/explain.md',
+  'claude/commands/opsx/video.md',
+  'skills/openspec-code-quality/SKILL.md',
+  'skills/openspec-code-quality/shared/dual-axis-review.md',
+  'skills/openspec-apply-change/shared/slice-evidence.md',
+  'skills/openspec-discussion-sync/SKILL.md',
+  'skills/openspec-change-overview/SKILL.md',
+  // 面向人的流程文档保留「门禁产物提交 git」的策略，同时写明 agent 不执行提交、以项目 .gitignore 为准。
+  PROCESS_DOC,
+  'workflow/quickstart-guide.md',
+]
+/** 扫描范围只含 agent 读取的命令与 skill；workflow/、docs/ 面向人，按策略写「提交 git」是正确内容。 */
+const AGENT_READ_DIRS = ['claude/commands', 'skills']
+/** 项目级资产（CONTEXT.md、docs/adr/）在 openspec/ 之外，不随变更归档，保留「提交 git」的说明。 */
+const PROJECT_ASSET_MARK = '项目级资产'
+
+/** 递归列出 dir（相对仓库根）下的文件，跳过 node_modules；不用 readdir 的 recursive 选项，兼容 Node 16。 */
+async function listFiles(dir) {
+  const files = []
+  for (const entry of await readdir(new URL(`../${dir}/`, import.meta.url), { withFileTypes: true })) {
+    const rel = `${dir}/${entry.name}`
+    if (entry.isDirectory()) {
+      if (entry.name !== 'node_modules') files.push(...(await listFiles(rel)))
+    } else {
+      files.push(rel)
+    }
+  }
+  return files
+}
+
 /** 从分级表中取 L1–L3 各自的纳入维度；「五维度全跑」视为全部维度。 */
 function levelRoles(markdown) {
   const result = {}
@@ -105,4 +145,25 @@ test('finding 字段数：各文档写的数量与 finding-format.md 一致', as
       }
     })
   }
+})
+
+test('git 边界说明：说明变更目录产物去向的文件逐字带同一句话', async () => {
+  const missing = []
+  for (const file of GIT_GUARD_FILES) {
+    if (!(await read(file)).includes(GIT_GUARD)) missing.push(file)
+  }
+  assert.deepEqual(missing, [], `以下文件缺少 git 边界说明：${missing.join('、')}`)
+})
+
+test('git 边界说明：命令与 skill 不再要求提交变更目录产物', async () => {
+  const hits = []
+  for (const dir of AGENT_READ_DIRS) {
+    for (const file of (await listFiles(dir)).filter(f => /\.(md|mjs|js)$/.test(f))) {
+      const lines = (await read(file)).split('\n')
+      lines.forEach((line, i) => {
+        if (/提交 ?git/.test(line) && !line.includes(PROJECT_ASSET_MARK)) hits.push(`${file}:${i + 1}`)
+      })
+    }
+  }
+  assert.deepEqual(hits, [], `以下位置仍要求提交 git（改为随 openspec archive 归档并加 git 边界说明）：\n${hits.join('\n')}`)
 })

@@ -24,7 +24,7 @@ tags: [workflow, video, explainer]
 
 ## 产物
 
-- `<changeRoot>/video/storyboard.md`、`<changeRoot>/video/explainer.srt`：提交 git。
+- `<changeRoot>/video/storyboard.md`、`<changeRoot>/video/explainer.srt`：随变更归档。本命令不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。
 - `<changeRoot>/video/media/`：音频、视频与 Manim 缓存，不进 git；项目 `.gitignore` 应包含 `openspec/changes/*/video/media/`。
 
 ## 关联

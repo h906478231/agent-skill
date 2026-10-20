@@ -202,4 +202,4 @@ node <GATE> hygiene <changeRoot>
 
 ## 产物的 git 归属与边界
 
-`evidence/*.md` 提交 git，随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`；证据是一次变更的临时验证记录，**不升级为跨变更的长期领域事实**。记录证据不执行 push、PR、部署或任何外部任务回写。
+`evidence/*.md` 随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`；证据是一次变更的临时验证记录，**不升级为跨变更的长期领域事实**。记录证据时不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。记录证据也不执行 push、PR、部署或任何外部任务回写。
