@@ -76,7 +76,7 @@
 
 - 默认不提交；只有本次调用显式传入 `autoCommit: true` 才授权本地 commit；
 - 即使授权提交，也只允许本地 commit，禁止 `git add .`、amend、push、PR；
-- 评论、归档、关闭任务等外部动作不在工作流内执行。
+- 评论、归档、关闭任务等外部动作不在工作流内执行。需要回写云舟时，在工作流之外经用户确认执行：需求方案评论用 `flows-solution-comment`，缺陷排查评论用 `flows-defect-investigation-comment`，研发说明与 commit 登记用 `flows-role-comment`；归档后完成任务见 `skills/openspec-archive-change/shared/yunzhou-task-completion.md`。
 
 ## 与旧架构的差异
 

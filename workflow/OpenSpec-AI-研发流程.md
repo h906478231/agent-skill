@@ -262,6 +262,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 
 # ── 生成产物与任务拆分：垂直切片 + 阻塞 DAG ──────────────
 /opsx:propose <change-name>
+#   变更来自云舟任务时，proposal.md 第一行写「云舟任务：<taskId>」，archive 据此询问是否完成任务
 #   tasks.md 按 tracer-bullet 垂直切片组织（规则：skills/openspec-propose/shared/task-slicing.md，
 #   由 /opsx:propose 生成 tasks 时自动加载）
 #   每个切片端到端可演示，Blocked by 显式声明，frontier 可并行
@@ -330,6 +331,8 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   归档前置阻断：L2/L3 的双轴评审 Blocker 或报告缺失、L0/L1 已生成但未闭环、缺失/过期切片证据时拒绝归档
 #   变更归档，能力沉淀进 specs
 #   评审/证据/讨论/总览产物随变更整体归档到 changes/archive/<name>/
+#   关联云舟任务时（变更名 yunzhou-<taskId>，或 proposal.md 有「云舟任务：<taskId>」），归档后经用户确认标记任务完成并回读
+#      （规则：skills/openspec-archive-change/shared/yunzhou-task-completion.md）
 ```
 
 ---
@@ -695,7 +698,7 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | Phase 5 代码实现 | `/opsx:apply` | 开始前通过签字校验、STE 检查、变更模型检查；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**；**证据先于勾选** | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
 | Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；L2/L3 必跑，L0/L1 推荐 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + 切片证据与双轴裁决核对 + STE / 变更模型检查；**实现与设计交叉核对** | `verification.md`（校验报告） | 修复项 |
-| 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
+| 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video` | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕 | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
 
 > 各阶段读取哪些文件、能否在新会话中开始，见 `skills/openspec-technical-review/shared/phases.md`「各阶段的输入与新会话」。上一阶段的结论写入文件后，换会话不丢信息，并且上下文更小。
