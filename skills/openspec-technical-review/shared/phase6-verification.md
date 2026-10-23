@@ -12,6 +12,8 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 | Correctness | requirement ↔ 代码实现映射、scenario 是否被覆盖 |
 | **Coherence** | **实现是否偏离 `design.md` 的既定决策**、代码风格与项目模式是否一致 |
 
+存在 `review/spec-fidelity.md` 时，Completeness 与 Correctness 中的需求、场景核对，以及 Coherence 中的设计偏离，读取它的规格覆盖矩阵与设计偏离清单，不逐条搜代码；复用条件与严重级别见 `../../openspec-verify-change/SKILL.md`「复用 Spec Fidelity 结论」。
+
 输出写入变更目录的 `verification.md`：评分卡 + 按 CRITICAL / WARNING / SUGGESTION 分级的问题清单。archive 读取该文件，不读对话。**存在 CRITICAL 时不得归档。**
 
 ## 门禁特有的补充：条件核对

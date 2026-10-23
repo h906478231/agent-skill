@@ -66,6 +66,22 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - 其他情况为 `全量`，运行全部步骤：没有上一份报告、`classify` 退出码为 1 或 2、`registered` 中有 `行为` 档位。
    - 登记与档位规则见 `../openspec-apply-change/shared/post-implementation-changes.md`。
 
+   **复用 Spec Fidelity 结论（本仓自加，非上游原文）** —— `全量` 时先判定本次的 `Spec Fidelity Reuse`。双轴评审已经逐条核对需求、场景与设计偏离，verify 不再逐条搜代码（边界见 `../openspec-code-quality/shared/dual-axis-review.md`「与既有阶段的职责去重」）：
+   - `复用`：下列 3 项全部满足。
+     1. `<changeRoot>/review/spec-fidelity.md` 存在；运行 `node <GATE> review <changeRoot>`，`verdict` 不是 `INCOMPLETE`，并且 `issues` 为空（第 5 步可以直接使用这次的输出）；
+     2. `node <GATE> classify <changeRoot> --from <spec-fidelity.md 的 Fingerprint>` 的退出码为 0；
+     3. `registered` 中没有档位为 `行为` 的行。
+   - `部分复用`：满足第 1 项，`classify` 退出码为 0 或 1，并且 `registered` 中有 `行为` 档位的行，或 `unregistered` 不为空。只对这些文件自己核对：规格覆盖矩阵中「实现位置」或「验证证据」列出这些文件的行，以及这些文件中矩阵没有列出的行为；其他行复用。这些文件按登记规则处理，`行为` 档要回 `/opsx:quality` 跑两轴增量。
+   - `不复用`：没有 `spec-fidelity.md`（如 L0/L1 没有运行 quality），或 `classify` 退出码为 2。第 5–7 步照常执行。
+   - `增量` 时三维结论沿用上一份报告，不判定本项，报告写 `不适用（增量复核）`。
+
+   `复用` 与 `部分复用` 时，第 5 步 Spec Coverage、第 6 步与第 7 步 Design Adherence 读取 `spec-fidelity.md`（部分复用中自己核对的行除外），严重级别仍按本 skill 的规则：
+   - 规格覆盖矩阵中 Requirement 行没有实现位置 → CRITICAL；有实现位置，但状态写明部分实现或与需求不符 → WARNING。
+   - Scenario 行没有验证证据 → WARNING。
+   - 设计偏离清单中的行：`design.md` 已写入该项，或对应的 SPEC finding 已闭环，才算处理完；其他行 → WARNING。
+
+   勾选统计、切片证据与双轴评审闭环、STE 检查、变更模型检查、Code Pattern Consistency 与第 9 步的人工核对不受本项影响，照常执行。
+
 5. **Verify Completeness**
 
    **Task Completion**:
@@ -77,6 +93,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
      - Recommendation: "Complete task: <description>" or "Mark as done if already implemented"
 
    **Spec Coverage**:
+   - `Spec Fidelity Reuse` 为 `复用` 或 `部分复用` 时，按第 4 步「复用 Spec Fidelity 结论」处理，不逐条搜代码（本仓自加）
    - If delta specs exist in `contextFiles.specs`:
      - Extract all requirements (marked with "### Requirement:")
      - For each requirement:
@@ -101,6 +118,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
 6. **Verify Correctness**
 
+   `Spec Fidelity Reuse` 为 `复用` 或 `部分复用` 时，按第 4 步「复用 Spec Fidelity 结论」处理（本仓自加）。
+
    **Requirement Implementation Mapping**:
    - For each requirement from delta specs:
      - Search codebase for implementation evidence
@@ -121,6 +140,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 7. **Verify Coherence**
 
    **Design Adherence**:
+   - `Spec Fidelity Reuse` 为 `复用` 或 `部分复用` 时，按第 4 步「复用 Spec Fidelity 结论」处理（本仓自加）
    - If `contextFiles.design` exists:
      - Extract key decisions (look for sections like "Decision:", "Approach:", "Architecture:")
      - Verify implementation follows those decisions
@@ -146,6 +166,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    - Fingerprint: git-tree:<sha>
    - Verify Mode: 全量 / 增量（沿用依据：上一份 Fingerprint、classify 结论）
+   - Spec Fidelity Reuse: 复用（基线 git-tree:<sha>）/ 部分复用（自查文件：<文件>）/ 不复用（<原因>）/ 不适用（增量复核）
 
    ### Summary
    | Dimension    | Status           |
@@ -168,6 +189,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    报告字段（本仓自加，非上游原文）：
    - `Fingerprint` 取 `node <GATE> fingerprint <changeRoot>` 的输出，是下一次判定增量复核的起点。
+   - `Spec Fidelity Reuse` 按第 4 步「复用 Spec Fidelity 结论」填写。
    - 「评审条件」按第 9 步「评审条件闭环」填写，archive 读取本小节。没有 `review-summary.md` 时写「不适用：该变更未经技术评审」。存在完整版 overview 时，在小节下写出它的「最近生成」日期与「依据轮次」，不要求刷新。
 
    **Issues by Priority**:

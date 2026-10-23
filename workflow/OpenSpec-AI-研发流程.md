@@ -248,6 +248,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   → 决策树分轮访谈：消除隐含假设，frontier 清空 + 用户确认才结束
 #   → CONTEXT.md（领域术语，统一语言）+ docs/adr/（重大权衡决策）
 #      ※ 项目级资产，跨变更复用，不随变更归档
+#   → discussion-log.md（共识摘要 + 查证子 agent 的回流结论，见 skill openspec-discussion-sync）
 
 # ── Phase 1-2：需求澄清 + 方案探索 ──────────────────────
 /opsx:explore <change-name>
@@ -258,7 +259,6 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #      ※ 必含「测试 Seam 决策」区块（L2/L3；从哪些公共边界验证行为）
 #      ※ 必含「可视化判定」小节；状态变动或流程变动命中时写 change-model 代码块
 #        （规则：skills/openspec-change-overview/shared/change-model.md）
-#   → discussion-log.md（子agent讨论结论回流，见skill openspec-discussion-sync）
 
 # ── 生成产物与任务拆分：垂直切片 + 阻塞 DAG ──────────────
 /opsx:propose <change-name>
@@ -613,6 +613,7 @@ Phase 6验证时会回溯检查实现是否解决了「底层问题」而非「�
 （存在未决决策时）/opsx:grill
       │  决策树分轮访谈：消除隐含假设 → 共识
       │  同步沉淀：CONTEXT.md（领域术语）+ docs/adr/（重大权衡决策）
+      │  写入 discussion-log.md：共识摘要 + 查证子 agent 的回流结论
       ▼
 OpenSpec Explore
       │  需求澄清（Phase 1）→ proposal.md
@@ -621,7 +622,6 @@ OpenSpec Explore
       │    ※ 交叉验证 I：候选方案四维对比矩阵（成本/性能/复杂度/风险）
       │    ※ 测试 Seam 决策区块：从哪些公共边界验证行为
       │    ※ 「可视化判定」小节；状态变动或流程变动命中时写 change-model 代码块
-      │  ※ 子 agent 讨论结论回流 → discussion-log.md（贯穿 Phase 1–2）
       ▼
 技术方案确认（design.md 含推荐方案）
       │
@@ -682,9 +682,9 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | 阶段 | 入口 | 做什么 | 产物 | 是否改代码 |
 |------|------|--------|------|-----------|
 | Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查共识充分性，已有决策不重复访谈；沉淀术语与决策 | 共识（写入变更目录的 `discussion-log.md`）+ `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
+| 讨论回流（grill 查证，按需） | skill `openspec-discussion-sync` | grill 派出的查证子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳；explore 在主会话中讨论，不派子 agent | `discussion-log.md` | 否 |
 | Phase 1 需求澄清 | `/opsx:explore` | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
 | Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**（L2/L3 至少 2 个方案，L0/L1 允许单一方案 + 不选其他方案的理由）；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；命中时含 `change-model` 代码块） | 否 |
-| （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
 | 变更总览（按需） | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
 | 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前四问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 产物检查（四个卡点） | `/opsx:propose`、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查，再跑变更模型检查；阻断时 propose / update 修正后重跑，apply 停止，verify 记 CRITICAL | 无独立产物 | 否 |
@@ -1080,6 +1080,8 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - **Completeness**：`tasks.md` 勾选是否完整、spec 中的 requirement 是否都已实现
 - **Correctness**：requirement ↔ 代码实现映射、scenario 是否被覆盖
 - **Coherence**：**实现是否偏离 `design.md` 的既定决策**、代码风格与项目模式是否一致
+
+**复用 Spec Fidelity 结论**：存在 `review/spec-fidelity.md`，并且评审基线之后没有 `行为` 档修改或未登记的文件时，需求、场景与设计偏离直接读取它的规格覆盖矩阵与设计偏离清单，不逐条搜代码；有这类修改时只对这些文件自己核对，并回 `/opsx:quality` 跑两轴增量。没有运行 quality 的 L0/L1 变更照常逐条核对（口径见 `skills/openspec-verify-change/SKILL.md`「复用 Spec Fidelity 结论」）。
 
 **切片证据与双轴评审核对**：缺失 / 不完整 / 失败 / 过期的切片证据、双轴评审 `BLOCKED` 均为 CRITICAL；与本切片行为无关的变化可按豁免格式登记，无法判断即按过期重跑；声明了 `Environment:` 的切片可登记待环境补测（用户确认后为 WARNING，归档摘要列出负责人与补测计划）（口径见 `skills/openspec-technical-review/shared/implementation-gate-check.md`）。
 
