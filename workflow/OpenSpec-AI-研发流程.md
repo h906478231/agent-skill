@@ -265,7 +265,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   tasks.md 按 tracer-bullet 垂直切片组织（规则：skills/openspec-propose/shared/task-slicing.md，
 #   由 /opsx:propose 生成 tasks 时自动加载）
 #   每个切片端到端可演示，Blocked by 显式声明，frontier 可并行
-#   发布前三问（粒度/阻塞边/合并拆分）由用户确认后定稿
+#   发布前四问（粒度/阻塞边/合并拆分/排除清单）由用户确认后定稿
 #   ◆ 卡点①：产物写完后跑 STE 检查 → 变更模型检查，退出码 0 才输出总结
 #     （处理口径：skills/openspec-ste/shared/gate-check.md）
 
@@ -275,7 +275,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   → overview.html（有变更模型时；变更前 / 对比 / 变更后三个视图）
 #   一页看懂流程、字段变更与规则条件是否遗漏
 #   标 ⚠️ 未落地 的条目视同 Blocker
-#   未生成时不阻断：verify 直接核对 review-summary.md 的条件清单
+#   未生成时不阻断：verify 不刷新总览，直接核对 review-summary.md 的条件清单
 
 # ── 分级判定 ────────────────────────────────────────
 # 根据上面的决策树判断：L0 / L1 / L2 / L3
@@ -314,14 +314,16 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   （规则：skills/openspec-code-quality/shared/dual-axis-review.md）
 
 # ── Phase 6：验证 ──────────────────────────────────
-/opsx:overview <change-name>     # 已生成 overview.md 时先刷新条件矩阵（按需）
 /opsx:verify <change-name>
+#   → 上一份 verification.md 无 CRITICAL、classify 无未登记文件且无「行为」档位时增量复核：只重跑脚本检查，三维结论沿用
 #   → 三维校验（Completeness / Correctness / Coherence）
 #      ※ Coherence 维度：实现与设计交叉核对
-#   → 再逐条核对条件矩阵（有 overview.md 时）或 review-summary.md 的条件清单，⚠️ 未落地项视同 Blocker
+#   → 直接核对 review-summary.md 的条件清单（不运行 /opsx:overview），结果写进 verification.md「评审条件」，archive 读取该小节
+#      条件对应任务或 <文件>:<行号>，两者都没有的条件视同 Blocker
 #   → 切片证据新鲜度 + 双轴裁决核对：缺失/过期证据、评审 BLOCKED 均为 CRITICAL
 #   → ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL
 #   → 补充人工核对清单（回溯第一性原理 / 方案选择一致性 / 可测试性 / 运维成本）
+#   → 存在 deployment.md 时核对每项的负责人与通过条件 / 达标条件，缺少记 WARNING；报告只写一行指向它
 
 # ── 收口 ─────────────────────────────────────────────
 /opsx:archive <change-name>
@@ -441,7 +443,7 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 |---------|---------|---------|
 | 先写代码，再补design.md | "倒推"的文档不是设计，门禁会发现矛盾 | 先explore确定方案，再review，最后apply |
 | 看到Blocker直接改代码 | 改了代码但design未更新 → 重跑仍报错 | 先回design.md闭环并填「评审意见闭环记录」 |
-| 「有条件通过」看完就忘 | 条件未落地等于失效 | 条件必须映射到tasks.md，Phase 6逐条核对 |
+| 「有条件通过」看完就忘 | 条件未落地等于失效 | 条件必须对应任务或 `<文件>:<行号>`，Phase 6逐条核对 |
 | review-summary.md随便签名 | 签字是"我负责"不是"我看过" | L2/L3不建议自签，签字前至少读完全文 |
 | 开发完删掉review/*.md | 删掉决策记录，半年后无人知道为什么这么定 | 提交git，archive自动归档到changes/archive/ |
 
@@ -513,11 +515,11 @@ BLOCKED必须先闭环Blocker并重走门禁 → 变成READY → 才能签字 �
 <details>
 <summary><strong>Q7: proposal/design/spec/tasks四份文档太散，怎么确认规则条件没遗漏？</strong></summary>
 
-**A**: 跑 `/opsx:overview <change>`（按需入口：字段与规则条件较多时推荐；未生成时 verify 直接核对 `review-summary.md` 的条件清单）。
+**A**: 跑 `/opsx:overview <change>`（按需入口：字段与规则条件较多时推荐；verify 不刷新总览，直接核对 `review-summary.md` 的条件清单）。
 
 「规则条件可追溯矩阵」把四类来源（proposal验收条件、spec scenario、design约束、review的「有条件通过」）合成一张表。
 
-映射不到 `tasks.md` 的条目会标 `⚠️ 未落地`，视同Blocker。
+任务与行号都没有的条目会标 `⚠️ 未落地`，视同Blocker（`review-summary` 的条件只需修改规划产物时，可以对应该产物的 `<文件>:<行号>`）。
 </details>
 
 <details>
@@ -624,7 +626,7 @@ OpenSpec Explore
 技术方案确认（design.md 含推荐方案）
       │
       ├─ tasks.md 任务拆分：垂直切片 + 阻塞 DAG（openspec-propose 的 shared/task-slicing.md）
-      │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户三问确认后定稿
+      │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户四问确认后定稿
       │    ◆ 卡点①（/opsx:propose）：STE 检查 → 变更模型检查，退出码 0 才输出总结
       │
       ├─ /opsx:overview（按需）→ overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
@@ -662,7 +664,7 @@ OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/
 双轴独立评审（Phase 5.5）→ /opsx:quality → review/standards.md + review/spec-fidelity.md + review/code-review-summary.md
       │  同一固定基线、两轴并行互不读取；任一轴未闭环 Blocker 不得归档
       ▼
-验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（有 overview.md 时用其条件矩阵，未生成时核对 review-summary.md 条件清单）+ 项目自有测试 + 切片证据新鲜度
+验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（读取 review-summary.md）+ 项目自有测试 + 切片证据新鲜度
       │  ※ 交叉验证 III：实现与设计交叉核对（Coherence 一致性校验）
       │  ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL
       ▼
@@ -684,7 +686,7 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**（L2/L3 至少 2 个方案，L0/L1 允许单一方案 + 不选其他方案的理由）；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；命中时含 `change-model` 代码块） | 否 |
 | （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
 | 变更总览（按需） | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
-| 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前三问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
+| 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前四问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 产物检查（四个卡点） | `/opsx:propose`、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查，再跑变更模型检查；阻断时 propose / update 修正后重跑，apply 停止，verify 记 CRITICAL | 无独立产物 | 否 |
 | 分级判定 | 人工（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md` | 否 |
 | Phase 3 技术评审门禁 | `/opsx:review` | 专项 Agent 并行评审已确定方案；**多角色多维度交叉验证（角色数按分级）** | `review/*.md` | 否 |
@@ -846,7 +848,9 @@ tasks.md 不按技术层水平拆分（「先做所有表，再做所有接口�
 - 体量装进一个全新 agent 会话；prefactoring 需求作为第一个切片
 - `Blocked by:` 显式声明，frontier 上的切片可并行领取
 - 宽重构例外：expand → 分批 migrate → contract，批批保 CI 绿
-- **发布前三问**（粒度 / 阻塞边 / 合并拆分）由用户确认后 tasks.md 定稿
+- 勾选项只写归档前能完成的工作：阶段动作、阶段规则已要求的检查、规划产物修改、未定决策、登记记录、发布动作、上线后观察、他人或外部系统的工作、没有交付物的确认（排除清单 E1–E9）写到各自的去处；`evidence` 的 `taskIssues` 报出要求运行阶段命令或 `git commit` / `git push` 的未勾选任务，verify 记 CRITICAL
+- 发布动作、上线后验收与交接项写入变更目录的 `deployment.md`（验收部署文档，规则见 `skills/openspec-apply-change/shared/deployment-document.md`）：Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件时，tasks 写一项编写它的任务；执行其中的条目不是任务，archive 不等待
+- **发布前四问**（粒度 / 阻塞边 / 合并拆分 / 排除清单）由用户确认后 tasks.md 定稿
 
 格式与规则唯一事实源：[`skills/openspec-propose/shared/task-slicing.md`](../skills/openspec-propose/shared/task-slicing.md)（`/opsx:propose` 生成 tasks artifact 时自动加载）。tasks.md 保持 checkbox 兼容，`/opsx:apply` 与 `/opsx:verify` 的进度解析不受影响。
 
@@ -923,20 +927,21 @@ finding 的 10 个字段、五条硬规则与「建议修复」的写法由 `ski
 
 ### 「有条件通过」的条件必须落地
 
-「有条件通过」不等于「通过」。**每一条「条件」必须映射到 `tasks.md` 的一个可勾选任务项**，否则条件写完就没人管，等同于失效。
+「有条件通过」不等于「通过」。**每一条「条件」必须有落地路径**：条件需要代码、测试、SQL、配置文件或交付文档时，对应 `tasks.md` 的一个可勾选任务项；条件只需修改规划产物时，对应该产物的行号 `<文件>:<行号>`，修改走 `/opsx:update`，不写成任务。否则条件写完就没人管，等同于失效。
 
 汇总时在 `review-summary.md` 中列出：
 
 ```markdown
 ## 有条件通过的条件清单
 
-| 条件ID | 来源维度 | 条件内容 | 对应 tasks.md 任务 | 状态 |
-|--------|---------|---------|-------------------|------|
+| 条件ID | 来源维度 | 条件内容 | 对应任务或行号 | 状态 |
+|--------|---------|---------|---------------|------|
 | C-01 | database | 幂等键唯一索引须 tenant_id 前导 | T-03 建表 DDL | 待实现 |
 | C-02 | performance | 批量 INSERT 须开 rewriteBatchedStatements | T-05 数据写入 | 待实现 |
+| C-03 | architecture | design.md 补充下游超时的降级决策 | design.md:120 | 待修改 |
 ```
 
-**无法映射到 tasks 的条件，视同 Blocker 处理** —— 因为它没有落地路径。
+**既没有对应任务、也没有对应行号的条件，视同 Blocker 处理** —— 因为它没有落地路径。
 
 Phase 6 验证时逐条核对条件是否真的满足，未满足不得归档。
 
@@ -1054,7 +1059,9 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - 适用范围按分级：**L2/L3 必须跑**；**L0/L1 推荐跑**，未生成不阻断归档（等级取变更目录 `overview.md` 的分级行；读不到等级时按 L2/L3 处理）。一旦创建了任一双轴产物，就必须按规则完整产出三份报告
 - 任一轴存在未闭环 Blocker 即 `BLOCKED`，不得归档
 - Blocker 只能按判据 B1–B5 判定（写错数据 / 越权 / 假勾选 / 正常输入下已有功能失败 / 吞异常记成功），触发场景以 `[Bn]` 开头；只在依赖故障或边界输入下出现的问题为 Major
-- 修复走 `tasks.md` 勾选（门禁外提交先登记任务）；修复后用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
+- 修复走 `tasks.md` 勾选；门禁外提交等实现后修改按档位（`非行为` / `等价` / `行为`）登记到 `tasks.md` 的 `## 实现后修改登记`，每行写登记指纹，同一文件再次修改时新增一行；`行为` 档位同时新增任务（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`）
+- 重跑前运行 `classify --from <上一轮指纹>`：只有注释差异时不开新一轮；否则用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
+- 等价增量轮（未登记为空、登记全部为 `等价`）只跑 Standards，Spec Fidelity 沿用上一轮报告，汇总写 `- Carried Axis: spec-fidelity`；`review` 校验沿用基线以来的变化文件只有注释差异或登记为 `等价`
 - 报告原地覆盖，禁止 `-roundN` 副本；闭环历史记在每轴报告的 `## Finding 台账`
 - 规则唯一事实源：`skills/openspec-code-quality/shared/dual-axis-review.md`
 - 历史变更已有的 `review/code-quality.md` 继续有效，不要求补跑双轴
@@ -1072,7 +1079,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - **Correctness**：requirement ↔ 代码实现映射、scenario 是否被覆盖
 - **Coherence**：**实现是否偏离 `design.md` 的既定决策**、代码风格与项目模式是否一致
 
-**切片证据与双轴评审核对**：缺失 / 不完整 / 失败 / 过期的切片证据、双轴评审 `BLOCKED` 均为 CRITICAL；与本切片行为无关的变化可按豁免格式登记，无法判断即按过期重跑（口径见 `skills/openspec-technical-review/shared/implementation-gate-check.md`）。
+**切片证据与双轴评审核对**：缺失 / 不完整 / 失败 / 过期的切片证据、双轴评审 `BLOCKED` 均为 CRITICAL；与本切片行为无关的变化可按豁免格式登记，无法判断即按过期重跑；声明了 `Environment:` 的切片可登记待环境补测（用户确认后为 WARNING，归档摘要列出负责人与补测计划）（口径见 `skills/openspec-technical-review/shared/implementation-gate-check.md`）。
 
 **产物检查**：与上一项同一阶段运行 STE 检查与变更模型检查，每个阻断项记为 CRITICAL，修正走 `/opsx:update`（口径见 `skills/openspec-ste/shared/gate-check.md`「Verify」列）。
 
@@ -1089,12 +1096,11 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 **必须单独做**：
 
-1. 存在 `overview.md` 时先跑一次 `/opsx:overview <change>` 刷新「规则条件可追溯矩阵」；未生成时直接核对 `review-summary.md` 的「有条件通过」条件清单
-2. 再逐条核对该矩阵或清单中每项是否真的实现
+1. 直接读取 `review-summary.md` 的「有条件通过」条件清单。不运行 `/opsx:overview`，也不要求刷新 `overview.md`；存在完整版 overview 时，报告写出它的「最近生成」日期与「依据轮次」
+2. 逐条核对：映射到任务时，任务已勾选、实现存在；映射到 `<文件>:<行号>` 时，该行存在并写明了条件
+3. 结果写进 `verification.md` 的「评审条件」小节（`条件 | 映射任务或行号 | 状态`），archive 读取该小节
 
-矩阵已把 `proposal` 验收条件、`spec` scenario、`design` 约束、`review-summary` 的「有条件通过」四类来源合并到一张表。
-
-标 `⚠️ 未落地` 的行视同 Blocker，不得归档。
+任务与行号都没有的条件视同 Blocker，不得归档。
 
 ---
 
@@ -1134,8 +1140,8 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - [ ] 若实现过程中改了方案，是否回填更新了 `design.md` 并重走门禁
 
 ### 3. 评审条件闭环（实现 → 评审）
-- [ ] `review-summary.md` 的「有条件通过」条件是否都映射到 `tasks.md` 并完成
-- [ ] 用 `overview.md` 的条件矩阵逐行核对（未生成 `overview.md` 时直接核对 `review-summary.md` 的条件清单），标 `⚠️ 未落地` 的行视同 Blocker
+- [ ] `review-summary.md` 的「有条件通过」条件是否都对应到任务或 `<文件>:<行号>`，并已闭环
+- [ ] 任务与行号都没有的条件视同 Blocker
 
 ### 4. 设计阶段可测试性验证（补充设计盲区）
 - [ ] 关键业务逻辑是否可单测（外部依赖是否可 mock）

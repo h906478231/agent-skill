@@ -13,7 +13,7 @@
 | Phase 2 方案探索 | `/opsx:explore`                  | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；状态变动或流程变动命中时写 `change-model` 代码块，规则见 `../../openspec-change-overview/shared/change-model.md`） | 否 |
 | （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
 | 变更总览（按需） | `/opsx:overview`                 | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
-| 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载 `../../openspec-propose/shared/task-slicing.md`） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前三问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
+| 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载 `../../openspec-propose/shared/task-slicing.md`） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前四问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 产物检查（四个卡点） | `/opsx:propose`、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查（禁用别名 / 非受控通用词 / 模糊词），再跑变更模型检查（CM-1～CM-6）；各卡点按退出码处理（`../../openspec-ste/shared/gate-check.md`）；archive 不重跑，靠 verify 的 CRITICAL 阻断 | 无独立产物；阻断项在对应卡点输出 | 否 |
 | 分级判定 | 人工（参照下表）                         | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md`（见 `gate-levels.md`） | 否 |
 | Phase 3 技术评审门禁 | `/opsx:review`                   | 专项 Agent 并行评审已确定方案；**多角色多维度交叉验证（角色数按分级）** | `review/*.md` | 否 |
@@ -44,7 +44,7 @@ OpenSpec Explore
 技术方案确认（design.md 含推荐方案）
       │
       ├─ tasks.md 任务拆分：垂直切片 + 阻塞 DAG（`../../openspec-propose/shared/task-slicing.md`）
-      │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户三问确认后定稿
+      │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户四问确认后定稿
       │    ◆ 卡点①（/opsx:propose）：STE 检查 → 变更模型检查，退出码 0 才输出总结
       │
       ├─ /opsx:overview（按需）→ overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
@@ -81,7 +81,7 @@ OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/
       │  Spec Fidelity Review  → review/spec-fidelity.md
       │  汇总裁决              → review/code-review-summary.md；任一轴未闭环 Blocker 不得归档
       ▼
-验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（用 overview.md 条件矩阵）+ 项目自有测试
+验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（读取 review-summary.md）+ 项目自有测试
       │  ※ 交叉验证 III：实现与设计交叉核对（Coherence 一致性校验）
       │  ※ 切片证据新鲜度 + 双轴裁决核对（`implementation-gate-check.md`）
       │  ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL

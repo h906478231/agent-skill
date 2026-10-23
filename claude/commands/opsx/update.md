@@ -51,6 +51,7 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - Apply the requested edit. Then check every other existing artifact against it - in ANY direction: an edit to a later artifact may require revising an earlier one, not only the other way around. Build order is a useful reading order, not a constraint on which artifacts may be revised.
    - Note everything that is now inconsistent, missing, or contradictory.
    - When the revised artifact is `proposal.md` or `design.md`, keep the repository-mandated blocks intact and compliant: proposal 的「第一性原理分析」区块、design 的「候选方案交叉验证矩阵」（分级判据见 `cross-validation.md`：L2/L3 至少 2 个候选，L0/L1 允许单一方案 + 不选其他方案的理由）与（L2/L3）「测试 Seam 决策」区块。规则在 skill `openspec-explore` 的 `shared/`（找不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md`）：`first-principles.md`、`cross-validation.md`、`seam-decisions.md`。若某次修改会让这些区块缺失或不满足判据，等于把变更退回 Phase 1/2，必须向用户说明后再改，不得静默放行。
+   - 修改 `tasks.md` 时（本仓自加），新增与修改的任务按 skill `openspec-propose` 的 `shared/task-slicing.md`「勾选项只写归档前能完成的工作」的四条标准与「排除清单」逐项自查：命中清单的内容不写成勾选项，写到对应去处；一项任务含两类内容时拆开写。
    - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/opsx:propose` to create them.
    - If the change is already coherent, say so and make no edits.
 

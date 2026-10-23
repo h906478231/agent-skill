@@ -48,7 +48,11 @@ description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec 
 1. 解析变更名，`openspec status --change "<name>" --json` 取 `changeRoot`。
 2. 确认有 diff：`git status --short` 与 `git diff --stat`（变更已提交时用变更起点到 HEAD 的范围，`git log` 定位起点 commit）。**diff 为空则中止**，提示先完成 `/opsx:apply`。
 3. 在 `changeRoot` 下创建 `review/` 目录。
-4. **重跑时登记门禁外提交**：运行 `node <GATE> fingerprint <changeRoot>`，与上一轮报告基线的 `Fingerprint` 比较。不同且 `tasks.md` 没有对应任务时（修复不是通过 `/opsx:apply` 提交的），先在 `tasks.md` 新增一个任务，写明提交 SHA 或文件，再进入 Step 1。
+4. **重跑时按档位登记实现后修改**：运行 `node <GATE> classify <changeRoot> --from <上一轮报告基线的 Fingerprint>`，按 `<SKILL_DIR>/../openspec-apply-change/shared/post-implementation-changes.md` 处理结果：
+   - `other` 为空（全部文件只有注释差异）：输出「无需新一轮：自上一轮基线以来只有注释差异」并停止，不生成新基线，报告保持不变。
+   - 只在新增并已勾选的任务内修改的文件（按 apply 规则勾选，切片证据新鲜）：`classify` 仍把它们列入 `unregistered`，但它们不是实现后修改（事实源「定义」），不登记；勾选之后又有修改时照常登记，修改与任务对应不上或拿不准时照常登记，判断方法见事实源登记步骤 6。上一轮之后的修改全部属于这类时，进入 Step 1，两轴按增量执行。
+   - 其他情况下 `unregistered` 或 `issues` 不为空（含门禁外提交）：先按档位登记到 `tasks.md` 的 `## 实现后修改登记`，再进入 Step 1。不属于上述文件的条目照常登记。`行为` 档位同时新增任务，写明提交 SHA 或文件；`等价` 档位先经用户确认。
+   - 退出码 `2`（上一轮 tree 对象已被回收）：无法核对登记，自上一轮以来修改的文件按 `行为` 登记，本轮按第 1 轮审查完整 diff。
 
 ## 执行步骤
 
@@ -84,9 +88,11 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>] --since <上一
 
 环境不支持子 agent 时，按「Standards → Spec Fidelity」顺序执行，并在汇总「执行方式」列标注 `顺序执行（独立性降级）`（规则见 `shared/dual-axis-review.md`「独立性」）。
 
+**等价增量轮**：前置第 4 步 `classify` 的 `unregistered` 为空、`registered` 全部为 `等价` 时，只启动 Standards 子 agent；`review/spec-fidelity.md` 不修改，保留上一轮基线区块；Step 3 汇总写 `- Carried Axis: spec-fidelity`（规则见 `shared/dual-axis-review.md`「修复与重跑」）。`registered` 中有 `行为` 档位时两轴都启动。
+
 ### Step 3 — 汇总与裁决
 
-读取两份原始报告，按 `shared/dual-axis-review.md`「汇总报告」骨架写入 `review/code-review-summary.md`：基线区块 → 两轴状态 → 未闭环 Blocker 索引 → 同位置关联（可选） → `Code Review Verdict: PASSED / BLOCKED`。汇总只引用 finding ID 与原始报告路径，**不复制、不改写、不删除**原始 finding。
+读取两份原始报告，按 `shared/dual-axis-review.md`「汇总报告」骨架写入 `review/code-review-summary.md`：基线区块 → 两轴状态 → 未闭环 Blocker 索引 → 同位置关联（可选） → `Code Review Verdict: PASSED / BLOCKED`。汇总只引用 finding ID 与原始报告路径，**不复制、不改写、不删除**原始 finding。等价增量轮在「两轴状态」之前写 `- Carried Axis: spec-fidelity`，Spec Fidelity 行的执行方式写 `沿用（基线 <spec-fidelity.md 的 Fingerprint>）`。
 
 ### Step 4 — 命令级校验
 
@@ -95,16 +101,16 @@ node <GATE> review <changeRoot>
 ```
 
 - 退出码 `0`：裁决 `PASSED` 且报告结构完整，可进入 `/opsx:verify`。
-- 退出码 `1` 且 `issues` 非空：报告结构有问题（缺文件、基线不一致、finding 不可定位、结论与 Blocker 矛盾、汇总自述裁决不符、Blocker 缺少 `[B1]`–`[B5]` 判据、Finding 台账缺失或不一致），修正后重跑本步骤。
+- 退出码 `1` 且 `issues` 非空：报告结构有问题（缺文件、基线不一致、finding 不可定位、结论与 Blocker 矛盾、汇总自述裁决不符、Blocker 缺少 `[B1]`–`[B5]` 判据、Finding 台账缺失或不一致、`Carried Axis` 沿用条件不成立），修正后重跑本步骤。沿用条件不成立时，按档位登记或两轴都重跑。
 - 退出码 `1` 且 `verdict = BLOCKED`：向用户列出各轴 `openBlockers`，按下方「裁决与闭环」处理。
 - `warnings` 中的基线陈旧提醒：评审后代码又变了，判断是否重跑双轴。
 
 ## 裁决与闭环
 
 - 裁决规则见 `shared/dual-axis-review.md`「裁决规则」：**任一轴存在未闭环 Blocker 即 `BLOCKED`，不得 `/opsx:archive`**。
-- 「有条件通过」的每个条件必须映射到 `tasks.md` 的一个勾选项，**映射不到视同 Blocker**。
+- 「有条件通过」的每个条件必须对应 `tasks.md` 的一个勾选项，或者（只需修改规划产物时）对应该产物的 `<文件>:<行号>`；**两者都没有时视同 Blocker**。
 - Blocker 只能按 `shared/dual-axis-review.md`「Blocker 判据（B1–B5）」判定；只在依赖故障或边界输入下出现的问题定为 Major。
-- 修复即改代码：修复后用 `--since` **重新生成增量基线、两轴都重跑**（只审查 delta），对上轮 Blocker 逐条核实 —— 要指到具体行确认已落地，只看提交说明不算闭环。
+- 修复即改代码：修复后用 `--since` **重新生成增量基线、两轴都重跑**（只审查 delta；等价增量轮只跑 Standards，见 Step 2），对上轮 Blocker 逐条核实 —— 要指到具体行确认已落地，只看提交说明不算闭环。
 - 已闭环项写入本轴 `## Finding 台账`（`closed` + 闭环轮次 + `文件:行号` 或测试名），不再放进 Findings 表；报告原地覆盖，**禁止**生成 `-roundN` 副本（规则见 `../openspec-technical-review/shared/closed-loop-verification.md`「实现后双轴评审的差异」）。
 - 误报或知情接受：按 `../openspec-technical-review/shared/gate-policy.md` 第 4 节的驳回 / risk accepted 格式记录在**对应轴的原始报告**，写明决策人与理由，不改代码就不重跑。
 

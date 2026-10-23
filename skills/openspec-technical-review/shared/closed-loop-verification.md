@@ -54,4 +54,4 @@ finding ID | 维度 | 原始问题 | 处理方式 | 落在 design 的哪一节 |
 - **闭环来源**：本轴上一轮报告的 `## Finding 台账` 中 `open` 的行（不是 `design.md` 的闭环记录区块）。核实对象是代码与测试，不是 design 章节。
 - **已闭环项写入台账**：把该行 `状态` 改为 `closed`，填 `闭环轮次`，`闭环依据` 写实现位置 `文件:行号` 或覆盖它的测试名。已闭环项**不再放进 Findings 表**，只留在台账中。台账行不删除。
 - **报告原地覆盖**：重跑覆盖上一轮报告，不生成 `-roundN` 副本；轮次历史由台账保留（格式见 `../openspec-code-quality/shared/dual-axis-review.md`「原地覆盖与 Finding 台账」）。
-- **门禁外提交**：修复代码不是通过 `/opsx:apply` 提交时（当前实现指纹与上一轮基线不同，且 `tasks.md` 没有对应任务），先在 `tasks.md` 登记一个任务，写明提交 SHA 或文件，再开始下一轮评审。闭环依据必须指到该提交中的具体行。
+- **门禁外提交**：修复代码不是通过 `/opsx:apply` 提交时（`classify --from <上一轮基线 Fingerprint>` 的 `unregistered` 中有其他文件：只在新增并已勾选的任务内修改的文件不算，勾选之后又有修改时照常登记，修改与任务对应不上或拿不准时照常登记，判断方法见登记步骤 6），先按档位登记到 `tasks.md` 的 `## 实现后修改登记`，`行为` 档位同时新增任务并写明提交 SHA 或文件，再开始下一轮评审（规则见 `../openspec-apply-change/shared/post-implementation-changes.md`）。闭环依据必须指到该提交中的具体行。

@@ -18,7 +18,7 @@ tags: [workflow, overview, traceability]
 
 - `overview.md` 是**派生视图**，整体重新生成，**禁止手改** —— 内容有误请改事实源后重跑。
 - 事实源没写的一律标 `未定义`，不得用常识补全。
-- 规则条件矩阵必须覆盖 `proposal` 验收条件 / `spec` scenario / `design` 约束 / `review-summary` 的「有条件通过」条件四类来源；**映射不到 tasks 的条件标 `⚠️ 未落地`，视同 Blocker**，且未落地条数要写在文件开头。
+- 规则条件矩阵必须覆盖 `proposal` 验收条件 / `spec` scenario / `design` 约束 / `review-summary` 的「有条件通过」条件四类来源；**既没有对应任务、也没有对应行号的条件标 `⚠️ 未落地`，视同 Blocker**（`review-summary` 的条件只需修改规划产物时，可以对应该产物的 `<文件>:<行号>`），且未落地条数要写在文件开头。
 
 ## 产物
 
@@ -26,12 +26,12 @@ tags: [workflow, overview, traceability]
 
 ## 刷新时机
 
-本命令是**按需入口**：L2/L3 或字段与规则条件较多的变更推荐在下列时机各刷新一次；L0/L1 与未生成 `overview.md` 的变更不要求，`/opsx:verify` 直接核对 `review-summary.md` 的条件清单。
+本命令是**按需入口**：L2/L3 或字段与规则条件较多的变更推荐在下列时机各刷新一次；L0/L1 与未生成 `overview.md` 的变更不要求。`/opsx:verify` 不刷新总览，直接核对 `review-summary.md` 的条件清单。
 
-`design.md` 定稿后首次生成 → 门禁出 `review-summary.md` 后刷新 → `/opsx:verify` 前刷新并逐条核对条件落地情况。
+`design.md` 定稿后首次生成 → 门禁出 `review-summary.md` 后刷新。
 
 ## 关联
 
 - 上游：`/opsx:explore`、`/opsx:propose`
-- 下游：`/opsx:review`（评审前对齐）、`/opsx:verify`（条件核对）
+- 下游：`/opsx:review`（评审前对齐）、`/opsx:verify`（报告写出总览的「最近生成」日期与「依据轮次」）
 - 完整流程：`workflow/OpenSpec-AI-研发流程.md`

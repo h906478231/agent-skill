@@ -25,11 +25,13 @@ node <GATE> review <changeRoot>
 | `evidence.applicable = false` | 报告写「切片证据：<reason>」，不计 CRITICAL |
 | 切片 `status` 为 `missing` / `incomplete` / `failed` / `no-reference`（出现在 `issues`） | **CRITICAL**，逐条列出切片编号与原因。`Result: PASS_WITH_BASELINE` 按通过处理；缺 `Baseline List` / `Introduced Failures` 记为 `incomplete`，本次引入的失败不为 0 记为 `failed` |
 | 切片 `status = stale` | **CRITICAL**。按 `changedSinceEvidence` 判断：变化可能影响本切片 → 重跑该切片验证并更新证据；确认**全部**变化与本切片行为无关 → 按 `slice-evidence.md`「豁免记录格式」登记后重跑 `evidence`；无法判断 → 按过期重跑 |
+| 切片 `status = pending-environment`（出现在 `warnings`） | WARNING，写出切片编号、`pendingEnvironment` 的负责人与补测计划。不计 CRITICAL（规则见 `slice-evidence.md`「待环境补测」） |
 | `evidence.warnings`（切片未全部勾选时的问题） | WARNING（未完成任务本身已是 CRITICAL） |
+| `evidence.taskIssues`（未勾选任务要求运行阶段命令或执行 `git commit` / `git push`） | **CRITICAL**，逐条写出任务编号、`kind` 与命中文本。修正方式是改写任务，把内容移到 `../../openspec-propose/shared/task-slicing.md`「排除清单」的去处；不是等阶段动作完成，也不是执行 git 命令。`evidence.applicable = false` 时同样处理 |
 | `review.applicable = false` | 报告写「双轴评审：<reason>」 |
 | `review.verdict = BLOCKED` | **CRITICAL**，列出各轴 `openBlockers`，回 `/opsx:quality` 闭环 |
 | `review.verdict = INCOMPLETE` 或 `review.issues` 非空 | **CRITICAL**，补齐或修正评审报告后重跑 |
-| `review.warnings`（评审基线指纹 ≠ 当前实现） | WARNING：评审后实现有变化，判断是否需要重跑双轴 |
+| `review.warnings`（评审基线指纹 ≠ 当前实现，且不只有注释差异） | WARNING：评审后实现有变化。运行 `classify --from <评审基线 Fingerprint>`，未登记的文件按 `../../openspec-apply-change/shared/post-implementation-changes.md` 按档位登记，再按档位决定是否回 `/opsx:quality` 重跑 |
 
 脚本之外，Verify 还需人工核对两点（脚本无法判断语义）：
 
@@ -48,7 +50,7 @@ node <GATE> archive <changeRoot>
 
 | 退出码 | 处理 |
 |--------|------|
-| `0` | 本项通过；把 `notes`（不适用理由）与 `warnings` 写进归档摘要，继续 archive 其余前置校验 |
+| `0` | 本项通过；把 `notes`（不适用理由，以及待环境补测切片的负责人与补测计划）与 `warnings` 写进归档摘要，继续 archive 其余前置校验。`pending-environment` 的切片不阻断归档 |
 | `1` | **拒绝归档**，向用户列出 `blockers`（含切片编号或 finding ID），回到对应阶段处理：评审 Blocker → `/opsx:quality`；缺失 / 过期证据 → 重跑切片验证（`/opsx:apply` 的证据规则）后 `/opsx:verify` |
 | `2` | 参数或环境错误（非 git 仓库、缺 Node.js 等）：**不得视为通过**，修复环境后重跑；证据新鲜度无法核实即按过期处理 |
 
