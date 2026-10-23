@@ -252,7 +252,7 @@ const REVIEW_ROLES = {
 
 - **AutoCommit 默认关闭**：只有本次调用显式传入 `autoCommit: true` 才授权本地 commit，不从用户全局配置继承（`workflow.js:60-61`）。
 - 即便授权提交，也只允许本地 commit：禁止 `git add .`、amend、push、创建 PR；且必须核对 `commitSha` 格式（`workflow.js:222-226`）。
-- 评论、归档、关闭云舟任务等外部动作**一律不在本工作流内执行**。
+- 评论、归档、关闭云舟任务等外部动作**一律不在本工作流内执行**。需要回写云舟时，在工作流之外经用户确认执行：需求方案评论用 `flows-solution-comment`，缺陷排查评论用 `flows-defect-investigation-comment`，研发说明与 commit 登记用 `flows-role-comment`；归档后完成任务见 `skills/openspec-archive-change/shared/yunzhou-task-completion.md`。
 
 ### 4. 凭据管理
 

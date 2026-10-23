@@ -105,6 +105,10 @@ Archive a completed change in the experimental workflow.
    - Implementation gate result: passed, or the "不适用" reasons from `archive` notes（本仓自加）
    - Note about any warnings (incomplete artifacts/tasks)
 
+7. **归档后：云舟任务（本仓自加，非上游原文）**
+
+   归档成功、并且变更关联了云舟任务时（变更名为 `yunzhou-<taskId>`，或 `proposal.md` 有一行 `云舟任务：<taskId>`），读取 skill `openspec-archive-change` 的 `shared/yunzhou-task-completion.md`（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-archive-change/shared/yunzhou-task-completion.md`），按其步骤执行：用户确认后才把任务标记为完成，并回读确认。没有关联时跳过本步，不询问。
+
 **Output On Success**
 
 ```

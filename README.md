@@ -28,7 +28,7 @@ docs/            接入与使用文档
 
 ### 一键安装（推荐）
 
-安装所有 41 个 skills 到支持的 AI 编码工具：
+安装所有 43 个 skills 到支持的 AI 编码工具：
 
 ```bash
 npx skills add h906478231/agent-skill -g -a '*'
@@ -119,9 +119,19 @@ npx skills remove --skill ddd-aggregate
 | `openspec-ste` | 中文 STE 检查：propose / update / apply / verify 四个卡点阻断禁用别名、非受控通用词与模糊词；含 Claude Code Stop hook（需手动注册） | 无（由四个卡点调用） |
 | `openspec-explainer-video` | 按人工要求为含变更模型的变更生成讲解视频：AI 编写分镜，人工签署后用 Manim 渲染配音与中文硬字幕；默认离线 TTS，不进入默认流程。依赖由 `video.mjs doctor` 给出安装指引 | `/opsx:video` |
 
-### 其他（2 个）
+### 云舟任务评论（3 个）
 
-`concurrency-analysis` `flows-role-comment`
+| skill | 写什么 | 何时 |
+|---|---|---|
+| `flows-solution-comment` | 需求方案评论：目标、方案对比、选定方案、影响范围、评审结论 | 需求、优化任务实施前 |
+| `flows-defect-investigation-comment` | 缺陷排查评论：现象、复现、证据、根因、排除的假设 | 缺陷排查中与修复后 |
+| `flows-role-comment` | 研发说明与协作说明，并登记 commit；随云舟插件市场每日自动更新，本仓不修改 | 代码提交后 |
+
+三个 skill 都用 `flows-cli` 读写，先出草稿，用户确认后才发布。归档后经用户确认完成云舟任务的规则见 `skills/openspec-archive-change/shared/yunzhou-task-completion.md`。
+
+### 其他（1 个）
+
+`concurrency-analysis`
 
 ## 研发流程
 

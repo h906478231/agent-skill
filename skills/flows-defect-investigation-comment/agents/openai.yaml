@@ -1,0 +1,4 @@
+interface:
+  display_name: "云舟缺陷排查评论"
+  short_description: "记录缺陷的现象、证据、根因与排除的假设"
+  default_prompt: "使用 $flows-defect-investigation-comment 为这个云舟缺陷任务整理缺陷排查评论，先给我看草稿，确认后再发布。"
