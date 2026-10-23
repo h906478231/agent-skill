@@ -238,7 +238,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    **排除清单核对（本仓自加，不属于上述清单，不视同 Blocker）**：逐项核对 `tasks.md` 的任务是否写入了 skill `openspec-propose` 的 `shared/task-slicing.md`「排除清单」中的内容（E1–E9）。`taskIssues` 已报出的任务按上文记 CRITICAL；其余命中清单的任务每项记 WARNING，写出类别编号与去处。例如已勾选的「确认回滚语义不变」没有对应测试 → WARNING，类别 E9，去处是一个测试，或写进可能影响回滚语义的任务的完成标准。
 
-   **验收部署文档核对（本仓自加，不视同 Blocker）**：按 skill `openspec-apply-change` 的 `shared/deployment-document.md`「Verify 核对」执行。存在 `deployment.md` 时，逐项核对负责人，以及通过条件或达标条件，缺少时每项记 WARNING，写出小节与条目；命中创建条件（`design.md` 的 Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件）却没有该文件时，记 WARNING；都没有命中时不报出问题。报告只在 Summary 写一行指向 `deployment.md`，不重复列出条目。
+   **验收部署文档核对（本仓自加，不视同 Blocker）**：按 skill `openspec-apply-change` 的 `shared/deployment-document.md`「Verify 核对」执行。存在 `deployment.md` 时，逐项核对负责人，以及通过条件或达标条件，缺少时每项记 WARNING，写出小节与条目；命中创建条件（`design.md` 的 Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件，或「测试 Seam 决策」有 e2e 测试）却没有该文件时，记 WARNING；都没有命中时不报出问题。报告只在 Summary 写一行指向 `deployment.md`，不重复列出条目。
 
    **人工核对建议**：
    - 在完成自动校验后，逐项核对以上清单

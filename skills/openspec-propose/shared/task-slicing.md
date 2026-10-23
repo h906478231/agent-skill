@@ -46,7 +46,7 @@ Evidence: evidence/slice-02.md
 - `Blocked by:` 必写，无依赖时写「无（可立即开始）」
 - `Seam:` 行引用 design.md「测试 Seam 决策」区块声明的公共边界（L2/L3 变更必写）
 - `Evidence:` 行指向该切片的新鲜证据记录，路径固定为 `evidence/slice-<id>.md`（相对变更目录，`<id>` 取标题编号）；生成 tasks 时就写上，证据文件由 apply 在勾选前生成。模板、生成时机与新鲜度规则见 `../../openspec-apply-change/shared/slice-evidence.md`
-- `Environment:` 行可选，写法为 `Environment: <环境名称>`（如 `Environment: 测试环境`）。只在切片的验收依赖本地无法提供的环境时写，提案时声明；之后增加要走 `/opsx:update`，并经用户确认。声明后，该切片证据过期且无法在本地重跑时，可以按 `../../openspec-apply-change/shared/slice-evidence.md`「待环境补测」登记，不阻断归档
+- `Environment:` 行可选，写法为 `Environment: <环境名称>`（如 `Environment: 测试环境`）。只在切片的集成测试需要本地无法启动的中间件或第三方系统时写（测试分类见 `../../openspec-apply-change/shared/tdd-discipline.md`「测试分类」），提案时声明；之后增加要走 `/opsx:update`，并经用户确认。声明后，集成测试在本地无法运行时（记录证据时，或证据过期后），可以按 `../../openspec-apply-change/shared/slice-evidence.md`「待环境补测」登记，用户确认后不阻断归档
 - `Blocked by:` / `Seam:` / `Evidence:` / `Environment:` 都写在 checkbox 之外，不得塞进 `- [ ]` 行
 - 任务项编号在切片内递增，勾选状态是唯一进度事实源
 
@@ -73,13 +73,13 @@ Evidence: evidence/slice-02.md
 | E4 | 未定的决策与设计输入：细化、定稿、评估、选择策略、为设计参数采集数据 | `design.md` 的 Open Questions，或在 propose 之前的 explore 与 grill |
 | E5 | 登记与记录：门禁外提交、risk accepted、签字 | 实现后修改登记表（`../../openspec-apply-change/shared/post-implementation-changes.md`）、`design.md` 的 Risk Accepted、`review-summary.md` 的签字行 |
 | E6 | 发布动作：合并、部署、灰度、生产环境的 SQL 或数据修复 | 变更目录的 `deployment.md`（验收部署文档）的「发布前检查」「部署与回滚」，规则见 `../../openspec-apply-change/shared/deployment-document.md` |
-| E7 | 上线后观察，以及流量停止后删除旧入口 | `deployment.md` 的「上线后验收」（`../../openspec-apply-change/shared/deployment-document.md`）。删除旧入口是一个新变更 |
+| E7 | 上线后观察、e2e 测试的执行，以及流量停止后删除旧入口 | `deployment.md` 的「上线后验收」（`../../openspec-apply-change/shared/deployment-document.md`）。删除旧入口是一个新变更 |
 | E8 | 其他人或外部系统的工作：运维配置告警、通知第三方、团队知识库、任务跟踪系统、commit、push、PR | `deployment.md` 的「交接项」，写明负责人（`../../openspec-apply-change/shared/deployment-document.md`）。commit、push 与外部回写要用户另行授权 |
 | E9 | 没有交付物的确认，如「确认 X 不受影响」 | 一个测试，或写进可能影响 X 的任务的完成标准 |
 
 - **同一项任务含两类内容时拆开写**：工作留在任务中，清单中的内容移到去处。例如「编写发布步骤并在日志平台配置告警」：发布步骤留在任务中，告警配置写成 `deployment.md` 的交接项。
-- **测试环境、预发环境的验证是任务**，所在切片声明 `Environment:`（见上文「tasks.md 格式」）。
-- **编写验收部署文档是任务**：`design.md` 的 Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件时，写一项任务：按 `../../openspec-apply-change/shared/deployment-document.md` 编写 `deployment.md`。执行其中的条目不是任务。其他变更不写这项任务。
+- **编写测试是任务，测试分类决定在哪里运行**（`../../openspec-apply-change/shared/tdd-discipline.md`「测试分类」）：集成测试要在测试环境中运行时，所在切片声明 `Environment:`（见上文「tasks.md 格式」）；e2e 测试的代码是任务，执行写入 `deployment.md`「上线后验收」（E7）。
+- **编写验收部署文档是任务**：`design.md` 的 Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件，或「测试 Seam 决策」有 e2e 测试时，写一项任务：按 `../../openspec-apply-change/shared/deployment-document.md` 编写 `deployment.md`。执行其中的条目不是任务。其他变更不写这项任务。
 - **自查**：`/opsx:propose`、`/opsx:ff`、`/opsx:update` 写入或修改 tasks 时，逐项按本清单自查。
 - **核对**：门禁脚本 `../../openspec-technical-review/scripts/implementation-gate.mjs` 的 `evidence` 命令输出 `taskIssues`，报出要求运行阶段命令（E1）或执行 `git commit` / `git push`（E8）的未勾选任务，Verify 逐条记 CRITICAL，修正方式是改写任务、内容移到去处，不是等阶段动作完成或执行 git 命令（见 `../../openspec-technical-review/shared/implementation-gate-check.md`）。其他类别无法用文本模式可靠判断，由 Verify 人工核对，记 WARNING，写出类别与去处。
 

@@ -22,13 +22,13 @@ A checkbox in `tasks.md` SHALL satisfy all four conditions:
 | E4 | Open decisions and design inputs: refine, finalize, evaluate, choose a strategy, collect data for a design parameter | The Open Questions of `design.md`, or explore and grill before propose |
 | E5 | Registrations and records: commits outside the gate, risk acceptance, sign-off | The registration table of post-implementation changes, Risk Accepted of `design.md`, the sign-off line of `review-summary.md` |
 | E6 | Release actions: merge, deploy, gray release, SQL or data fixes in production | `deployment.md` |
-| E7 | Observation after release, and removal of an old entry point after its traffic stops | `deployment.md`. The removal is a new change |
+| E7 | Observation after release, execution of e2e tests, and removal of an old entry point after its traffic stops | `deployment.md`. The removal is a new change |
 | E8 | Work of other people or of external systems: alert configuration by operations, notices to third parties, team knowledge bases, task trackers, commit, push, pull requests | Hand-over items of `deployment.md` with an owner. Commit, push and write-back need a separate authorization of the user |
 | E9 | Confirmations without a deliverable, such as "X is not affected" | A test, or the completion standard of the task that can affect X |
 
 When one task contains both work and content from the list, the author SHALL split the task and SHALL move the content to its destination. `/opsx:propose`, `/opsx:ff` and `/opsx:update` SHALL check new and changed tasks against the list. The questions before `tasks.md` becomes final SHALL include the question whether a task contains content from the list.
 
-A verification in a test or pre-release environment is a task. Its slice SHALL declare `Environment:`.
+Writing a test is a task. The category of the test decides where it runs (ADR-0007). An integration test that runs in a test environment is a task, and its slice SHALL declare `Environment:`. The execution of an e2e test SHALL NOT be a task: it goes to the acceptance after release in `deployment.md` (E7).
 
 During its manual check, verify SHALL report a WARNING for each task that matches the list. The WARNING SHALL name the category and the destination.
 
@@ -98,7 +98,7 @@ Verify SHALL report each entry as CRITICAL. The fix SHALL be to rewrite the task
 
 ### Requirement: Release work after archive SHALL be recorded in the acceptance deployment document
 
-A change SHALL have `deployment.md` in its change directory when the Migration Plan of `design.md` has a step in production, or when Risk Accepted of `design.md` has a re-check condition after release. Other changes SHALL NOT need the file.
+A change SHALL have `deployment.md` in its change directory when the Migration Plan of `design.md` has a step in production, or when Risk Accepted of `design.md` has a re-check condition after release, or when the test seam decisions of `design.md` have an e2e test. Other changes SHALL NOT need the file.
 
 `deployment.md` SHALL have four sections: release checks, deploy and rollback, acceptance after release, and hand-over items. Each section SHALL use a table with an owner column and a status column. The file SHALL NOT use checkboxes. Each item of the acceptance after release SHALL state the metric, the observation window, the pass condition and the action when the condition fails. When a slice is pending an environment, its re-test plan SHALL be an item of the release checks.
 
@@ -112,6 +112,12 @@ Writing `deployment.md` SHALL be a task. Doing its items SHALL NOT be a task. Ar
 - **AND** no task asks for the observation
 - **AND** `deployment.md` lists the observation in the acceptance after release with an owner and a pass condition
 
+#### Scenario: E2e test goes to the acceptance after release
+- **WHEN** the test seam decisions of `design.md` map a behavior to an e2e test
+- **THEN** a task writes the e2e test code
+- **AND** no task asks to run the e2e test
+- **AND** `deployment.md` lists the e2e test in the acceptance after release with an owner and a pass condition
+
 #### Scenario: Archive does not wait for release items
 - **WHEN** every task is checked and an item of the acceptance after release has the status 未开始
 - **THEN** archive does not block on that item
@@ -121,5 +127,5 @@ Writing `deployment.md` SHALL be a task. Doing its items SHALL NOT be a task. Ar
 - **THEN** verify reports a WARNING that names the item
 
 #### Scenario: Change without production steps needs no document
-- **WHEN** the Migration Plan has no step in production and Risk Accepted has no re-check condition after release
+- **WHEN** the Migration Plan has no step in production, Risk Accepted has no re-check condition after release, and the test seam decisions have no e2e test
 - **THEN** verify reports no issue about `deployment.md`

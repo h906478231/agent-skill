@@ -829,6 +829,7 @@ Phase 2 除方案矩阵外，必须确定**从哪些公共边界（Seam）验证
 
 - **L2/L3 变更**：design.md 必含该区块，缺失不得进入 Phase 3 门禁
 - **L0/L1 变更**：建议有；缺省时 apply 阶段先与用户口头确认测试边界
+- 每个验收行为写出测试分类：单元测试、集成测试或 e2e 测试（按运行依赖区分，见 `skills/openspec-apply-change/shared/tdd-discipline.md`「测试分类」与 `docs/adr/0007-test-categories-by-runtime-dependency.md`）
 
 规则唯一事实源：`skills/openspec-explore/shared/seam-decisions.md`。
 
@@ -854,7 +855,7 @@ tasks.md 不按技术层水平拆分（「先做所有表，再做所有接口�
 - `Blocked by:` 显式声明，frontier 上的切片可并行领取
 - 宽重构例外：expand → 分批 migrate → contract，批批保 CI 绿
 - 勾选项只写归档前能完成的工作：阶段动作、阶段规则已要求的检查、规划产物修改、未定决策、登记记录、发布动作、上线后观察、他人或外部系统的工作、没有交付物的确认（排除清单 E1–E9）写到各自的去处；`evidence` 的 `taskIssues` 报出要求运行阶段命令或 `git commit` / `git push` 的未勾选任务，verify 记 CRITICAL
-- 发布动作、上线后验收与交接项写入变更目录的 `deployment.md`（验收部署文档，规则见 `skills/openspec-apply-change/shared/deployment-document.md`）：Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件时，tasks 写一项编写它的任务；执行其中的条目不是任务，archive 不等待
+- 发布动作、上线后验收与交接项写入变更目录的 `deployment.md`（验收部署文档，规则见 `skills/openspec-apply-change/shared/deployment-document.md`）：Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件，或「测试 Seam 决策」有 e2e 测试时，tasks 写一项编写它的任务；执行其中的条目不是任务，archive 不等待
 - **发布前四问**（粒度 / 阻塞边 / 合并拆分 / 排除清单）由用户确认后 tasks.md 定稿
 
 格式与规则唯一事实源：[`skills/openspec-propose/shared/task-slicing.md`](../skills/openspec-propose/shared/task-slicing.md)（`/opsx:propose` 生成 tasks artifact 时自动加载）。tasks.md 保持 checkbox 兼容，`/opsx:apply` 与 `/opsx:verify` 的进度解析不受影响。
@@ -1029,6 +1030,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - 只在 design.md「测试 Seam 决策」区块声明的公共边界写测试；未声明的边界先问
 - red before green；一次一个切片，切片内一次一个行为（一个失败测试 → 最小实现 → 下一个）
 - 每完成一个任务项：跑单个测试文件 + 类型检查；全部完成：跑完整测试套件
+- 测试按运行依赖分三类：单元测试勾选前必须通过；集成测试本地起不了中间件时，切片声明 `Environment:` 并登记待环境补测，用户确认后不阻断归档；e2e 测试的执行写入 `deployment.md`「上线后验收」，不是任务
 - 重构不进 red-green 循环，留给 `/opsx:quality`（Phase 5.5）
 - 规则唯一事实源：`skills/openspec-apply-change/shared/tdd-discipline.md`
 
@@ -1036,6 +1038,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - 切片声明了 `Evidence: evidence/slice-<id>.md` 时，每个任务项勾选前：跑验证命令 → 取实现指纹 → 写入 / 更新证据 → `Result: PASS` 后才勾选
 - 证据记录行为、Seam、实现指纹、变更文件、验证命令与结果、覆盖的验收行为、剩余风险；命令按项目自身约定选择，只记实际执行的结果
 - 全部切片完成跑完整测试套件时，同步刷新各切片证据指纹
+- `Environment:` 切片的集成测试在记录证据时无法在本地运行：证据只写本地实际运行的命令，待环境补测登记的登记指纹写证据指纹，用户确认后只记 WARNING；补测完成后删除登记行
 - 完整套件有失败时，用 `implementation-gate.mjs regress` 与基线失败清单（默认 `docs/test-baseline.txt`）比较：只剩已知基线失败记 `PASS_WITH_BASELINE`（带 `Baseline List` 与 `Introduced Failures: 0`）；有本次引入的失败记 `FAIL` 并新增修复任务。结论只写「本次引入的失败：N」，不列基线失败
 - 补充材料放 `evidence/attachments/`；首次 apply 在 `tasks.md` 写「基线任务数」行，新增任务超过 50% 或新增能力 / 模块时提示拆分为新变更
 - 规则唯一事实源：`skills/openspec-apply-change/shared/slice-evidence.md`

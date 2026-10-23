@@ -1175,12 +1175,30 @@ function findPendingEnvironment(repo, text, currentFingerprint) {
   }) || null
 }
 
+/**
+ * 查找记录证据时登记的待环境补测行：登记指纹等于证据的 Fingerprint，表示记录证据时集成测试没有在本地运行。
+ * 只对声明了 `Environment:` 的切片、证据新鲜或经豁免时调用；证据过期时用 findPendingEnvironment。
+ * @returns {{ confirmed: object|null, unconfirmed: object|null }} 匹配行中最近的已确认行与未确认行，没有时为 null。
+ */
+function findDeferredAtRecording(text, evidenceFingerprint) {
+  const rows = parseTables(section(text, PENDING_ENVIRONMENT_TITLE)).reverse()
+    .filter(row => clean(row['登记指纹'] || '') === evidenceFingerprint)
+  const confirmed = rows.find(row => clean(row['确认人'] || '')) || null
+  return { confirmed, unconfirmed: confirmed ? null : rows[0] || null }
+}
+
+/** 待环境补测登记行在 evidence 输出中的视图（pendingEnvironment 字段）。 */
+const pendingView = row => ({ fingerprint: clean(row['登记指纹'] || ''), owner: clean(row['负责人'] || ''),
+  plan: clean(row['补测计划'] || ''), confirmer: clean(row['确认人'] || '') })
+
 /** 从 `Evidence:` 行取证据路径（兼容 Markdown 链接写法）。 */
 const evidencePath = ref => (ref.match(/[^\s()[\]`'"<>]+\.md/) || [''])[0]
 
 /**
  * 校验单个切片的证据。已全部勾选的切片问题记 CRITICAL；部分勾选时只有缺证据文件记 CRITICAL，其余记 warning。
- * 声明了 `Environment:` 的切片证据过期且有成立的待环境补测登记时，状态为 pending-environment，只记 warning。
+ * 声明了 `Environment:` 的切片有成立的待环境补测登记时，状态为 pending-environment，只记 warning：
+ * 证据过期时按当前指纹判断登记；证据新鲜或经豁免时，登记指纹等于证据指纹的行表示记录证据时集成测试没有运行，
+ * 已确认为 pending-environment，未确认为 incomplete。
  * @returns {{ slice: object, issues: string[], warnings: string[] }}
  */
 function checkSlice(repo, changeRoot, slice, currentFingerprint) {
@@ -1231,8 +1249,7 @@ function checkSlice(repo, changeRoot, slice, currentFingerprint) {
       const pending = slice.environment ? findPendingEnvironment(repo, text, currentFingerprint) : null
       if (pending) {
         view.status = 'pending-environment'
-        view.pendingEnvironment = { fingerprint: clean(pending['登记指纹'] || ''), owner: clean(pending['负责人'] || ''),
-          plan: clean(pending['补测计划'] || ''), confirmer: clean(pending['确认人'] || '') }
+        view.pendingEnvironment = pendingView(pending)
         notices.push(`${label} 待环境补测（${slice.environment}）：证据指纹 ${fields.Fingerprint} ≠ 当前实现 ${currentFingerprint}；`
           + describePendingEnvironment(view.pendingEnvironment))
       } else {
@@ -1240,6 +1257,20 @@ function checkSlice(repo, changeRoot, slice, currentFingerprint) {
         problems.push(`${label} 证据过期：记录指纹 ${fields.Fingerprint} ≠ 当前实现 ${currentFingerprint}`
           + `${chain.reason ? `；${chain.reason}` : ''}，需重跑该切片验证并更新证据`)
       }
+    }
+  }
+  if (slice.environment && (view.status === 'fresh' || view.status === 'exempted')) {
+    // 集成测试在记录证据时就不能在本地运行：登记指纹等于证据指纹的登记表示这部分验证推迟到环境中补测（ADR-0007）。
+    const deferred = findDeferredAtRecording(text, fields.Fingerprint)
+    if (deferred.confirmed) {
+      view.status = 'pending-environment'
+      view.pendingEnvironment = pendingView(deferred.confirmed)
+      notices.push(`${label} 待环境补测（${slice.environment}）：记录证据时集成测试没有在本地运行；`
+        + describePendingEnvironment(view.pendingEnvironment))
+    } else if (deferred.unconfirmed) {
+      // 确认人只能由用户填写（规则同签字行）；未确认的推迟不能代替验证。
+      view.status = 'incomplete'
+      problems.push(`${label} 证据不完整：待环境补测登记 ${fields.Fingerprint} 缺少确认人，只能由用户填写`)
     }
   }
   const complete = slice.done === slice.total

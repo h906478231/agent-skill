@@ -23,9 +23,11 @@ Seam 是**公共边界**：不打开模块内部、就能观察行为的接口�
 - 本变更不新增 seam，seam 总数保持 2
 
 ### 每个验收行为挂哪个 Seam
-- 「用户可以创建订单」→ POST /api/orders
-- 「已支付订单不可再支付」→ OrderAggregate
+- 「用户可以创建订单」→ POST /api/orders（集成测试）
+- 「已支付订单不可再支付」→ OrderAggregate（单元测试）
 ```
+
+每个验收行为后面写出测试分类：单元测试、集成测试或 e2e 测试，定义与门禁见 `../../openspec-apply-change/shared/tdd-discipline.md`「测试分类」。分类决定测试在哪里运行、是否阻断归档。有 e2e 测试时，变更要有 `deployment.md`（`../../openspec-apply-change/shared/deployment-document.md`）。
 
 ## Seam 选择判据
 
@@ -40,6 +42,7 @@ Seam 是**公共边界**：不打开模块内部、就能观察行为的接口�
 
 - [ ] 每个验收行为都能映射到至少一个 seam？
 - [ ] 新增的 seam 是否说明了既有 seam 为什么不够？
+- [ ] 每个验收行为是否写出了测试分类？
 - [ ] tasks.md 每个切片的 `Seam:` 行是否引用了本区块声明的 seam？
 
 ## 分级要求

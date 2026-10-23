@@ -78,9 +78,9 @@ Implement tasks from an OpenSpec change.
 
 7. **Implement tasks (loop until done or blocked)**
 
-   **TDD 实施纪律（写第一个测试之前）**：完整规则见 skill `openspec-apply-change` 自己的 `shared/tdd-discipline.md`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-apply-change/shared/`、Codex CLI `~/.codex/skills/openspec-apply-change/shared/`、opencode `~/.config/opencode/skills/openspec-apply-change/shared/` 等；找不到时用 Glob 搜 `**/openspec-apply-change/shared/tdd-discipline.md`），**先读取该文件并严格遵守**。要点：只在 design.md「测试 Seam 决策」区块（或口头确认后回记到切片 `Seam:` 行）声明的公共边界写测试；red before green；一次一个切片、切片内一次一个行为；每完成一个任务项跑单测试文件 + 类型检查，全部完成跑完整测试套件；重构不进 red-green 循环，留给 `/opsx:quality`。
+   **TDD 实施纪律（写第一个测试之前）**：完整规则见 skill `openspec-apply-change` 自己的 `shared/tdd-discipline.md`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-apply-change/shared/`、Codex CLI `~/.codex/skills/openspec-apply-change/shared/`、opencode `~/.config/opencode/skills/openspec-apply-change/shared/` 等；找不到时用 Glob 搜 `**/openspec-apply-change/shared/tdd-discipline.md`），**先读取该文件并严格遵守**。要点：只在 design.md「测试 Seam 决策」区块（或口头确认后回记到切片 `Seam:` 行）声明的公共边界写测试；red before green；一次一个切片、切片内一次一个行为；每完成一个任务项跑单测试文件 + 类型检查，全部完成跑完整测试套件；测试按运行依赖分单元测试、集成测试、e2e 测试，分类决定在哪里运行、是否阻断归档（见该文件「测试分类」）；重构不进 red-green 循环，留给 `/opsx:quality`。
 
-   **切片新鲜证据（本仓自加，非上游原文）**：切片声明了 `Evidence:` 行时，勾选任务前必须先写证据。完整规则见 skill `openspec-apply-change` 的 `shared/slice-evidence.md`（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-apply-change/shared/slice-evidence.md`），**先读取该文件并严格遵守**。要点：运行任务相关的单个测试文件 + 类型检查 / 编译（按项目约定选命令）→ 用 skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs fingerprint <changeRoot>` 取实现指纹 → 创建或更新 `evidence/slice-<id>.md` → `Result: PASS` 后才勾选。未运行的命令不得写 PASS。
+   **切片新鲜证据（本仓自加，非上游原文）**：切片声明了 `Evidence:` 行时，勾选任务前必须先写证据。完整规则见 skill `openspec-apply-change` 的 `shared/slice-evidence.md`（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-apply-change/shared/slice-evidence.md`），**先读取该文件并严格遵守**。要点：运行任务相关的单个测试文件 + 类型检查 / 编译（按项目约定选命令）→ 用 skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs fingerprint <changeRoot>` 取实现指纹 → 创建或更新 `evidence/slice-<id>.md` → `Result: PASS` 后才勾选。未运行的命令不得写 PASS。`Environment:` 切片的集成测试在本地无法运行时，按「待环境补测」登记，用户确认后不阻断归档。
 
    For each pending task:
    - Show which task is being worked on

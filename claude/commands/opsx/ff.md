@@ -102,7 +102,7 @@ After completing all artifacts, summarize:
 - **已有讨论记录**：变更目录已有 `discussion-log.md` 时（grill 写入的用户决策、子 agent 回流的结论与未采纳记录），生成 proposal 与 design 之前先读取：已定决策写入 proposal「第一性原理分析」区块与 design 的方案选择，弃掉的方案写入「为什么不选其他方案」，不再向用户重复问已定决策。
 - **proposal（Phase 1）**：必须包含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证），见 `openspec-explore` 的 `shared/first-principles.md`。
 - **design（Phase 2）**：必须包含「候选方案交叉验证矩阵」（L2/L3：至少 2 个有实质差异的方案 × 成本/性能/复杂度/风险四维，并回答「为什么不选其他方案」；L0/L1 允许单一方案 + 不选其他方案的理由）；L2/L3 变更还必须包含「测试 Seam 决策」区块。见 `openspec-explore` 的 `shared/cross-validation.md` 与 `shared/seam-decisions.md`。
-- **tasks**：必须按垂直切片 + 阻塞 DAG 组织并保持 checkbox 兼容（`/opsx:apply` 与 `/opsx:verify` 依赖 `- [ ]` 解析进度）；勾选项只写归档前能完成的工作，按「排除清单」逐项自查；Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件时，写一项编写 `deployment.md` 的任务（见 `openspec-apply-change` 的 `shared/deployment-document.md`）。见 `openspec-propose` 的 `shared/task-slicing.md`。
+- **tasks**：必须按垂直切片 + 阻塞 DAG 组织并保持 checkbox 兼容（`/opsx:apply` 与 `/opsx:verify` 依赖 `- [ ]` 解析进度）；勾选项只写归档前能完成的工作，按「排除清单」逐项自查；Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件，或「测试 Seam 决策」有 e2e 测试时，写一项编写 `deployment.md` 的任务（见 `openspec-apply-change` 的 `shared/deployment-document.md`）。见 `openspec-propose` 的 `shared/task-slicing.md`。
 
 上述区块缺失时，不得宣称本变更已 ready for implementation。
 
