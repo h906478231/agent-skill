@@ -72,6 +72,8 @@ Each re-run SHALL overwrite `review/standards.md`, `review/spec-fidelity.md`, `r
 
 When the implementation fingerprint differs from the last review baseline and `classify` reports unregistered files, the agent SHALL register the change in the `## 实现后修改登记` table of `tasks.md` with a change class before it starts the next review round. A change with the class `行为` SHALL also get a task that names the commit or the files. Files that changed only in tasks that were added after the last review round and checked through `/opsx:apply` with fresh slice evidence SHALL NOT be registered. That round SHALL run both review axes on a delta baseline.
 
+To decide whether a file changed only in such tasks, the agent SHALL list the changes of the file with `git diff -U0 <sha of the earlier fingerprint> <sha of the current fingerprint> -- <file>` and SHALL check each `@@` hunk of that output as one change. The agent SHALL NOT register the file only when each hunk maps to a task that was added and checked. When a hunk maps to no such task, or the agent cannot decide, the agent SHALL register the file.
+
 #### Scenario: Fix committed outside the workflow
 - **WHEN** a developer commits a fix for SPEC-06 outside `/opsx:apply`
 - **THEN** the next `/opsx:quality` run first registers the commit with the class `行为` and adds a task that references the commit
@@ -82,6 +84,12 @@ When the implementation fingerprint differs from the last review baseline and `c
 - **AND** `classify` lists the files of task 2.8 in `unregistered`
 - **THEN** the next `/opsx:quality` run does not register these files
 - **AND** the round runs both review axes on a delta baseline
+
+#### Scenario: Commit outside the workflow near a task change is registered
+- **WHEN** the agent adds task 2.8, changes line 10 of `src/F.java` in it, and checks it through `/opsx:apply` with fresh slice evidence
+- **AND** a developer commits a change to line 17 of `src/F.java` outside `/opsx:apply`
+- **THEN** `git diff -U0` between the earlier fingerprint and the current fingerprint lists two `@@` hunks for `src/F.java`
+- **AND** the hunk at line 17 maps to no added task, so the next `/opsx:quality` run registers `src/F.java`
 
 #### Scenario: Log statements committed outside the workflow
 - **WHEN** a developer commits three new INFO log statements outside `/opsx:apply`

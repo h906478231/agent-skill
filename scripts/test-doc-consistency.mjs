@@ -30,6 +30,9 @@ const GIT_GUARD_FILES = [
   'skills/openspec-code-quality/SKILL.md',
   'skills/openspec-code-quality/shared/dual-axis-review.md',
   'skills/openspec-apply-change/shared/slice-evidence.md',
+  // 登记表与验收部署文档的规则文件各有「产物的 git 边界」一节。写字面量：CHANGE_RULES 在下文定义，此处引用会抛出 ReferenceError。
+  'skills/openspec-apply-change/shared/post-implementation-changes.md',
+  'skills/openspec-apply-change/shared/deployment-document.md',
   'skills/openspec-discussion-sync/SKILL.md',
   'skills/openspec-change-overview/SKILL.md',
   // 面向人的流程文档保留「门禁产物提交 git」的策略，同时写明 agent 不执行提交、以项目 .gitignore 为准。
@@ -276,8 +279,10 @@ test('实现后修改登记：「何时登记」与「命令级校验」的登�
  * 漏写「对应不上或拿不准时照常登记」，核对不出归属的修改就会按豁免处理。
  */
 const firstLine = prefix => text => text.split('\n').find(line => line.startsWith(prefix))
+/** 判断方法的事实源：登记步骤第 6 步。用具名常量取，数组顺序改变时检查对象不变（STD-13）。 */
+const TASK_EXEMPTION_SOURCE = [CHANGE_RULES, '登记步骤第 6 步', firstLine('6. 再次运行 `classify`')]
 const TASK_EXEMPTION_SITES = [
-  [CHANGE_RULES, '登记步骤第 6 步', firstLine('6. 再次运行 `classify`')],
+  TASK_EXEMPTION_SOURCE,
   ['skills/openspec-code-quality/SKILL.md', '前置', text => sectionBody(text, '前置')],
   ['claude/commands/opsx/quality.md', '重跑前的 classify', firstLine('- 重跑前先运行')],
   ['skills/openspec-technical-review/shared/closed-loop-verification.md', '门禁外提交', firstLine('- **门禁外提交**')],
@@ -286,23 +291,41 @@ const TASK_EXEMPTION_PHRASES = ['只在新增并已勾选的任务内修改', '�
 /**
  * 判断方法只写在登记步骤第 6 步，其他 3 处引用它（SPEC-13、STD-12）。
  * 完整套件刷新证据时会覆盖 `Fingerprint`，勾选时的指纹之后读不到，所以不能以它为 `--from`；改为逐处核对修改内容。
+ * 旧方法在 4 处都不得出现：引用方写回旧方法时，测试同样失败。
+ * `git diff` 默认输出 3 行上下文，两处修改之间不超过 6 行未修改的行时合成一个 `@@` 区块，「处」没有单位；
+ * 第 6 步必须用 `-U0` 并写明每个区块算一处（STD-14）。
+ * 引用方不得复制命令：占位符 `修改前指纹的 sha` 只出现在第 6 步的命令中，复制后第 6 步再改写时副本会过期。
+ * 不用 `git diff` 作禁止项，原因是 SKILL.md「前置」第 2 步有 `git diff --stat`。
+ * 禁止项按整个文件检查：两个引用方的取值区域只有 1 行，只查区域时，写到相邻行的文字查不出来（STD-01）。
  */
-const TASK_EXEMPTION_METHOD = { required: '逐处核对', forbidden: '勾选时切片证据' }
+const TASK_EXEMPTION_METHOD = {
+  required: ['逐处核对', 'git diff -U0', '每个 `@@` 区块算一处'],
+  forbidden: '勾选时切片证据',
+  referrerForbidden: '修改前指纹的 sha',
+}
 
 test('实现后修改登记：新增任务内修改的登记豁免在事实源与重跑判定中都限定为「只在」任务内修改', async () => {
-  const missing = []
-  for (const [file, label, pick] of TASK_EXEMPTION_SITES) {
-    const region = pick(await read(file))
+  const problems = []
+  let step
+  for (const site of TASK_EXEMPTION_SITES) {
+    const [file, label, pick] = site
+    const text = await read(file)
+    const region = pick(text)
     assert.ok(region, `${file} 缺少「${label}」`)
-    for (const phrase of TASK_EXEMPTION_PHRASES) {
-      if (!region.includes(phrase)) missing.push(`${file}「${label}」：${phrase}`)
+    if (site === TASK_EXEMPTION_SOURCE) step = region
+    else if (text.includes(TASK_EXEMPTION_METHOD.referrerForbidden)) {
+      problems.push(`${file}：复制了第 6 步的命令（含「${TASK_EXEMPTION_METHOD.referrerForbidden}」）`)
     }
+    for (const phrase of TASK_EXEMPTION_PHRASES) {
+      if (!region.includes(phrase)) problems.push(`${file}「${label}」：${phrase}`)
+    }
+    if (text.includes(TASK_EXEMPTION_METHOD.forbidden)) problems.push(`${file}：仍写「${TASK_EXEMPTION_METHOD.forbidden}」`)
   }
-  const [file, label, pick] = TASK_EXEMPTION_SITES[0]
-  const step = pick(await read(file))
-  if (!step.includes(TASK_EXEMPTION_METHOD.required)) missing.push(`${file}「${label}」：${TASK_EXEMPTION_METHOD.required}`)
-  if (step.includes(TASK_EXEMPTION_METHOD.forbidden)) missing.push(`${file}「${label}」：仍写「${TASK_EXEMPTION_METHOD.forbidden}」`)
-  assert.deepEqual(missing, [], '以下位置没有写明新增任务内修改的登记豁免口径')
+  const [file, label] = TASK_EXEMPTION_SOURCE
+  for (const phrase of TASK_EXEMPTION_METHOD.required) {
+    if (!step.includes(phrase)) problems.push(`${file}「${label}」：${phrase}`)
+  }
+  assert.deepEqual(problems, [], '以下位置的登记豁免口径与登记步骤第 6 步不一致')
 })
 
 test('沿用轮：Carried Axis 写法在规则、skill、命令副本与流程文档中与门禁脚本一致', async () => {
