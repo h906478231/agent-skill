@@ -63,7 +63,7 @@ description: OpenSpec 流程内子 agent 讨论结论回流主 agent 的契约�
 | 类型 | 写入方 | 列 |
 |------|-------|-----|
 | 子 agent 回流 | 主 agent（本 skill） | 轮次 \| 日期 \| 子agent \| 结论 \| 未决 \| 已落到哪个 artifact |
-| 用户决策 | `/opsx:update`（范围拆分）、`/opsx:grill`（访谈未决项） | 日期 \| 触发条件 \| 用户选择 |
+| 用户决策 | `/opsx:update`（范围拆分）、`/opsx:grill`（访谈中确认的决策，含共识摘要） | 日期 \| 触发条件 \| 用户选择 |
 
 ### 2. 逐条处理建议落点
 

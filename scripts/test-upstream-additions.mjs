@@ -33,6 +33,7 @@ const ANCHORS = {
   'skills/openspec-propose/SKILL.md': [
     '先按下文 Output 一节的门禁提示',
     '**Task slicing discipline',
+    '**已有讨论记录（本仓自加',
     '**Phase 1/2 产物区块',
     '**STE 检查（本仓自加',
     '**变更模型检查（本仓自加',
@@ -42,6 +43,7 @@ const ANCHORS = {
   'claude/commands/opsx/propose.md': [
     '先按下文 Output 一节的门禁提示',
     '**任务切片纪律',
+    '**已有讨论记录（本仓自加',
     '**Phase 1/2 产物区块',
     '**STE 检查（本仓自加',
     '**变更模型检查（本仓自加',
@@ -50,6 +52,7 @@ const ANCHORS = {
   'claude/commands/opsx/ff.md': [
     '**门禁提示（本仓自加',
     '**本仓自加的产物规则（非上游原文）**',
+    '**已有讨论记录**',
   ],
   'skills/openspec-apply-change/SKILL.md': [
     '**Technical Review Gate check (BLOCKING',
@@ -90,17 +93,20 @@ const ANCHORS = {
   'skills/openspec-archive-change/SKILL.md': [
     'Implementation gate result',
     '**归档前置校验（本仓自加，非上游原文）**',
+    '没有该文件时拒绝归档，提示先运行 `/opsx:verify`',
     '**门禁类问题必须阻断，不得只告警**',
   ],
   'claude/commands/opsx/archive.md': [
     'Implementation gate result',
     '**归档前置校验（本仓自加，非上游原文）**',
+    '没有该文件时拒绝归档，提示先运行 `/opsx:verify`',
     '**门禁类问题必须阻断，不得只告警**',
   ],
   'skills/openspec-verify-change/SKILL.md': [
     '**核心机制：交叉验证 III',
     '**切片证据与双轴评审闭环（本仓自加',
     '<changeRoot>/verification.md',
+    'archive 与下一次 verify 的增量复核只读这个文件',
     '| Evidence     |',
     'Artifacts outside the allowlist',
     '**交叉验证 III：人工核对清单',
@@ -110,6 +116,7 @@ const ANCHORS = {
     '**核心机制：交叉验证 III',
     '**切片证据与双轴评审闭环（本仓自加',
     '<changeRoot>/verification.md',
+    'archive 与下一次 verify 的增量复核只读这个文件',
     '| Evidence     |',
     'Artifacts outside the allowlist',
     '**交叉验证 III：人工核对清单',

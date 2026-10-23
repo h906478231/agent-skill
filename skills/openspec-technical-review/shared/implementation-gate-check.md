@@ -54,7 +54,7 @@ node <GATE> archive <changeRoot>
 | `1` | **拒绝归档**，向用户列出 `blockers`（含切片编号或 finding ID），回到对应阶段处理：评审 Blocker → `/opsx:quality`；缺失 / 过期证据 → 重跑切片验证（`/opsx:apply` 的证据规则）后 `/opsx:verify` |
 | `2` | 参数或环境错误（非 git 仓库、缺 Node.js 等）：**不得视为通过**，修复环境后重跑；证据新鲜度无法核实即按过期处理 |
 
-本脚本只覆盖双轴评审与切片证据。Verify 的其他 CRITICAL（未完成任务、需求未实现等）不在脚本判定范围，仍按 archive 原有规则：CRITICAL 清零并取得用户「验证已通过」的显式确认。
+本脚本只覆盖双轴评审与切片证据。Verify 的其他 CRITICAL（未完成任务、需求未实现等）不在脚本判定范围，仍按 archive 原有规则：读取 `verification.md`，CRITICAL 必须清零；没有该文件时拒绝归档。
 
 ## 边界
 

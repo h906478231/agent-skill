@@ -8,7 +8,7 @@
 
 | 阶段 | 入口                               | 做什么 | 产物 | 是否改代码 |
 |------|----------------------------------|--------|------|-----------|
-| Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查决策充分性，复用有效共识；同步沉淀领域术语与决策 | 共识 + `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
+| Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查决策充分性，复用有效共识；同步沉淀领域术语与决策 | 共识（写入变更目录的 `discussion-log.md`）+ `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
 | Phase 1 需求澄清 | `/opsx:explore`                  | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
 | Phase 2 方案探索 | `/opsx:explore`                  | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；状态变动或流程变动命中时写 `change-model` 代码块，规则见 `../../openspec-change-overview/shared/change-model.md`） | 否 |
 | （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
@@ -21,9 +21,26 @@
 | 人工门禁 | 人工                               | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply`                    | 开始任何任务前依次做签字校验（`apply-gate-check.md`）、STE 检查、变更模型检查，任一项阻断即停止；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**（规则见 `../../openspec-apply-change/shared/tdd-discipline.md`）；**证据先于勾选**：每个切片记录绑定实现指纹的新鲜证据（规则见 `../../openspec-apply-change/shared/slice-evidence.md`） | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
 | Phase 5.5 双轴独立评审 | `/opsx:quality`                  | 同一固定基线并行跑 Standards Review（工程规范）与 Spec Fidelity Review（规格忠实度），互不读取对方报告，汇总按任一轴未闭环 Blocker 阻断（规则见 `../../openspec-code-quality/shared/dual-axis-review.md`）；**L2/L3 必跑，L0/L1 推荐** | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
-| Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + **切片证据新鲜度与双轴裁决核对**（见 `implementation-gate-check.md`）+ STE 检查与变更模型检查（阻断项记为 CRITICAL）；**实现与设计交叉核对**（门禁侧的条件核对与增强交叉核对清单见 `phase6-verification.md`） | 校验报告（对话内） | 修复项 |
+| Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + **切片证据新鲜度与双轴裁决核对**（见 `implementation-gate-check.md`）+ STE 检查与变更模型检查（阻断项记为 CRITICAL）；**实现与设计交叉核对**（门禁侧的条件核对与增强交叉核对清单见 `phase6-verification.md`） | `verification.md`（校验报告） | 修复项 |
 | 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs（delta→main 由 skill `openspec-sync-specs` / `/opsx:sync` 执行，archive 调用；主 spec 有差异却跳过同步时需用户显式确认原因）；**归档前置校验**：签字缺失 / 未闭环 Blocker / verify 未通过 / L2/L3 双轴评审 Blocker 或报告缺失 / 切片证据缺失或过期时拒绝归档；评审、证据与讨论产物随变更整体归档 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video`                    | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕；不属于任何卡点或归档检查（规则见 `../../openspec-explainer-video/SKILL.md`） | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
+
+## 各阶段的输入与新会话
+
+各阶段从文件读取输入时，可以在新会话中开始，不必在上一阶段的会话中继续。新会话不带上一阶段读过的文件与工具输出，上下文更小。下表的「能」只表示换会话不丢信息，在同一会话中连续执行也可以。
+
+| 阶段 | 读取的输入 | 能否在新会话中开始 |
+|------|-----------|-------------------|
+| grill | `CONTEXT.md`、`docs/adr/`、已有的 proposal 与 design | 能 |
+| explore | 对话；有变更时读取产物 | 否。explore 是与用户的讨论，在主会话中进行，不交给子 agent，避免讨论内容缺失导致方案偏离 |
+| propose / ff | 用户需求、`discussion-log.md`、已完成的产物 | 能。grill 没有创建变更时，共识只在 grill 的会话中，propose 要在该会话中执行 |
+| update | 修改依据与全部产物。修改依据大多来自刚才的讨论 | 通常不能，在讨论的会话中执行。修改依据已完整写在指令中时能（如「design 改为用 X」） |
+| review | proposal、design | 能 |
+| apply | proposal、specs、design、tasks、`review-summary.md` | 能。新会话中写明变更名 |
+| quality | 固定基线 diff、产物、`evidence/` | 能 |
+| verify | 产物、门禁脚本输出、`review-summary.md`、上一份 `verification.md` | 能 |
+| archive | `verification.md`、门禁脚本输出、`review-summary.md` | 能。没有 `verification.md` 时拒绝归档 |
+| overview | 全部产物 | 能 |
 
 ## 全景流程图
 

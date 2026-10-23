@@ -111,11 +111,16 @@ done
 
 达成后输出共识摘要（定了哪些决策、弃了哪些方案、开放问题是什么），作为后续 explore/propose 的输入。
 
+共识摘要必须同时写入变更目录的 `discussion-log.md`，只在对话中输出不算完成：每条已定决策按 `../openspec-discussion-sync/SKILL.md`「条目类型」的「用户决策」写入一行，「触发条件」写决策点，「用户选择」写选择、理由与弃掉的方案；开放问题按 Step 6 的落点处理。理由：explore、propose 可能在新会话中执行，只在对话中的共识会丢失。
+
+- 没有变更目录时：用 AskUserQuestion 确认变更名（kebab-case，附推荐名），运行 `openspec new change "<name>"` 创建后写入。
+- 用户不创建变更时：在摘要末尾写明「共识只在本会话中，explore 或 propose 必须在本会话中执行」。
+
 ### Step 6 — 产出对接
 
 | 访谈产出 | 落点 |
 |---------|------|
-| 共识（根问题、约束、必要性） | proposal.md「第一性原理分析」区块（由 explore/propose 生成时写入） |
+| 共识（根问题、约束、必要性） | `discussion-log.md`「用户决策」（Step 5 写入）；proposal.md「第一性原理分析」区块（explore/propose 读取 `discussion-log.md` 后写入） |
 | 领域术语 | `CONTEXT.md`（项目根，跨变更复用） |
 | 重大权衡决策 | `docs/adr/NNNN-<slug>.md`（项目根） |
 | 未决问题 | discussion-log.md（条目格式见 `../openspec-discussion-sync/SKILL.md`「条目类型」）或带入 explore 继续 |

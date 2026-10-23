@@ -254,12 +254,12 @@ Grill 不改代码、不产出正式 artifact，它的产出是**共识**与**�
     └── 0001-xxx.md
 
 变更目录/
-└── discussion-log.md  ← 未决问题与访谈留痕（可选；未决项也可带入 explore 继续）
+└── discussion-log.md  ← 共识摘要（用户决策条目）与未决问题；没有变更目录时 grill 先确认变更名并创建
 ```
 
 ### 共识摘要包含什么
 
-访谈达到结束条件时输出，作为 explore / propose 的输入：
+访谈达到结束条件时输出，并写入变更目录的 `discussion-log.md`，作为 explore / propose 的输入（新会话中也能读到）：
 
 ```markdown
 ## 共识摘要

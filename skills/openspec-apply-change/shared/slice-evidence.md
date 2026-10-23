@@ -29,7 +29,8 @@ Seam: POST /orders（HTTP API，见 design.md「测试 Seam 决策」）
 Evidence: evidence/slice-01.md
 
 - [ ] 1.1 订单表 schema 与迁移脚本
-- [ ] 1.2 POST /orders 接口实现与集成测试
+- [ ] 1.2 POST /orders 接口实现
+  - 完成标准：创建订单的接口测试通过
 ```
 
 路径相对 `changeRoot`，固定为 `evidence/slice-<id>.md`，`<id>` 取切片标题 `## Slice <id>:` 中的编号。
