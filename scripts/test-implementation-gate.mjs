@@ -1257,6 +1257,38 @@ test('evidence：登记后只有注释差异时仍为 pending-environment；登�
   assert.equal(changed.json().slices[0].status, 'stale')
 })
 
+/** 写入 Slice 07 的 tasks.md 与新鲜证据；证据带一行登记指纹等于证据指纹的待环境补测（记录证据时集成测试没有运行）。 */
+function deferredAtRecording(f, { environment = '测试环境', confirmer = '用户' } = {}) {
+  writeTasks(f, [{ id: '07', done: [true, true], environment }])
+  const recorded = fingerprintOf(f)
+  f.write('openspec/changes/demo/evidence/slice-07.md', evidence('07', recorded, { pending: [pendingRow(recorded, confirmer)] }))
+  return f.run('evidence', f.changeRoot)
+}
+
+test('evidence：Environment 切片证据新鲜，记录证据时的登记已确认时为 pending-environment，问题写入 warnings', t => {
+  const result = deferredAtRecording(fixture(t))
+  assert.equal(result.code, 0, result.out)
+  const report = result.json()
+  assert.equal(report.slices[0].status, 'pending-environment')
+  assert.deepEqual(report.issues, [])
+  const warning = report.warnings.find(item => item.includes('Slice 07'))
+  assert.ok(warning && warning.includes(PENDING_OWNER) && warning.includes(PENDING_PLAN), JSON.stringify(report.warnings))
+})
+
+test('evidence：记录证据时的登记缺少确认人时为 incomplete 并记 CRITICAL', t => {
+  const result = deferredAtRecording(fixture(t), { confirmer: '' })
+  assert.equal(result.code, 1, result.out)
+  const report = result.json()
+  assert.equal(report.slices[0].status, 'incomplete')
+  assert.ok(report.issues.some(item => item.includes('Slice 07') && item.includes('确认人')), JSON.stringify(report.issues))
+})
+
+test('evidence：没有 Environment 行时记录证据时的登记不起作用，切片仍为 fresh', t => {
+  const result = deferredAtRecording(fixture(t), { environment: '' })
+  assert.equal(result.code, 0, result.out)
+  assert.equal(result.json().slices[0].status, 'fresh')
+})
+
 test('archive：其他检查通过且切片为 pending-environment 时退出码 0，notes 列出切片、负责人与补测计划', t => {
   const f = fixture(t)
   const { recorded, current } = environmentChange(f)

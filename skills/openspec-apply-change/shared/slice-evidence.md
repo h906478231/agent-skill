@@ -158,6 +158,7 @@ node <GATE> regress --baseline docs/test-baseline.txt --actual <实际失败清�
 | 不一致，且变化可能影响该切片行为 | **过期**：重跑该切片验证并更新证据 |
 | 不一致，且无法判断变化是否影响该切片 | **过期**（同上） |
 | 过期，但切片声明了 `Environment:`，并且有成立的待环境补测登记 | **待环境补测**（`pending-environment`）：WARNING，不阻断归档，见下文「待环境补测」 |
+| 新鲜或经豁免，切片声明了 `Environment:`，并且有一行登记指纹等于证据 `Fingerprint` 的待环境补测登记 | 确认人不为空：**待环境补测**（`pending-environment`），WARNING；确认人为空：**不完整**（`incomplete`），等用户确认 |
 
 证据缺失、字段不完整、`Result: FAIL` 或过期的已完成切片，Verify 一律记 **CRITICAL**，不得归档（待环境补测除外）。`Result: PASS_WITH_BASELINE` 缺少 `Baseline List`（或文件不存在）、缺少 `Introduced Failures`，按字段不完整处理；`Introduced Failures` 不为 0，按 `FAIL` 处理。
 
@@ -183,7 +184,10 @@ node <GATE> regress --baseline docs/test-baseline.txt --actual <实际失败清�
 
 ## 待环境补测
 
-切片的验收依赖本地无法提供的环境（测试环境、预发环境等）时，在 `tasks.md` 该切片写 `Environment: <环境名称>`（写法见 `../openspec-propose/shared/task-slicing.md`）。该切片证据过期、本地无法重跑时，在证据中增加一节：
+切片的集成测试需要本地无法启动的中间件或第三方系统（测试分类见 `tdd-discipline.md`「测试分类」）时，在 `tasks.md` 该切片写 `Environment: <环境名称>`（写法见 `../openspec-propose/shared/task-slicing.md`）。下列两种情况在证据中增加一节：
+
+1. **记录证据时无法运行**：「验证命令」只写本地实际运行的命令（单元测试、编译等），没有运行的集成测试写入登记行的「补测计划」。登记指纹写证据的 `Fingerprint`。
+2. **证据过期、本地无法重跑**：登记指纹写当前实现指纹。
 
 ```markdown
 ## 待环境补测
@@ -193,22 +197,21 @@ node <GATE> regress --baseline docs/test-baseline.txt --actual <实际失败清�
 
 | 列 | 要求 |
 |----|------|
-| `登记指纹` | 登记时的当前实现指纹（`<GATE> evidence` 输出的 `currentFingerprint`） |
+| `登记指纹` | 情况 1 写证据的 `Fingerprint`；情况 2 写登记时的当前实现指纹（`<GATE> evidence` 输出的 `currentFingerprint`） |
 | `原因` | 本地无法重跑的原因，写出缺少的环境或依赖 |
 | `补测计划` | 在哪个环境、重跑哪些命令或测试 |
 | `负责人` | 执行补测的人 |
 | `确认人` | **只能由用户填写**，agent 不得代填，规则与签字行相同。agent 登记时留空，等用户确认 |
 | `日期` | 登记日期 |
 
-下列四条同时满足时，`evidence` 把该切片判为 `pending-environment`，问题写入 `warnings`，不写入 `issues`：
+`evidence` 只对声明了 `Environment:` 的切片读取登记表：
 
-1. 切片声明了 `Environment:`；
-2. 证据过期，并且没有成立的豁免链；
-3. 存在一行，其登记指纹等于当前指纹，或两者之间只有注释差异；
-4. 该行的确认人不为空。
+- **情况 1**：证据新鲜或经豁免，并且有一行登记指纹等于证据的 `Fingerprint`。这一行的确认人不为空时，切片判为 `pending-environment`，问题写入 `warnings`；确认人为空时判为 `incomplete`，切片全部勾选后记 CRITICAL。
+- **情况 2**：证据过期，并且没有成立的豁免链。存在一行，确认人不为空，登记指纹等于当前指纹或两者之间只有注释差异时，判为 `pending-environment`；否则判为 `stale`。
 
 - 没有 `Environment:` 行的切片，登记表不起作用，照常判为过期：本地可以验证的切片不能用登记代替重跑。
 - 代码在登记后又有非注释修改时，登记指纹不再匹配，切片回到过期。要用当前指纹新增一行，并由用户重新确认。
+- 补测完成后，把环境中执行的命令与结果写入「验证命令」，刷新证据，并删除对应的登记行。不删除时，情况 1 的登记行会让切片一直是 `pending-environment`。
 - Verify 记 WARNING，写出切片、负责人与补测计划；Archive 不阻断，把切片、负责人与补测计划写入归档摘要（`archive` 输出的 `notes`）。
 - 变更有 `deployment.md` 时，补测计划同时写成它「发布前检查」的一项（`deployment-document.md`）：补测要在生产发布前完成。
 

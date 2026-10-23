@@ -29,7 +29,7 @@ Verify SHALL check that each applicable slice has an evidence record, that the r
 
 A change between two fingerprints in which `implementation-gate.mjs classify` reports every file as comment-only SHALL count as a documented non-behavioral exception. It SHALL NOT need a manual exemption row. The script SHALL apply this rule to the part of the chain after the last valid exemption row.
 
-A slice MAY declare `Environment: <environment name>` in `tasks.md` when its acceptance needs an environment that the local machine does not provide. When the evidence of such a slice is stale, the evidence record MAY contain a `## 待环境补测` table with the columns `登记指纹 | 原因 | 补测计划 | 负责人 | 确认人 | 日期`. When one row has a filled confirmer cell and a registered fingerprint that is equal to the current fingerprint, or that has only comment-only differences from the current fingerprint, the script SHALL report the slice as `pending-environment` in `warnings` instead of `issues`. The user SHALL fill the confirmer cell. The agent SHALL NOT fill it for the user. A `## 待环境补测` table in a slice without an `Environment:` line SHALL have no effect.
+A slice MAY declare `Environment: <environment name>` in `tasks.md` when its integration tests need middleware or a third-party system that the local machine cannot start (ADR-0007). The evidence record of such a slice MAY contain a `## 待环境补测` table with the columns `登记指纹 | 原因 | 补测计划 | 负责人 | 确认人 | 日期`. When the evidence is stale and one row has a filled confirmer cell and a registered fingerprint that is equal to the current fingerprint, or that has only comment-only differences from the current fingerprint, the script SHALL report the slice as `pending-environment` in `warnings` instead of `issues`. When the evidence is current or exempted and one row has a registered fingerprint that is equal to the `Fingerprint` of the evidence, the integration tests did not run when the evidence was recorded: the script SHALL report the slice as `pending-environment` in `warnings` when that row has a filled confirmer cell, and as `incomplete` when the confirmer cell is empty. After the re-test in the environment, the author SHALL write the commands and results into the evidence and SHALL remove the row. The user SHALL fill the confirmer cell. The agent SHALL NOT fill it for the user. A `## 待环境补测` table in a slice without an `Environment:` line SHALL have no effect.
 
 #### Scenario: Evidence is missing
 - **WHEN** an applicable completed slice has no evidence record
@@ -66,6 +66,16 @@ A slice MAY declare `Environment: <environment name>` in `tasks.md` when its acc
 #### Scenario: Pending row without a confirmer has no effect
 - **WHEN** the confirmer cell of the only `## 待环境补测` row is empty
 - **THEN** `evidence` still reports the slice as stale
+
+#### Scenario: Integration tests cannot run when the evidence is recorded
+- **WHEN** Slice 07 declares `Environment: 测试环境` and its evidence is current
+- **AND** its `## 待环境补测` table has a row for the fingerprint of the evidence with a filled confirmer cell
+- **THEN** `evidence` reports Slice 07 as `pending-environment` in `warnings`
+
+#### Scenario: Deferred integration tests without a confirmer
+- **WHEN** Slice 07 declares `Environment: 测试环境` and its evidence is current
+- **AND** its `## 待环境补测` table has a row for the fingerprint of the evidence with an empty confirmer cell
+- **THEN** `evidence` reports Slice 07 as `incomplete` in `issues`
 
 ### Requirement: Archive SHALL require complete review and slice evidence closure
 
