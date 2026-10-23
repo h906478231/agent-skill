@@ -20,7 +20,7 @@ explore → propose（含 tasks） → 分级判定 → （纳入范围时）rev
 | `/opsx:overview` | 字段或规则条件较多的变更（L2/L3）需要一页看懂流程与条件矩阵 |
 | `/opsx:explain` | 看不明白某个 Blocker，需要展开业务场景 |
 | `/opsx:video` | 需要向他人讲解含变更模型的变更 |
-| 讨论回流（skill `openspec-discussion-sync`，无独立命令） | 派子 agent 探索后需要把结论按五段契约回流并落盘 |
+| 讨论回流（skill `openspec-discussion-sync`，无独立命令） | grill 派查证子 agent 后，把结论按五段契约回流并落盘；explore 不派子 agent |
 
 拿不准该用 `/opsx:explore` 还是 `/opsx:grill`？见 [工作流选择指南](../docs/openspec-workflow-guide.md)。
 

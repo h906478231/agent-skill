@@ -9,9 +9,9 @@
 | 阶段 | 入口                               | 做什么 | 产物 | 是否改代码 |
 |------|----------------------------------|--------|------|-----------|
 | Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查决策充分性，复用有效共识；同步沉淀领域术语与决策 | 共识（写入变更目录的 `discussion-log.md`）+ `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
+| 讨论回流（grill 查证，按需） | skill `openspec-discussion-sync` | grill 派出的查证子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳；explore 在主会话中讨论，不派子 agent | `discussion-log.md` | 否 |
 | Phase 1 需求澄清 | `/opsx:explore`                  | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
 | Phase 2 方案探索 | `/opsx:explore`                  | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；状态变动或流程变动命中时写 `change-model` 代码块，规则见 `../../openspec-change-overview/shared/change-model.md`） | 否 |
-| （贯穿 1–2）讨论回流 | skill `openspec-discussion-sync` | 子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳 | `discussion-log.md` | 否 |
 | 变更总览（按需） | `/opsx:overview`                 | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
 | 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载 `../../openspec-propose/shared/task-slicing.md`） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前四问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 产物检查（四个卡点） | `/opsx:propose`、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查（禁用别名 / 非受控通用词 / 模糊词），再跑变更模型检查（CM-1～CM-6）；各卡点按退出码处理（`../../openspec-ste/shared/gate-check.md`）；archive 不重跑，靠 verify 的 CRITICAL 阻断 | 无独立产物；阻断项在对应卡点输出 | 否 |
@@ -48,6 +48,7 @@
 （存在未决决策时）/opsx:grill
       │  决策树分轮访谈：消除隐含假设 → 共识
       │  同步沉淀：CONTEXT.md（领域术语）+ docs/adr/（难以撤销的权衡决策）
+      │  写入 discussion-log.md：共识摘要 + 查证子 agent 的回流结论
       ▼
 OpenSpec Explore
       │  需求澄清（Phase 1）→ proposal.md
@@ -56,7 +57,6 @@ OpenSpec Explore
       │    ※ 交叉验证 I：候选方案四维对比矩阵（成本/性能/复杂度/风险）
       │    ※ 测试 Seam 决策区块：从哪些公共边界验证行为
       │    ※ 「可视化判定」小节；状态变动或流程变动命中时写 change-model 代码块
-      │  ※ 子 agent 讨论结论回流 → discussion-log.md（贯穿 Phase 1–2）
       ▼
 技术方案确认（design.md 含推荐方案）
       │
