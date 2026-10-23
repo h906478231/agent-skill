@@ -12,7 +12,7 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 | Correctness | requirement ↔ 代码实现映射、scenario 是否被覆盖 |
 | **Coherence** | **实现是否偏离 `design.md` 的既定决策**、代码风格与项目模式是否一致 |
 
-输出为对话内的评分卡 + 按 CRITICAL / WARNING / SUGGESTION 分级的问题清单。**存在 CRITICAL 时不得归档。**
+输出写入变更目录的 `verification.md`：评分卡 + 按 CRITICAL / WARNING / SUGGESTION 分级的问题清单。archive 读取该文件，不读对话。**存在 CRITICAL 时不得归档。**
 
 ## 门禁特有的补充：条件核对
 

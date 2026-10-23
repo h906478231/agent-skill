@@ -133,7 +133,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
 8. **Generate Verification Report**
 
-   报告写入变更目录时固定为 `<changeRoot>/verification.md`，每次重跑**原地覆盖**，禁止生成 `verification-round2.md` 这类副本（本仓自加；规则见 skill `openspec-code-quality` 的 `shared/dual-axis-review.md`「原地覆盖与 Finding 台账」）。
+   报告必须写入 `<changeRoot>/verification.md`，每次重跑**原地覆盖**，禁止生成 `verification-round2.md` 这类副本（本仓自加；规则见 skill `openspec-code-quality` 的 `shared/dual-axis-review.md`「原地覆盖与 Finding 台账」）。archive 与下一次 verify 的增量复核只读这个文件，不读对话，因此 archive 可以在新会话中执行；只在对话中输出报告不算完成本步。
 
    **Summary Scorecard**:
    ```

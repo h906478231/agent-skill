@@ -29,7 +29,7 @@ Evidence: evidence/slice-01.md
 
 - [ ] T1.1 订单表 schema 与迁移脚本
 - [ ] T1.2 POST /orders 接口实现
-- [ ] T1.3 创建订单集成测试（验证本切片可演示）
+  - 完成标准：创建订单的接口测试通过，本切片可演示
 
 ## Slice 02: 用户可以支付订单
 Blocked by: Slice 01
@@ -37,7 +37,8 @@ Seam: POST /orders/{id}/payment
 Evidence: evidence/slice-02.md
 
 - [ ] T2.1 支付状态机与幂等键
-- [ ] T2.2 支付接口与集成测试
+- [ ] T2.2 支付接口实现
+  - 完成标准：支付与重复支付的接口测试通过
 ```
 
 要求：
