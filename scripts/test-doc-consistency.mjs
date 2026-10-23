@@ -167,3 +167,355 @@ test('git 边界说明：命令与 skill 不再要求提交变更目录产物', 
   }
   assert.deepEqual(hits, [], `以下位置仍要求提交 git（改为随 openspec archive 归档并加 git 边界说明）：\n${hits.join('\n')}`)
 })
+
+/**
+ * 实现后修改登记（tier-post-implementation-changes D1）。
+ * post-implementation-changes.md 是唯一事实源；门禁脚本按同一组档位与区块标题读取登记表，
+ * quality、closed-loop 与流程文档只引用事实源，不再写「门禁外提交先登记任务」的旧规则。
+ */
+const CHANGE_RULES = 'skills/openspec-apply-change/shared/post-implementation-changes.md'
+const CHANGE_RULE_REFERRERS = [
+  'skills/openspec-apply-change/SKILL.md',
+  'claude/commands/opsx/apply.md',
+  'skills/openspec-code-quality/SKILL.md',
+  'skills/openspec-code-quality/shared/dual-axis-review.md',
+  'skills/openspec-technical-review/shared/closed-loop-verification.md',
+  'claude/commands/opsx/quality.md',
+  PROCESS_DOC,
+]
+
+/** 概述登记要点的 skill、命令副本与流程文档：必须写到登记指纹，同一文件再次修改要新增一行（design D1）。 */
+const LEDGER_FINGERPRINT_REFERRERS = ['skills/openspec-apply-change/SKILL.md', 'claude/commands/opsx/apply.md', PROCESS_DOC]
+
+test('实现后修改登记：事实源的档位与登记表标题、列和门禁脚本一致', async () => {
+  const rules = await read(CHANGE_RULES)
+  const gate = await read('skills/openspec-technical-review/scripts/implementation-gate.mjs')
+  const tiers = [...gate.match(/const CHANGE_TIERS = \[([^\]]*)\]/)[1].matchAll(/'([^']+)'/g)].map(m => m[1])
+  const title = gate.match(/const CHANGE_LEDGER_TITLE = '([^']+)'/)[1]
+  assert.deepEqual(tiers, ['非行为', '等价', '行为'])
+  assert.ok(rules.includes(`## ${title}\n`), `事实源缺少登记表标题 ## ${title}`)
+  assert.ok(rules.includes('| 编号 | 文件 | 提交 | 登记指纹 | 档位 | 判定依据 | 验证 | 判定人 | 日期 |'), '事实源缺少登记表表头')
+  // 门禁脚本按登记指纹核对登记之后是否又有修改，旧规则「同一文件再次修改时不新增一行」不再成立。
+  assert.ok(!rules.includes('不新增一行'), '事实源仍写「同一文件再次修改时不新增一行」')
+  for (const tier of tiers) {
+    const rows = rules.split('\n').filter(line => line.startsWith(`| \`${tier}\` |`))
+    assert.equal(rows.length, 2, `事实源「三档判定」与「各档最少动作」应各有一行 ${tier}`)
+  }
+  const missing = []
+  for (const file of LEDGER_FINGERPRINT_REFERRERS) {
+    if (!(await read(file)).includes('登记指纹')) missing.push(file)
+  }
+  assert.deepEqual(missing, [], '以下文件概述登记要点但没有写登记指纹')
+})
+
+test('实现后修改登记：各阶段规则引用事实源，不再要求门禁外提交只能新增任务', async () => {
+  const missing = []
+  const stale = []
+  for (const file of CHANGE_RULE_REFERRERS) {
+    const text = await read(file)
+    if (!text.includes('post-implementation-changes.md')) missing.push(file)
+    text.split('\n').forEach((line, i) => {
+      // 旧规则只有「新增任务」一种登记方式；新规则按档位登记，行为档位才新增任务，因此同一行必然写到档位。
+      if (/门禁外提交/.test(line) && /(?:新增|登记)(?:一个)?任务/.test(line) && !line.includes('档位')) stale.push(`${file}:${i + 1}`)
+    })
+  }
+  assert.deepEqual(missing, [], `以下文件未引用 ${CHANGE_RULES}`)
+  assert.deepEqual(stale, [], `以下位置仍是「门禁外提交先登记任务」的旧规则：\n${stale.join('\n')}`)
+})
+
+/**
+ * classify 的登记判定与 issues 分类（STD-11）。
+ * 登记流程读事实源「何时登记」，apply、verify 查 classify 输出时读 slice-evidence.md「命令级校验」，两处各写一遍。
+ * 保留两处，由本测试逐句比较登记条件与两类 issues 的整句：只改一处而另一处没跟上时测试失败。
+ * 比较范围之外的句子（如事实源的「用登记指纹核对」、slice-evidence.md 的「档位取最高档位」）允许只写在一处。
+ */
+const LEDGER_RULE_SECTIONS = [
+  [CHANGE_RULES, '何时登记'],
+  ['skills/openspec-apply-change/shared/slice-evidence.md', '命令级校验'],
+]
+/** 两处必须逐字相同的文字；第 1 个捕获组是比较的内容，列表项的缩进与「- 」不计入。 */
+const LEDGER_RULE_PARTS = [
+  ['登记条件', /(`other` 中的文件算登记：[^\n]*?能证明登记。)/],
+  ['行级问题', /^\s*- (行级问题：.*)$/m],
+  ['文件级问题', /^\s*- (文件级问题：.*)$/m],
+]
+/** 比较的文字中必须含有的 3 句关键口径，防止两处同时删掉同一句。 */
+const LEDGER_RULE_SENTENCES = [
+  ['只有档位不是 `非行为` 的合法行能证明登记', /只有档位不是 `非行为` 的合法行能证明登记/],
+  ['行级问题……只写登记编号与原因', /行级问题：[^\n]*只写登记编号与原因/],
+  ['文件级问题：只写给列入 `unregistered` 的文件', /文件级问题：只写给列入 `unregistered` 的文件/],
+]
+
+/** 取二级标题 heading 的小节正文，到下一个二级标题为止。 */
+function sectionBody(markdown, heading) {
+  const rest = markdown.split(`\n## ${heading}\n`)[1]
+  assert.ok(rest, `缺少小节：## ${heading}`)
+  return rest.split('\n## ')[0]
+}
+
+test('实现后修改登记：「何时登记」与「命令级校验」的登记判定与 issues 分类逐句相同', async () => {
+  const [source, copy] = await Promise.all(LEDGER_RULE_SECTIONS.map(async ([file, heading]) => {
+    const body = sectionBody(await read(file), heading)
+    return Object.fromEntries(LEDGER_RULE_PARTS.map(([label, pattern]) => {
+      const match = body.match(pattern)
+      assert.ok(match, `${file}「${heading}」缺少${label}`)
+      return [label, match[1].split(/(?<=。)/)]
+    }))
+  }))
+  for (const [label] of LEDGER_RULE_PARTS) {
+    assert.deepEqual(copy[label], source[label], `「${label}」在两个小节中不是逐字相同`)
+  }
+  const text = Object.values(source).flat().join('')
+  for (const [label, pattern] of LEDGER_RULE_SENTENCES) assert.match(text, pattern, `比较的文字中缺少：${label}`)
+})
+
+/**
+ * 新增任务内修改的登记豁免（SPEC-12、SPEC-13，design D3）。
+ * 豁免只给「只在」新增并已勾选的任务内修改的文件；勾选之后又有修改（如门禁外提交）时照常登记。
+ * 事实源登记步骤与重跑前的 3 处判定写同一口径：漏写「只在」，门禁外提交就能借同一文件的新增任务不登记；
+ * 漏写「对应不上或拿不准时照常登记」，核对不出归属的修改就会按豁免处理。
+ */
+const firstLine = prefix => text => text.split('\n').find(line => line.startsWith(prefix))
+const TASK_EXEMPTION_SITES = [
+  [CHANGE_RULES, '登记步骤第 6 步', firstLine('6. 再次运行 `classify`')],
+  ['skills/openspec-code-quality/SKILL.md', '前置', text => sectionBody(text, '前置')],
+  ['claude/commands/opsx/quality.md', '重跑前的 classify', firstLine('- 重跑前先运行')],
+  ['skills/openspec-technical-review/shared/closed-loop-verification.md', '门禁外提交', firstLine('- **门禁外提交**')],
+]
+const TASK_EXEMPTION_PHRASES = ['只在新增并已勾选的任务内修改', '勾选之后又有修改时照常登记', '对应不上或拿不准时照常登记']
+/**
+ * 判断方法只写在登记步骤第 6 步，其他 3 处引用它（SPEC-13、STD-12）。
+ * 完整套件刷新证据时会覆盖 `Fingerprint`，勾选时的指纹之后读不到，所以不能以它为 `--from`；改为逐处核对修改内容。
+ */
+const TASK_EXEMPTION_METHOD = { required: '逐处核对', forbidden: '勾选时切片证据' }
+
+test('实现后修改登记：新增任务内修改的登记豁免在事实源与重跑判定中都限定为「只在」任务内修改', async () => {
+  const missing = []
+  for (const [file, label, pick] of TASK_EXEMPTION_SITES) {
+    const region = pick(await read(file))
+    assert.ok(region, `${file} 缺少「${label}」`)
+    for (const phrase of TASK_EXEMPTION_PHRASES) {
+      if (!region.includes(phrase)) missing.push(`${file}「${label}」：${phrase}`)
+    }
+  }
+  const [file, label, pick] = TASK_EXEMPTION_SITES[0]
+  const step = pick(await read(file))
+  if (!step.includes(TASK_EXEMPTION_METHOD.required)) missing.push(`${file}「${label}」：${TASK_EXEMPTION_METHOD.required}`)
+  if (step.includes(TASK_EXEMPTION_METHOD.forbidden)) missing.push(`${file}「${label}」：仍写「${TASK_EXEMPTION_METHOD.forbidden}」`)
+  assert.deepEqual(missing, [], '以下位置没有写明新增任务内修改的登记豁免口径')
+})
+
+test('沿用轮：Carried Axis 写法在规则、skill、命令副本与流程文档中与门禁脚本一致', async () => {
+  const gate = await read('skills/openspec-technical-review/scripts/implementation-gate.mjs')
+  const key = gate.match(/const CARRIED_AXIS_KEY = '([^']+)'/)[1]
+  const value = gate.match(/const CARRIABLE_AXIS = Object\.freeze\(\{ value: '([^']+)'/)[1]
+  const line = `${key}: ${value}`
+  const missing = []
+  for (const file of ['skills/openspec-code-quality/shared/dual-axis-review.md', 'skills/openspec-code-quality/SKILL.md',
+    'claude/commands/opsx/quality.md', PROCESS_DOC]) {
+    if (!(await read(file)).includes(line)) missing.push(file)
+  }
+  assert.deepEqual(missing, [], `以下文件缺少沿用轮写法 ${line}`)
+})
+
+/**
+ * 勾选项的阶段边界（tier-post-implementation-changes D6）。
+ * task-slicing.md 是排除清单的唯一事实源；写入或修改 tasks 的入口按清单自查，verify 把 taskIssues 记为 CRITICAL。
+ * 「发布前三问」增加第 4 问后改名为「发布前四问」，旧名不得残留。
+ */
+const TASK_RULES = 'skills/openspec-propose/shared/task-slicing.md'
+/** verify 的规则文件：除引用排除清单外，还要写 taskIssues 的处理。 */
+const TASK_ISSUE_REFERRERS = [
+  'skills/openspec-verify-change/SKILL.md',
+  'claude/commands/opsx/verify.md',
+  'skills/openspec-technical-review/shared/implementation-gate-check.md',
+]
+const TASK_RULE_REFERRERS = [
+  'skills/openspec-propose/SKILL.md',
+  'claude/commands/opsx/propose.md',
+  'claude/commands/opsx/ff.md',
+  'skills/openspec-update-change/SKILL.md',
+  'claude/commands/opsx/update.md',
+  ...TASK_ISSUE_REFERRERS,
+]
+
+test('排除清单：task-slicing.md 列出 E1–E9 及去处，写入 tasks 的入口与 verify 引用排除清单', async () => {
+  const rules = await read(TASK_RULES)
+  const rows = rules.split('\n').filter(line => /^\| E\d \|/.test(line))
+  assert.deepEqual(rows.map(line => line.slice(2, 4)), ['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8', 'E9'])
+  for (const row of rows) {
+    const cells = row.split('|').slice(1, -1).map(cell => cell.trim())
+    assert.ok(cells.length === 3 && cells.every(Boolean), `排除清单行应有编号、内容与去处三列：${row}`)
+  }
+  assert.ok(rules.includes('## 发布前四问'), `${TASK_RULES} 缺少「发布前四问」`)
+  const missing = []
+  for (const file of TASK_RULE_REFERRERS) {
+    if (!(await read(file)).includes('排除清单')) missing.push(file)
+  }
+  assert.deepEqual(missing, [], '以下文件未引用排除清单')
+  const noTaskIssues = []
+  for (const file of TASK_ISSUE_REFERRERS) {
+    if (!(await read(file)).includes('taskIssues')) noTaskIssues.push(file)
+  }
+  assert.deepEqual(noTaskIssues, [], '以下 verify 规则未写 taskIssues 的处理')
+  const stale = await findStale([...AGENT_READ_DIRS, 'workflow'], /\.md$/, [/三问/])
+  assert.deepEqual(stale, [], `以下位置仍写「三问」：\n${stale.join('\n')}`)
+})
+
+/**
+ * verify 直接核对评审条件（tier-post-implementation-changes D4、D7）。
+ * verify 不再先刷新 overview：条件以 review-summary.md 为准，结果写进 verification.md「评审条件」，archive 读取该小节。
+ * 条件只需修改规划产物时，可以映射到 `<文件>:<行号>` 闭环；任务与行号都没有时才视同 Blocker。
+ */
+const VERIFY_REPORT_FILES = ['skills/openspec-verify-change/SKILL.md', 'claude/commands/opsx/verify.md']
+const ARCHIVE_FILES = ['skills/openspec-archive-change/SKILL.md', 'claude/commands/opsx/archive.md']
+const CONDITION_COLUMNS = '| 条件 | 映射任务或行号 | 状态 |'
+const LINE_REFERENCE = '<文件>:<行号>'
+/** 条件清单表格的列名必须为「对应任务或行号」的文件：技术评审 SKILL.md Step 2 与它的 workflow 副本。 */
+const CONDITION_COLUMN_FILES = [
+  'skills/openspec-technical-review/SKILL.md',
+  'skills/openspec-technical-review/technical-review-gate.workflow.js',
+]
+/** 写有「有条件通过」条件映射规则的文件：design D7 列出的 5 个文件与同步文件，以及该规则在其他 skill、命令副本与流程文档中的副本。 */
+const CONDITION_MAPPING_FILES = [
+  'skills/openspec-technical-review/shared/gate-policy.md',
+  ...CONDITION_COLUMN_FILES,
+  'skills/openspec-code-quality/shared/dual-axis-review.md',
+  'skills/openspec-technical-review/shared/phase6-verification.md',
+  TASK_RULES,
+  'skills/openspec-code-quality/SKILL.md',
+  'skills/openspec-technical-review/shared/finding-format.md',
+  'skills/openspec-change-overview/shared/phase3-gate.md',
+  'skills/openspec-change-overview/SKILL.md',
+  'claude/commands/opsx/overview.md',
+  'claude/commands/opsx/quality.md',
+  PROCESS_DOC,
+  'workflow/quickstart-guide.md',
+]
+/** verify 之前刷新 overview、按 overview 条件矩阵核对的旧写法。 */
+const STALE_REFRESH = [
+  /verify`?\s*(?:之前|前)刷新/,
+  /^\|\s*`\/opsx:verify` 之前\s*\|/,
+  /先(?:跑|运行)[^。；\n]*\/opsx:overview/,
+  /先刷新条件矩阵/,
+  /核对条件矩阵/,
+  /(?:用|按)\s*`?overview\.md`?\s*(?:的)?条件矩阵/,
+  /用其条件矩阵/,
+  /`overview\.md` 条件矩阵中标/,
+]
+/** 条件只能映射到任务的旧写法。 */
+const STALE_MAPPING = [
+  /(?:映射不到|无法映射到|必须(?:能)?映射到|都映射到|已映射到)\s*(?:任何\s*)?`?tasks/,
+  /对应 tasks\.md 任务/,
+]
+
+/** 在 dirs 下扩展名匹配 pattern 的文件中逐行查找旧写法，返回 `文件:行号`。 */
+async function findStale(dirs, filePattern, patterns) {
+  const stale = []
+  for (const dir of dirs) {
+    for (const file of (await listFiles(dir)).filter(f => filePattern.test(f))) {
+      (await read(file)).split('\n').forEach((line, i) => {
+        if (patterns.some(pattern => pattern.test(line))) stale.push(`${file}:${i + 1}`)
+      })
+    }
+  }
+  return stale
+}
+
+test('verify 条件核对：不再要求 verify 之前刷新 overview，archive 读取 verification.md「评审条件」', async () => {
+  const stale = await findStale([...AGENT_READ_DIRS, 'workflow'], /\.md$/, STALE_REFRESH)
+  assert.deepEqual(stale, [], `以下位置仍要求 verify 之前刷新 overview 或按条件矩阵核对：\n${stale.join('\n')}`)
+  assert.ok((await read('skills/openspec-technical-review/shared/phases.md')).includes('条件核对（读取 review-summary.md）'),
+    'phases.md 的 Phase 6 流程图应改为「条件核对（读取 review-summary.md）」')
+  for (const file of ARCHIVE_FILES) {
+    const text = await read(file)
+    assert.ok(text.includes('「评审条件」'), `${file} 应读取 verification.md「评审条件」`)
+    assert.ok(!text.includes('条件矩阵'), `${file} 不应再读取 overview 条件矩阵`)
+  }
+})
+
+test('verify 报告：模板含 Fingerprint、Verify Mode 与「评审条件」，写明增量复核条件', async () => {
+  for (const file of VERIFY_REPORT_FILES) {
+    const text = await read(file)
+    for (const expected of ['- Fingerprint: git-tree:', '- Verify Mode:', '### 评审条件', CONDITION_COLUMNS, 'classify', '--from', 'unregistered', '增量']) {
+      assert.ok(text.includes(expected), `${file} 缺少「${expected}」`)
+    }
+  }
+})
+
+test('条件映射：只需修改规划产物的条件可以映射到 <文件>:<行号>，只认任务的旧写法不得残留', async () => {
+  const missing = []
+  for (const file of CONDITION_MAPPING_FILES) {
+    if (!(await read(file)).includes(LINE_REFERENCE)) missing.push(file)
+  }
+  assert.deepEqual(missing, [], `以下文件的条件映射规则未写 ${LINE_REFERENCE}`)
+  for (const file of CONDITION_COLUMN_FILES) {
+    assert.ok((await read(file)).includes('对应任务或行号'), `${file} 的条件清单列名应为「对应任务或行号」`)
+  }
+  const stale = await findStale([...AGENT_READ_DIRS, 'workflow'], /\.md$|\.workflow\.js$/, STALE_MAPPING)
+  assert.deepEqual(stale, [], `以下位置仍要求条件只能映射到 tasks：\n${stale.join('\n')}`)
+})
+
+/**
+ * 验收部署文档（tier-post-implementation-changes D8）。
+ * deployment-document.md 是 deployment.md 的唯一事实源：四节表格都带「负责人」与「状态」，不用 checkbox，
+ * 避免与 tasks.md 的进度混淆。排除清单 E6–E8 的去处、propose 的创建条件、verify 的核对项都只引用该文件。
+ */
+const DEPLOYMENT_RULES = 'skills/openspec-apply-change/shared/deployment-document.md'
+const DEPLOYMENT_SECTIONS = {
+  发布前检查: ['检查', '通过条件', '负责人', '状态'],
+  部署与回滚: ['步骤', '负责人', '状态'],
+  上线后验收: ['指标', '窗口', '达标条件', '未达标处理', '负责人', '状态'],
+  交接项: ['动作', '负责人', '不做的后果', '状态'],
+}
+const DEPLOYMENT_REFERRERS = [
+  'skills/openspec-propose/SKILL.md',
+  'claude/commands/opsx/propose.md',
+  'claude/commands/opsx/ff.md',
+  ...VERIFY_REPORT_FILES,
+  'skills/openspec-apply-change/shared/slice-evidence.md',
+]
+
+/** 取 verify 第 8 步报告模板（从「## Verification Report」到代码块结束）。 */
+function reportTemplate(markdown) {
+  const rest = markdown.split('## Verification Report: <change-name>')[1]
+  assert.ok(rest, '缺少 verify 报告模板')
+  return rest.split('```')[0]
+}
+
+test('验收部署文档：骨架四节表格都有负责人与状态列，不用 checkbox', async () => {
+  const rules = await read(DEPLOYMENT_RULES)
+  assert.ok(!/- \[[ x]\]/.test(rules), `${DEPLOYMENT_RULES} 不得使用 checkbox`)
+  const skeleton = fencedBlock(rules, '# 验收部署文档：<change-name>\n')
+  for (const [section, columns] of Object.entries(DEPLOYMENT_SECTIONS)) {
+    const body = skeleton.split(`## ${section}\n`)[1]
+    assert.ok(body, `骨架缺少小节「${section}」`)
+    const header = body.split('\n')[0].split('|').slice(1, -1).map(cell => cell.trim())
+    assert.deepEqual(header, columns, `「${section}」的表头应为 ${columns.join(' | ')}`)
+  }
+  for (const status of ['`未开始`', '`已完成`', '`不适用`']) {
+    assert.ok(rules.includes(status), `${DEPLOYMENT_RULES} 缺少状态取值 ${status}`)
+  }
+  assert.ok(rules.includes('待环境补测'), `${DEPLOYMENT_RULES} 应写明待环境补测的补测计划写入「发布前检查」`)
+})
+
+test('验收部署文档：排除清单 E6–E8、propose 创建条件、verify 核对项都引用 deployment-document.md', async () => {
+  const rows = (await read(TASK_RULES)).split('\n').filter(line => /^\| E[678] \|/.test(line))
+  assert.equal(rows.length, 3)
+  for (const row of rows) assert.ok(row.includes('deployment-document.md'), `排除清单行的去处应引用 deployment-document.md：${row}`)
+  const missing = []
+  for (const file of DEPLOYMENT_REFERRERS) {
+    if (!(await read(file)).includes('deployment-document.md')) missing.push(file)
+  }
+  assert.deepEqual(missing, [], '以下文件未引用 deployment-document.md')
+})
+
+test('验收部署文档：verify 报告模板只写一行指向 deployment.md，不列出上线后的事项', async () => {
+  for (const file of VERIFY_REPORT_FILES) {
+    const lines = reportTemplate(await read(file)).split('\n')
+    assert.equal(lines.filter(line => line.includes('deployment.md')).length, 1, `${file} 报告模板应只有一行指向 deployment.md`)
+    for (const section of Object.keys(DEPLOYMENT_SECTIONS)) {
+      assert.ok(!lines.some(line => line.includes(section)), `${file} 报告模板不应列出「${section}」`)
+    }
+  }
+})

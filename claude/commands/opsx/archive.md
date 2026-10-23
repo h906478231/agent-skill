@@ -72,8 +72,8 @@ Archive a completed change in the experimental workflow.
 - **技术评审签字**：若 `review-summary.md` 存在，必须有 `Technical Review Approved:` 签字行；缺签字或裁决为 BLOCKED 时拒绝。
 - **未闭环 Blocker**：`review-summary.md` 的「已确认风险详细清单」中未闭环 Blocker 必须为 0（闭合判定见 skill `openspec-technical-review` 的 `shared/closed-loop-verification.md`）。
 - **代码质量评审（历史变更）**：若存在 `review/code-quality.md`，结论不得为「打回」，未闭环 Blocker 必须为 0。
-- **双轴评审与切片证据**：运行 skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs archive <changeRoot>`，退出码非 0 即拒绝归档，并列出 `blockers`（任一轴未闭环 Blocker、L2/L3 缺少或不一致的评审报告、缺失 / 不完整 / 失败 / 过期的切片证据）；`notes` 中的不适用理由写入归档摘要。完整口径见该 skill 的 `shared/implementation-gate-check.md`「Archive」一节，历史变更不追溯。
-- **Phase 6 验证**：`/opsx:verify` 的 CRITICAL 项必须已清零；`overview.md` 条件矩阵中标 `⚠️ 未落地` 的行必须已清零（尚未拆分 tasks 的「待拆分」行不计）。
+- **双轴评审与切片证据**：运行 skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs archive <changeRoot>`，退出码非 0 即拒绝归档，并列出 `blockers`（任一轴未闭环 Blocker、L2/L3 缺少或不一致的评审报告、缺失 / 不完整 / 失败 / 过期的切片证据）；`notes` 中的不适用理由与待环境补测切片（负责人、补测计划）写入归档摘要，待环境补测不阻断。完整口径见该 skill 的 `shared/implementation-gate-check.md`「Archive」一节，历史变更不追溯。
+- **Phase 6 验证**：`/opsx:verify` 的 CRITICAL 项必须已清零；最近一次 `/opsx:verify` 报告（`verification.md`；报告只在对话内时取对话中的报告）的「评审条件」小节不得有未闭环的条件（条件对应已勾选的任务，或对应写明了该条件的 `<文件>:<行号>`），有未闭环条件时拒绝归档并写出条件编号。`overview.md` 的 `⚠️ 未落地` 行不作为归档依据。
 - **验证结论留痕**：`/opsx:verify` 的结论只在对话内，归档前必须取得用户「验证已通过」的显式确认，并把该确认写进归档摘要。
 
 阶段顺序与门禁口径的唯一事实源见 skill `openspec-technical-review` 的 `shared/phases.md`。

@@ -17,7 +17,7 @@
 四条补充判定：
 
 - **「声称已闭环但实际未闭环」一律按未闭环 Blocker 计入裁决**（见 `closed-loop-verification.md`）。
-- **映射不到 `tasks.md` 的「有条件通过」条件视同 Blocker** —— 没有落地路径的条件等于失效。
+- **「有条件通过」的条件既没有对应任务、也没有对应行号时视同 Blocker** —— 没有落地路径的条件等于失效。条件需要代码、测试、SQL、配置文件或交付文档时，对应一项任务；条件只需修改规划产物时，对应该产物的行号 `<文件>:<行号>`，修改走 `/opsx:update`，不写成任务（`../../openspec-propose/shared/task-slicing.md`「排除清单」E3）。verify 核对该行存在并且写明了条件。
 - **纳入维度没有评审产物时裁决为 `BLOCKED`**（如增量重走时某个沿用维度上轮没有 `review/<role>.md`）—— 没评审过的维度无法求值，不得推测或编造上轮结论，把该维度加入重跑范围。
 - **人工确认是硬门禁**：裁决为 `READY_FOR_HUMAN_APPROVAL` 只代表可以交人审，不代表可以 apply。人工在 `review-summary.md` 写入 `Technical Review Approved` 之前，禁止进入实现。
 

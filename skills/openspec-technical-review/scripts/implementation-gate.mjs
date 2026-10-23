@@ -7,11 +7,13 @@
  * 以及对应的 openspec-* skill。规则事实源（本脚本只做确定性判定，不重复规则说明）：
  *   - 双轴评审：openspec-code-quality/shared/dual-axis-review.md（是否必需按分级：L2/L3 必需，L0/L1 只推荐，见 reviewRequired）
  *   - 切片证据：openspec-apply-change/shared/slice-evidence.md
+ *   - 实现后修改登记：openspec-apply-change/shared/post-implementation-changes.md
  *   - verify / archive 如何解读输出：openspec-technical-review/shared/implementation-gate-check.md
  *
  * 用法：
  *   node implementation-gate.mjs fingerprint <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs baseline    <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]
+ *   node implementation-gate.mjs classify    <changeRoot> --from <fingerprint> [--to <fingerprint>] [--repo <dir>]
  *   node implementation-gate.mjs review      <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs evidence    <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs archive     <changeRoot> [--repo <dir>]
@@ -19,6 +21,8 @@
  *   node implementation-gate.mjs regress     --baseline <file> --actual <file>
  *
  * 输出：fingerprint 输出一行指纹；baseline 输出 Markdown 基线区块（--since 给出时追加增量范围）；其余输出 JSON。
+ * classify 比较两个指纹（--to 默认取当前指纹），列出只有注释与空白差异的文件（commentOnly）与其他文件（other），
+ * other 中未在 tasks.md「## 实现后修改登记」表登记的文件（unregistered）不为空时退出码 1；tree 对象不存在时退出码 2。
  * regress 比较实际失败清单与已知基线失败清单，只有本次引入的失败（introduced）影响退出码。
  * hygiene 列出变更目录中允许清单外的产物，只给 warning，退出码恒为 0（参数错误除外）。
  * 退出码：0 通过；1 存在阻断项；2 参数或环境错误（非 git 仓库、变更目录不存在等）。
@@ -65,6 +69,29 @@ const BLOCKER_CRITERION = /^\[B[1-5]\]/
 
 /** 累计台账区块标题。 */
 const LEDGER_TITLE = 'Finding 台账'
+
+/** tasks.md 中实现后修改登记表的区块标题（格式见 openspec-apply-change/shared/post-implementation-changes.md）。 */
+const CHANGE_LEDGER_TITLE = '实现后修改登记'
+
+/** 修改档位，按风险从低到高排列：同一文件登记多行时取最高档位。 */
+const CHANGE_TIERS = ['非行为', '等价', '行为']
+
+/**
+ * 三个档位的具名常量，与 CHANGE_TIERS 的顺序一一对应。CHANGE_TIERS 的字面量写法不变：文档一致性测试按字面量读取档位。
+ *   - NON_BEHAVIOR_TIER：只有注释差异；classify 判为 other 的文件登记为该档位属于错登。
+ *   - EQUIVALENT_TIER：行为不变的修改；唯一可以沿用 Spec Fidelity 的档位。
+ *   - BEHAVIOR_TIER：行为修改；两轴都要重跑。
+ */
+const [NON_BEHAVIOR_TIER, EQUIVALENT_TIER, BEHAVIOR_TIER] = CHANGE_TIERS
+
+/** 没有任何有效登记行列出该文件时的原因：只列入 unregistered，不另写 issues。 */
+const NOT_REGISTERED = '未登记'
+
+/** 沿用轮在汇总报告中写的字段名（格式见 dual-axis-review.md「修复与重跑」）。 */
+const CARRIED_AXIS_KEY = 'Carried Axis'
+
+/** 唯一可以沿用的评审轴：等价修改正是 Standards 要审查的内容，因此只有 Spec Fidelity 可以沿用。 */
+const CARRIABLE_AXIS = Object.freeze({ value: 'spec-fidelity', file: 'review/spec-fidelity.md' })
 
 /** 重跑时的上轮闭环验证区块标题（格式见 closed-loop-verification.md）。 */
 const CLOSURE_TITLE = '上轮闭环验证'
@@ -170,15 +197,32 @@ function computeFingerprint(repo, changeRoot) {
 }
 
 /**
+ * 读取两个指纹之间每个变化文件的 diff-tree 记录。changedFiles 与 classifyChanges 共用，两处列出的文件名一致。
+ * -z 输出不转义路径：含双引号、制表符的文件名按原样返回。不做改名检测：改名的文件按删除加新增处理。
+ * @returns {{ file: string, modeA: string, modeB: string, blobA: string, blobB: string, status: string }[]|null}
+ *   指纹不是 git-tree 格式或 tree 对象不存在（可能已被 git gc 回收）时返回 null。
+ */
+function diffTreeEntries(repo, from, to) {
+  const a = GIT_TREE_FINGERPRINT.exec(from)
+  const b = GIT_TREE_FINGERPRINT.exec(to)
+  if (!a || !b) return null
+  if (![a[1], b[1]].every(sha => tryGit(repo, ['cat-file', '-e', `${sha}^{tree}`]) !== null)) return null
+  const fields = git(repo, ['diff-tree', '-r', '-z', '--no-renames', a[1], b[1]]).split('\0')
+  const entries = []
+  for (let k = 0; k + 1 < fields.length; k += 2) {
+    const [modeA, modeB, blobA, blobB, status] = fields[k].replace(/^:/, '').split(' ')
+    entries.push({ file: fields[k + 1], modeA, modeB, blobA, blobB, status })
+  }
+  return entries
+}
+
+/**
  * 两个指纹之间实际变化的文件。
  * @returns {string[]|null} 变化文件列表；指纹不是 git-tree 格式或对象已被回收、无法核实时返回 null。
  */
 function changedFiles(repo, from, to) {
-  const a = GIT_TREE_FINGERPRINT.exec(from)
-  const b = GIT_TREE_FINGERPRINT.exec(to)
-  if (!a || !b) return null
-  const out = tryGit(repo, ['-c', 'core.quotePath=false', 'diff-tree', '-r', '--name-only', a[1], b[1]])
-  return out === null ? null : out.split('\n').filter(Boolean)
+  const entries = diffTreeEntries(repo, from, to)
+  return entries && entries.map(entry => entry.file)
 }
 
 /**
@@ -218,6 +262,440 @@ function renderBaseline(repo, changeRoot, baseRev, since) {
     '',
   ].join('\n')
   return { output, warnings }
+}
+
+// ============================================================================
+// 注释差异识别（classify；规则见 design D2，不支持的文件类型与原因见 ADR-0006）
+// ============================================================================
+//
+// 安全方向：把注释误判为代码只会多登记一次；把代码误判为注释会让行为修改绕过验证。
+// 因此方言或写法有歧义、扫描无法闭合时，整份文件一律按代码处理（规范化函数返回 null）。
+
+/** 字面量在代码文本中的占位符：含 NUL 的文件已按二进制排除，占位符不会与原文冲突。 */
+const LITERAL_PLACEHOLDER = '\u0000'
+
+/** 行注释在这里结束（不含换行符）。 */
+const LINE_BREAK = /[\n\r]/g
+
+/** 行注释的结束位置：下一个换行符，没有时为文件结尾。 */
+function lineEnd(text, i) {
+  LINE_BREAK.lastIndex = i
+  const found = LINE_BREAK.exec(text)
+  return found ? found.index : text.length
+}
+
+/** 从 from 起查找结束符 close，返回到结束符之后的记号；未闭合返回 null。 */
+function closeAfter(text, from, close, kind) {
+  const end = text.indexOf(close, from)
+  return end < 0 ? null : { kind, end: end + close.length }
+}
+
+/**
+ * 扫描引号字面量。
+ * @param {object} options escape：反斜杠转义下一个字符；rejectBackslash：出现反斜杠即无法判定；
+ *   multiline：允许跨行；doubled：连写两个引号表示一个引号。
+ * @returns {{ kind: 'literal', end: number }|null} 未闭合或无法判定时返回 null。
+ */
+function quoted(text, i, quote, { escape = false, rejectBackslash = false, multiline = false, doubled = false } = {}) {
+  for (let j = i + quote.length; j < text.length; j += 1) {
+    const ch = text[j]
+    if (ch === '\\' && rejectBackslash) return null
+    if (ch === '\\' && escape) {
+      j += 1
+      continue
+    }
+    if (!multiline && (ch === '\n' || ch === '\r')) return null
+    if (text.startsWith(quote, j)) {
+      if (doubled && text.startsWith(quote, j + quote.length)) {
+        j += quote.length * 2 - 1
+        continue
+      }
+      return { kind: 'literal', end: j + quote.length }
+    }
+  }
+  return null
+}
+
+/**
+ * 通用扫描循环：starts 找到记号起点后交给 token 判定记号类型与结束位置。
+ * 注释替换为一个空格；字面量在代码文本中只留占位符，原文另存，空白规范化不会改动字面量。
+ * @param {RegExp} starts 记号起点（带 g 标志）。
+ * @param {Function} token (text, i) => { kind: 'comment' | 'literal' | 'code', end } 或 null（无法可靠扫描）。
+ * @returns {{ code: string, literals: string[] }|null}
+ */
+function scanTokens(text, starts, token) {
+  const parts = []
+  const literals = []
+  let i = 0
+  while (i < text.length) {
+    starts.lastIndex = i
+    const next = starts.exec(text)
+    const at = next ? next.index : text.length
+    if (at > i) parts.push(text.slice(i, at))
+    if (!next) break
+    const found = token(text, at)
+    if (!found) return null
+    if (found.kind === 'comment') {
+      parts.push(' ')
+    } else if (found.kind === 'literal') {
+      parts.push(LITERAL_PLACEHOLDER)
+      literals.push(text.slice(at, found.end))
+    } else {
+      parts.push(text.slice(at, found.end))
+    }
+    i = found.end
+  }
+  return { code: parts.join(''), literals }
+}
+
+/** 连续空白折叠为一个空格（Java、SQL、XML）。空白字符显式列出：按 latin1 解码后 0xA0、0x85 不是空白。 */
+function collapseBlank(scanned) {
+  if (!scanned) return null
+  return { code: scanned.code.replace(/[ \t\f\n\r]+/g, ' ').replace(/^ | $/g, ''), literals: scanned.literals }
+}
+
+/** Java 编译器在词法分析之前展开的 Unicode 转义（JLS 3.3）：前面的反斜杠个数为偶数时成立，可以写多个 u。 */
+const JAVA_UNICODE_ESCAPE = /(?<!\\)(?:\\\\)*\\u+([0-9a-fA-F]{4})/g
+
+/** 展开后会改变注释或字面量边界的字符：引号、反斜杠、斜杠、星号与换行。 */
+const JAVA_STRUCTURAL = new Set(['"', '\'', '\\', '/', '*', '\n', '\r'])
+
+const JAVA_STARTS = /\/[/*]|["']/g
+
+function javaToken(text, i) {
+  if (text.startsWith('//', i)) return { kind: 'comment', end: lineEnd(text, i) }
+  if (text.startsWith('/*', i)) return closeAfter(text, i + 2, '*/', 'comment')
+  if (text.startsWith('"""', i)) return quoted(text, i, '"""', { escape: true, multiline: true })
+  return quoted(text, i, text[i], { escape: true })
+}
+
+/**
+ * Java：删除 `//`、`/* *\/`，字符串、字符字面量与文本块保留原文，连续空白折叠为一个空格。
+ * 出现会改变注释或字面量边界的 Unicode 转义（如注释中的 \u000a）时整份文件按代码处理：
+ * 编译器先展开转义，注释后面的文字会变成代码。
+ */
+function normalizeJava(text) {
+  for (const match of text.matchAll(JAVA_UNICODE_ESCAPE)) {
+    if (JAVA_STRUCTURAL.has(String.fromCharCode(parseInt(match[1], 16)))) return null
+  }
+  return collapseBlank(scanTokens(text, JAVA_STARTS, javaToken))
+}
+
+const KOTLIN_STARTS = /\/[/*]|["'`]/g
+
+/** Kotlin 块注释可以嵌套，到最外层的 `*\/` 结束。 */
+function nestedComment(text, i) {
+  let depth = 0
+  for (let j = i; j < text.length;) {
+    if (text.startsWith('/*', j)) {
+      depth += 1
+      j += 2
+    } else if (text.startsWith('*/', j)) {
+      depth -= 1
+      j += 2
+      if (!depth) return { kind: 'comment', end: j }
+    } else {
+      j += 1
+    }
+  }
+  return null
+}
+
+/** 字符串模板 `${...}` 的结束位置（j 指向 `${` 之后）：模板内是代码，可以再含字符串与注释。未闭合返回 -1。 */
+function kotlinTemplateEnd(text, j) {
+  let depth = 1
+  while (j < text.length) {
+    const ch = text[j]
+    if ('/"\'`'.includes(ch)) {
+      const found = kotlinToken(text, j)
+      if (!found) return -1
+      j = found.end
+      continue
+    }
+    if (ch === '{') depth += 1
+    if (ch === '}' && --depth === 0) return j + 1
+    j += 1
+  }
+  return -1
+}
+
+/** Kotlin 字符串：普通字符串有转义、不能跨行；原始字符串 `"""` 没有转义。两者都可以含模板，整体保留原文。 */
+function kotlinString(text, i, raw) {
+  const quote = raw ? '"""' : '"'
+  for (let j = i + quote.length; j < text.length;) {
+    if (!raw && text[j] === '\\') {
+      j += 2
+      continue
+    }
+    if (!raw && (text[j] === '\n' || text[j] === '\r')) return null
+    if (text.startsWith('${', j)) {
+      j = kotlinTemplateEnd(text, j + 2)
+      if (j < 0) return null
+      continue
+    }
+    if (text.startsWith(quote, j)) {
+      let end = j + quote.length
+      // 原始字符串结尾的多余引号属于内容：`""""` 表示内容以一个引号结尾。
+      while (raw && text[end] === '"') end += 1
+      return { kind: 'literal', end }
+    }
+    j += 1
+  }
+  return null
+}
+
+function kotlinToken(text, i) {
+  if (text.startsWith('//', i)) return { kind: 'comment', end: lineEnd(text, i) }
+  if (text.startsWith('/*', i)) return nestedComment(text, i)
+  if (text[i] === '"') return kotlinString(text, i, text.startsWith('"""', i))
+  if (text[i] === '\'') return quoted(text, i, '\'', { escape: true })
+  if (text[i] === '`') return quoted(text, i, '`')
+  return { kind: 'code', end: i + 1 }
+}
+
+/**
+ * Kotlin：删除 `//` 与可以嵌套的 `/* *\/`，字符串、原始字符串、字符字面量与反引号标识符保留原文。
+ * 换行可以结束语句，因此保留换行，只删除行首行尾空白与空行，行内连续空白折叠为一个空格。
+ */
+function normalizeKotlin(text) {
+  const scanned = scanTokens(text, KOTLIN_STARTS, kotlinToken)
+  if (!scanned) return null
+  const code = scanned.code.split(/\r\n|\r|\n/)
+    .map(line => line.replace(/[ \t\f]+/g, ' ').replace(/^ | $/g, ''))
+    .filter(Boolean)
+    .join('\n')
+  return { code, literals: scanned.literals }
+}
+
+const SQL_STARTS = /--|\/\*|['"`#$]/g
+
+function sqlToken(text, i) {
+  const ch = text[i]
+  if (ch === '-') {
+    // MySQL 规则：-- 后面是空白或文件结尾才是注释；`--x` 在 PostgreSQL 中是注释，方言不明，整份文件按代码处理。
+    return /[ \t\f\n\r]/.test(text[i + 2] || ' ') ? { kind: 'comment', end: lineEnd(text, i) } : null
+  }
+  if (ch === '/') {
+    const end = text.indexOf('*/', i + 2)
+    // 块注释中再出现 /*：PostgreSQL 允许嵌套而 MySQL 不允许，结束位置不唯一。
+    if (end < 0 || text.slice(i + 2, end).includes('/*')) return null
+    // hint（/*+ *\/）与可执行注释（/*! *\/、MariaDB 的 /*M! *\/）会被数据库执行，按代码保留原文。
+    const executable = /^\/\*(?:[+!]|M!)/.test(text.slice(i, i + 4))
+    return { kind: executable ? 'literal' : 'comment', end: end + 2 }
+  }
+  // 反斜杠在 MySQL 字符串中是转义、在标准 SQL 中不是，字符串结束位置不唯一，出现即无法判定。
+  if (ch === '\'' || ch === '"') return quoted(text, i, ch, { rejectBackslash: true, multiline: true, doubled: true })
+  if (ch === '`') return quoted(text, i, '`', { multiline: true, doubled: true })
+  // # 在 MySQL 中开始注释、在 PostgreSQL 中是运算符；$ 可以开始 PostgreSQL 的美元引号字符串。方言不明。
+  return null
+}
+
+/** SQL（MySQL 规则）：删除 `-- ` 与 `/* *\/`，字符串、反引号标识符、hint 与可执行注释保留原文，连续空白折叠为一个空格。 */
+function normalizeSql(text) {
+  return collapseBlank(scanTokens(text, SQL_STARTS, sqlToken))
+}
+
+const XML_STARTS = /</g
+
+/** XML 标签整体保留原文：属性值是代码，标签内的空白变化也按代码处理。 */
+function xmlTag(text, i) {
+  for (let j = i + 1; j < text.length; j += 1) {
+    const ch = text[j]
+    if (ch === '"' || ch === '\'') {
+      const close = text.indexOf(ch, j + 1)
+      if (close < 0) return null
+      j = close
+      continue
+    }
+    // DOCTYPE 内部子集可以含声明与注释，结构复杂，整份文件按代码处理。
+    if (ch === '[' || ch === '<') return null
+    if (ch === '>') return { kind: 'literal', end: j + 1 }
+  }
+  return null
+}
+
+function xmlToken(text, i) {
+  if (text.startsWith('<!--', i)) return closeAfter(text, i + 4, '-->', 'comment')
+  if (text.startsWith('<![CDATA[', i)) return closeAfter(text, i + 9, ']]>', 'literal')
+  if (text.startsWith('<?', i)) return closeAfter(text, i + 2, '?>', 'literal')
+  return xmlTag(text, i)
+}
+
+/** XML：删除 `<!-- -->`，CDATA、处理指令与标签（含属性值）保留原文，文本中的连续空白折叠为一个空格。 */
+function normalizeXml(text) {
+  return collapseBlank(scanTokens(text, XML_STARTS, xmlToken))
+}
+
+/**
+ * properties（java.util.Properties 的行规则）：删除注释行与空行，删除行首空白。
+ * - 行尾空白属于取值，保留；
+ * - 续行（上一行以奇数个 \ 结尾）中的内容是取值，行首的 # 也不是注释；续行中的空行结束该取值，保留；
+ * - 注释行末尾的 \ 不构成续行；Spring 的多文档分隔符 #--- / !--- 按代码处理。
+ */
+function normalizeProperties(text) {
+  const lines = []
+  let continued = false
+  for (const raw of text.split(/\r\n|\r|\n/)) {
+    const line = raw.replace(/^[ \t\f]+/, '')
+    if (!continued && (!line || (/^[#!]/.test(line) && !/^[#!]---/.test(line)))) continue
+    lines.push(line)
+    continued = /(?:^|[^\\])(?:\\\\)*\\$/.test(line)
+  }
+  return { code: lines.join('\n'), literals: [] }
+}
+
+/** 支持的文件类型：扩展名 → 规范化函数（返回 null 表示无法可靠扫描）。其他类型一律按代码处理。 */
+const COMMENT_RULES = {
+  '.java': normalizeJava,
+  '.kt': normalizeKotlin,
+  '.kts': normalizeKotlin,
+  '.sql': normalizeSql,
+  '.xml': normalizeXml,
+  '.properties': normalizeProperties,
+}
+
+/** 读取 blob 原始字节。 */
+function readBlob(repo, sha) {
+  const result = spawnSync('git', ['cat-file', 'blob', sha], { cwd: repo, maxBuffer: 64 * 1024 * 1024 })
+  if (result.error) throw new GateError(`无法执行 git：${result.error.message}`)
+  if (result.status !== 0) throw new GateError(`无法读取 blob ${sha}：${String(result.stderr).trim()}`)
+  return result.stdout
+}
+
+/** 两个版本删除注释并规范化空白后是否相同；任一版本是二进制或无法可靠扫描时返回 false。 */
+function sameIgnoringComments(repo, normalize, blobA, blobB) {
+  const [a, b] = [blobA, blobB].map(sha => {
+    const content = readBlob(repo, sha)
+    // 按 latin1 解码，字节与字符一一对应：非法 UTF-8 不会被替换成同一个字符而误判相等。
+    return content.includes(0) ? null : normalize(content.toString('latin1'))
+  })
+  return Boolean(a && b) && a.code === b.code
+    && a.literals.length === b.literals.length && a.literals.every((literal, k) => literal === b.literals[k])
+}
+
+/** 同一对指纹在一次运行中只比较一次（evidence 对多个切片会重复比较同一段）。 */
+const classifyCache = new Map()
+
+/** 普通文件的 git 权限位（100644、100755 等）；符号链接与子模块不比较内容。 */
+const REGULAR_FILE_MODE = /^100[0-7]{3}$/
+
+/**
+ * 比较两个指纹之间每个变化文件，区分只有注释与空白差异的文件（commentOnly）与其他文件（other）。
+ * 新增、删除、类型或权限变化、二进制与不支持类型的文件归入 other。
+ * @returns {{ commentOnly: string[], other: string[] }|null} 指纹不是 git-tree 格式或 tree 对象不存在时返回 null。
+ */
+function classifyChanges(repo, from, to) {
+  const a = GIT_TREE_FINGERPRINT.exec(from)
+  const b = GIT_TREE_FINGERPRINT.exec(to)
+  if (!a || !b) return null
+  const key = `${a[1]}..${b[1]}`
+  if (classifyCache.has(key)) return classifyCache.get(key)
+  const entries = diffTreeEntries(repo, from, to)
+  let result = null
+  if (entries) {
+    result = { commentOnly: [], other: [] }
+    // 改名的文件按删除加新增处理（状态为 D、A），不满足 status === 'M'，归入 other。
+    for (const { file, modeA, modeB, blobA, blobB, status } of entries) {
+      const normalize = COMMENT_RULES[path.extname(file).toLowerCase()]
+      const comparable = status === 'M' && modeA === modeB && REGULAR_FILE_MODE.test(modeA) && normalize
+      const target = comparable && sameIgnoringComments(repo, normalize, blobA, blobB) ? result.commentOnly : result.other
+      target.push(file)
+    }
+  }
+  classifyCache.set(key, result)
+  return result
+}
+
+/**
+ * 读取 tasks.md 的实现后修改登记表。
+ * 编号与文件都为空的行视为模板空行，跳过。档位不合法或登记指纹不合法（为空、不是 git-tree 格式）的行报问题且不算登记。
+ * @returns {{ rows: { id: string, files: string[], tier: string, fingerprint: string }[], issues: string[] }}
+ *   rows 只含有效行，按表中顺序排列；issues 为行级问题。
+ */
+function readChangeLedger(changeRoot) {
+  const rows = []
+  const issues = []
+  for (const row of parseTables(section(readTasks(changeRoot), CHANGE_LEDGER_TITLE))) {
+    const id = clean(row['编号'] || '')
+    const files = splitFiles(row['文件'] || '')
+    if (!id && !files.length) continue
+    const tier = clean(row['档位'] || '')
+    const fingerprint = clean(row['登记指纹'] || '')
+    const problems = []
+    if (!CHANGE_TIERS.includes(tier)) problems.push(`档位「${tier || '(空)'}」不合法，应为 ${CHANGE_TIERS.join(' / ')}`)
+    // 登记指纹把登记行绑定到它登记的那次修改：没有合法指纹就无法核对登记之后是否又有修改。
+    if (!GIT_TREE_FINGERPRINT.test(fingerprint)) {
+      problems.push(`登记指纹「${fingerprint || '(空)'}」不合法，应为修改与验证完成后 fingerprint 命令的输出`)
+    }
+    if (problems.length) {
+      issues.push(`登记 ${id || '(未写编号)'} 的${problems.join('；')}：该行不算登记`)
+      continue
+    }
+    rows.push({ id, files, tier, fingerprint })
+  }
+  return { rows, issues }
+}
+
+/**
+ * 把不只有注释差异的文件（classify 的 other）与登记表匹配，按 design D2 第 6 步判定。classify 与沿用核对共用这一口径。
+ * 文件 F 算登记：至少一行档位不是非行为的有效行列出 F，并且「该行登记指纹 → to」之间 F 只有注释差异或没有差异。
+ * F 的档位取列出它的全部有效行中的最高档位。登记后又有修改的旧行也计入：只会多跑，不会漏跑。
+ * @param {string} repo 仓库根目录，用于比较登记指纹与 to。
+ * @param {string} changeRoot 变更目录。
+ * @param {string[]} files other 中的文件。
+ * @param {string} to 比较终点指纹：classify 的 --to；沿用核对时为汇总基线指纹。
+ * @returns {{ registered: object[], unregistered: object[], issues: string[] }}
+ *   registered 为 { file, id, tier }；unregistered 为 { file, reason }，没有任何有效行列出时 reason 为 NOT_REGISTERED；
+ *   issues 为登记表的行级问题，不含文件级原因。
+ */
+function matchLedger(repo, changeRoot, files, to) {
+  const { rows, issues } = readChangeLedger(changeRoot)
+  const registered = []
+  const unregistered = []
+  for (const file of files) {
+    const listed = rows.filter(row => row.files.includes(file))
+    const reasons = []
+    let covered = false
+    for (const row of listed) {
+      // 非行为档位的前提是 classify 判定只有注释差异；other 中的文件登记为非行为属于错登，该行不能证明已登记。
+      if (row.tier === NON_BEHAVIOR_TIER) {
+        reasons.push(`登记 ${row.id} 为非行为，但 classify 判定它不只有注释差异，应改为等价或行为`)
+        continue
+      }
+      const since = classifyChanges(repo, row.fingerprint, to)
+      // tree 对象不存在时无法核对登记之后的修改，按未登记处理：只会多跑，不会漏跑。
+      if (!since) reasons.push(`登记 ${row.id} 的登记指纹 tree 对象不存在，应新增一行登记`)
+      else if (since.other.includes(file)) reasons.push(`登记 ${row.id} 之后又有非注释修改，应新增一行登记`)
+      else covered = true
+    }
+    if (covered) {
+      // 同档位的多行取表中靠后的一行，即最近一次登记。
+      const top = listed.reduce((best, row) => (CHANGE_TIERS.indexOf(row.tier) >= CHANGE_TIERS.indexOf(best.tier) ? row : best))
+      registered.push({ file, id: top.id, tier: top.tier })
+    } else {
+      unregistered.push({ file, reason: reasons.length ? reasons.join('；') : NOT_REGISTERED })
+    }
+  }
+  return { registered, unregistered, issues }
+}
+
+/**
+ * classify 命令：注释差异识别结果，other 中的文件按登记表分为 registered 与 unregistered。
+ * @returns {object} from、to、commentOnly、other、registered（{ file, id, tier }）、unregistered（文件名）与 issues。
+ *   issues 含登记表的行级问题，以及有具体原因的未登记文件（文件、登记编号与原因）。
+ * @throws {GateError} 指纹不是 git-tree 格式，或 tree 对象不存在时抛出（退出码 2）。
+ */
+function classifyCommand(repo, changeRoot, from, to) {
+  for (const value of [from, to]) {
+    if (!GIT_TREE_FINGERPRINT.test(value)) throw new GateError(`classify 的指纹不是 git-tree 格式：${value}`)
+  }
+  const result = classifyChanges(repo, from, to)
+  if (!result) throw new GateError(`tree 对象不存在（可能已被 git gc 回收），无法比较 ${from} → ${to}`)
+  const ledger = matchLedger(repo, changeRoot, result.other, to)
+  // unregistered 保持文件名列表，与 other 同形；只有「未登记」以外的原因写入 issues，没有登记行的文件不重复报出。
+  const reasons = ledger.unregistered.filter(item => item.reason !== NOT_REGISTERED).map(item => `${item.file} 不算登记：${item.reason}`)
+  return { from, to, ...result, registered: ledger.registered, unregistered: ledger.unregistered.map(item => item.file),
+    issues: [...ledger.issues, ...reasons] }
 }
 
 // ============================================================================
@@ -382,12 +860,45 @@ function reviewRequired(changeRoot, tasks) {
 // ============================================================================
 
 /**
+ * 核对沿用条件（design D3）：沿用基线指纹到汇总基线指纹之间的每个变化文件，只有注释差异，或登记为等价。
+ * 登记判定与 classify 相同：未登记、档位为行为、只登记为非行为的其他差异文件都让沿用不成立。
+ * @param {string} from 沿用报告的基线指纹。
+ * @param {string} to 汇总报告的基线指纹。
+ * @returns {{ view: { axis: string, from: string, to: string, files: string[]|null }, issues: string[] }}
+ *   files 为两指纹间的变化文件；无法核对时为 null。
+ */
+function checkCarried(repo, changeRoot, from, to) {
+  const label = `${CARRIED_AXIS_KEY}: ${CARRIABLE_AXIS.value}`
+  const view = { axis: CARRIABLE_AXIS.value, from, to, files: null }
+  const diff = repo && from && to ? classifyChanges(repo, from, to) : null
+  // 无法核对就无法证明沿用成立，按结构问题处理，与豁免链「无法核实即无效」口径一致。
+  if (!diff) {
+    return { view, issues: [`${label} 无法核对：沿用基线 ${from || '(缺少 Fingerprint)'} → 汇总基线 ${to || '(缺少 Fingerprint)'}`
+      + ' 不是可比较的 git-tree 指纹或 tree 对象不存在，重跑 Spec Fidelity'] }
+  }
+  view.files = [...diff.commentOnly, ...diff.other].sort()
+  const ledger = matchLedger(repo, changeRoot, diff.other, to)
+  // 登记表的行级问题（档位或登记指纹不合法）也让沿用不成立：不合法的行可能正是某个增量文件的登记，只报「未登记」会丢掉真正原因。
+  const issues = ledger.issues.map(issue => `${label} 的登记表问题：${issue}`)
+  for (const { file, reason } of ledger.unregistered) {
+    issues.push(`${label} 不成立：${file} 自沿用基线以来不只有注释差异（${reason}），按档位登记或重跑 Spec Fidelity`)
+  }
+  // 只有等价档位可以沿用：registered 中已排除非行为，剩下的行为档位要两轴都重跑。
+  for (const item of ledger.registered.filter(entry => entry.tier !== EQUIVALENT_TIER)) {
+    issues.push(`${label} 不成立：${item.file} 登记 ${item.id} 的档位为${item.tier}，行为修改要两轴都重跑`)
+  }
+  return { view, issues }
+}
+
+/**
  * 校验双轴评审产物并重新计算裁决（不采信汇总自述）。
  * @param {string} changeRoot 变更目录。
- * @param {object} options required：是否必须存在评审产物；currentFingerprint：用于评审基线陈旧提醒。
- * @returns {object} applicable、verdict（PASSED / BLOCKED / INCOMPLETE）、axes、issues、warnings 等。
+ * @param {object} options required：是否必须存在评审产物；currentFingerprint：用于评审基线陈旧提醒；
+ *   repo：仓库根目录，用于判定基线以来是否只有注释差异。
+ * @returns {object} applicable、verdict（PASSED / BLOCKED / INCOMPLETE）、carried（沿用轮的核对范围，非沿用轮为 null）、
+ *   axes、issues、warnings 等。
  */
-function checkReview(changeRoot, { required = false, currentFingerprint = null } = {}) {
+function checkReview(changeRoot, { required = false, currentFingerprint = null, repo = null } = {}) {
   const files = [...AXES.map(axis => axis.file), SUMMARY_FILE]
   if (!required && !files.some(file => existsSync(path.join(changeRoot, file)))) {
     const tier = readTier(changeRoot)
@@ -448,9 +959,26 @@ function checkReview(changeRoot, { required = false, currentFingerprint = null }
     }
   }
 
+  // 沿用轮：Spec Fidelity 报告保留上一轮基线，不参加基线身份比较，改为核对沿用条件；open Blocker 照常计入裁决。
+  const carriedValue = summary === null ? '' : readField(summary, CARRIED_AXIS_KEY)
+  let carried = null
+  let compared = baselines
+  if (carriedValue && carriedValue !== CARRIABLE_AXIS.value) {
+    issues.push(`汇总报告的 ${CARRIED_AXIS_KEY} 为 ${carriedValue}：只有 ${CARRIABLE_AXIS.value} 可以沿用`)
+  } else if (carriedValue) {
+    const carriedBaseline = baselines.find(([file]) => file === CARRIABLE_AXIS.file)
+    const summaryBaseline = baselines.find(([file]) => file === SUMMARY_FILE)
+    if (carriedBaseline) {
+      const check = checkCarried(repo, changeRoot, carriedBaseline[1].Fingerprint, summaryBaseline[1].Fingerprint)
+      carried = check.view
+      issues.push(...check.issues)
+      compared = baselines.filter(([file]) => file !== CARRIABLE_AXIS.file)
+    }
+  }
+
   // 固定基线：以第一份存在的报告为参照，逐项比较身份字段。
-  const [referenceFile, reference] = baselines[0] || []
-  for (const [file, values] of baselines) {
+  const [referenceFile, reference] = compared[0] || []
+  for (const [file, values] of compared) {
     for (const key of BASELINE_KEYS) {
       if (!values[key]) issues.push(`${file} 的评审基线缺少 ${key}`)
       else if (reference[key] && values[key] !== reference[key]) issues.push(`${file} 的评审基线 ${key} 与 ${referenceFile} 不一致`)
@@ -462,21 +990,30 @@ function checkReview(changeRoot, { required = false, currentFingerprint = null }
     }
   }
   const baseline = reference || null
-  if (currentFingerprint && baseline && baseline.Fingerprint && baseline.Fingerprint !== currentFingerprint) {
-    warnings.push(`评审基线 Fingerprint ${baseline.Fingerprint} 与当前实现 ${currentFingerprint} 不一致：评审后实现有变化，需判断是否重跑双轴评审；`
-      + '改动不在 tasks.md 已有任务中（门禁外提交）时，先在 tasks.md 登记任务并写明提交或文件，再生成新基线重跑')
+  // 基线以来只有注释差异时不开新一轮评审，也就不提示陈旧。
+  const commentOnlySince = () => {
+    const diff = repo && classifyChanges(repo, baseline.Fingerprint, currentFingerprint)
+    return Boolean(diff) && !diff.other.length
+  }
+  if (currentFingerprint && baseline && baseline.Fingerprint && baseline.Fingerprint !== currentFingerprint && !commentOnlySince()) {
+    warnings.push(`评审基线 Fingerprint ${baseline.Fingerprint} 与当前实现 ${currentFingerprint} 不一致：评审后实现有变化。`
+      + `运行 classify --from ${baseline.Fingerprint}，把 unregistered 中的文件（含门禁外提交）按档位登记到 tasks.md 的「## ${CHANGE_LEDGER_TITLE}」，`
+      + '再按档位决定是否生成新基线重跑（规则见 post-implementation-changes.md）')
   }
 
   const verdict = blocked ? 'BLOCKED' : issues.length ? 'INCOMPLETE' : 'PASSED'
-  return { applicable: true, verdict, declaredVerdict, baseline, axes, issues, warnings }
+  return { applicable: true, verdict, declaredVerdict, baseline, carried, axes, issues, warnings }
 }
 
 // ============================================================================
 // 切片证据校验
 // ============================================================================
 
+/** 切片标题区的声明行与 readSlices 结果字段的对应关系。 */
+const SLICE_DECLARATIONS = { Seam: 'seam', Evidence: 'evidenceRef', Environment: 'environment' }
+
 /**
- * 解析 tasks.md 的切片：编号、Seam、Evidence 引用与勾选进度。
+ * 解析 tasks.md 的切片：编号、Seam、Evidence 引用、Environment 声明与勾选进度。
  * 只识别 `## Slice <id>: 标题` 结构；遇到其他一、二级标题即结束当前切片。
  */
 function readSlices(tasks) {
@@ -485,15 +1022,15 @@ function readSlices(tasks) {
   for (const line of tasks.split(/\r?\n/)) {
     const heading = line.match(/^##\s+Slice\s+([\w.-]+)\s*[:：]\s*(.*)$/i)
     if (heading) {
-      current = { id: heading[1], title: heading[2].trim(), seam: '', evidenceRef: '', done: 0, total: 0 }
+      current = { id: heading[1], title: heading[2].trim(), seam: '', evidenceRef: '', environment: '', done: 0, total: 0 }
       slices.push(current)
       continue
     }
     if (/^#{1,2}\s/.test(line)) current = null
     if (!current) continue
-    const declared = line.match(/^\s*(Seam|Evidence)\s*[:：]\s*(.*)$/)
+    const declared = line.match(/^\s*(Seam|Evidence|Environment)\s*[:：]\s*(.*)$/)
     if (declared) {
-      current[declared[1] === 'Seam' ? 'seam' : 'evidenceRef'] = clean(declared[2])
+      current[SLICE_DECLARATIONS[declared[1]]] = clean(declared[2])
       continue
     }
     // checkbox 仍是唯一进度事实源，格式与 openspec CLI 的解析口径一致。
@@ -576,7 +1113,10 @@ const splitFiles = cell => cell.split(/<br\s*\/?>|[,，、;；\s]+/).map(clean).
 
 /**
  * 沿豁免链从证据指纹走到当前指纹；每一段都必须字段齐全，且「变化文件」列全两指纹间的实际变化。
- * @returns {{ ok: boolean, reason: string }} ok 为 false 时 reason 说明链在哪一段失效（无记录时为空串）。
+ * 链在某个指纹之后没有记录时，该指纹到当前指纹之间只有注释差异也算成立（不需要人工登记）。
+ * 这里只用注释差异判定，不读实现后修改登记表：等价修改仍要用测试刷新证据。
+ * @returns {{ ok: boolean, reason: string, commentOnly?: string[] }} ok 为 false 时 reason 说明链在哪一段失效
+ *   （无记录时为空串）；由注释差异补全时 commentOnly 列出这一段的文件。
  */
 function followExemptions(repo, rows, recorded, current) {
   const visited = new Set()
@@ -585,7 +1125,10 @@ function followExemptions(repo, rows, recorded, current) {
     if (visited.has(cursor)) return { ok: false, reason: '豁免记录出现循环' }
     visited.add(cursor)
     const row = rows.find(item => clean(item['From Fingerprint'] || '') === cursor)
-    if (!row) return { ok: false, reason: '' }
+    if (!row) {
+      const diff = classifyChanges(repo, cursor, current)
+      return diff && !diff.other.length ? { ok: true, reason: '', commentOnly: diff.commentOnly } : { ok: false, reason: '' }
+    }
     const to = clean(row['To Fingerprint'] || '')
     const empty = EXEMPTION_COLUMNS.filter(column => !clean(row[column] || ''))
     if (empty.length) return { ok: false, reason: `豁免记录 ${cursor} → ${to} 缺少 ${empty.join('、')}` }
@@ -600,11 +1143,44 @@ function followExemptions(repo, rows, recorded, current) {
   return { ok: true, reason: '' }
 }
 
+/** 证据中待环境补测表的区块标题（格式见 openspec-apply-change/shared/slice-evidence.md「待环境补测」）。 */
+const PENDING_ENVIRONMENT_TITLE = '待环境补测'
+
+/** 待环境补测登记行的负责人或补测计划为空时，提示中显示的缺省文字。 */
+const NOT_WRITTEN = '(未写)'
+
+/**
+ * 生成待环境补测提示中「负责人 …，补测计划 …」一段。evidence 的 warning 与 archive 的 notes 共用，两个阶段的提示格式一致。
+ * @param {{ owner: string, plan: string }} pending 成立的登记行（checkSlice 输出的 pendingEnvironment）。
+ * @returns {string} 提示文字；为空的字段写 NOT_WRITTEN。
+ */
+function describePendingEnvironment({ owner, plan }) {
+  return `负责人 ${owner || NOT_WRITTEN}，补测计划 ${plan || NOT_WRITTEN}`
+}
+
+/**
+ * 查找成立的待环境补测登记：确认人不为空，并且登记指纹等于当前指纹，或两者之间只有注释差异。
+ * 确认人只能由用户填写（规则同签字行）；代码在登记后有非注释修改时登记不再成立，需要用户重新确认。
+ * 只对声明了 `Environment:` 的切片调用：本地可以验证的切片不能用登记代替重跑。
+ * @returns {object|null} 成立的登记行；多行成立时取表中最后一行（最近的登记），没有时为 null。
+ */
+function findPendingEnvironment(repo, text, currentFingerprint) {
+  const rows = parseTables(section(text, PENDING_ENVIRONMENT_TITLE)).reverse()
+  return rows.find(row => {
+    if (!clean(row['确认人'] || '')) return false
+    const registered = clean(row['登记指纹'] || '')
+    if (registered === currentFingerprint) return true
+    const diff = classifyChanges(repo, registered, currentFingerprint)
+    return Boolean(diff && !diff.other.length)
+  }) || null
+}
+
 /** 从 `Evidence:` 行取证据路径（兼容 Markdown 链接写法）。 */
 const evidencePath = ref => (ref.match(/[^\s()[\]`'"<>]+\.md/) || [''])[0]
 
 /**
  * 校验单个切片的证据。已全部勾选的切片问题记 CRITICAL；部分勾选时只有缺证据文件记 CRITICAL，其余记 warning。
+ * 声明了 `Environment:` 的切片证据过期且有成立的待环境补测登记时，状态为 pending-environment，只记 warning。
  * @returns {{ slice: object, issues: string[], warnings: string[] }}
  */
 function checkSlice(repo, changeRoot, slice, currentFingerprint) {
@@ -612,6 +1188,7 @@ function checkSlice(repo, changeRoot, slice, currentFingerprint) {
   const label = `Slice ${slice.id}`
   const view = { id: slice.id, title: slice.title, seam: slice.seam, evidence: expected,
     tasks: { done: slice.done, total: slice.total }, status: 'pending' }
+  if (slice.environment) view.environment = slice.environment
   const ref = evidencePath(slice.evidenceRef)
   if (!ref || ref !== expected) {
     view.status = 'no-reference'
@@ -630,6 +1207,7 @@ function checkSlice(repo, changeRoot, slice, currentFingerprint) {
   const { fields, missing, failures } = inspectEvidence(repo, text, slice.id)
   view.fingerprint = fields.Fingerprint
   const problems = []
+  const notices = []
   if (missing.length) {
     view.status = 'incomplete'
     problems.push(`${label} 证据不完整：缺少 ${missing.join('、')}`)
@@ -642,27 +1220,45 @@ function checkSlice(repo, changeRoot, slice, currentFingerprint) {
     const chain = followExemptions(repo, parseTables(section(text, '豁免记录')), fields.Fingerprint, currentFingerprint)
     if (chain.ok) {
       view.status = 'exempted'
+      if (chain.commentOnly) {
+        view.exemptedBy = 'comment-only'
+        view.commentOnly = chain.commentOnly
+      }
     } else {
-      view.status = 'stale'
       // 列出自证据以来的变化文件，供 Verify 判断重跑范围或登记豁免；无法计算时为 null。
       view.changedSinceEvidence = changedFiles(repo, fields.Fingerprint, currentFingerprint)
-      problems.push(`${label} 证据过期：记录指纹 ${fields.Fingerprint} ≠ 当前实现 ${currentFingerprint}`
-        + `${chain.reason ? `；${chain.reason}` : ''}，需重跑该切片验证并更新证据`)
+      // 待环境补测只对声明了 Environment: 的切片生效；没有声明时登记表不起作用，照常判为过期。
+      const pending = slice.environment ? findPendingEnvironment(repo, text, currentFingerprint) : null
+      if (pending) {
+        view.status = 'pending-environment'
+        view.pendingEnvironment = { fingerprint: clean(pending['登记指纹'] || ''), owner: clean(pending['负责人'] || ''),
+          plan: clean(pending['补测计划'] || ''), confirmer: clean(pending['确认人'] || '') }
+        notices.push(`${label} 待环境补测（${slice.environment}）：证据指纹 ${fields.Fingerprint} ≠ 当前实现 ${currentFingerprint}；`
+          + describePendingEnvironment(view.pendingEnvironment))
+      } else {
+        view.status = 'stale'
+        problems.push(`${label} 证据过期：记录指纹 ${fields.Fingerprint} ≠ 当前实现 ${currentFingerprint}`
+          + `${chain.reason ? `；${chain.reason}` : ''}，需重跑该切片验证并更新证据`)
+      }
     }
   }
   const complete = slice.done === slice.total
-  return { slice: view, issues: complete ? problems : [], warnings: complete ? [] : problems.map(item => `${item}（切片未全部勾选，暂记 warning）`) }
+  return { slice: view, issues: complete ? problems : [],
+    warnings: [...notices, ...(complete ? [] : problems.map(item => `${item}（切片未全部勾选，暂记 warning）`))] }
 }
 
 /**
- * 校验变更的切片证据。
- * @returns {object} applicable、reason（不适用理由）、currentFingerprint、slices、issues（CRITICAL）、warnings。
+ * 校验变更的切片证据，并计算勾选项的阶段边界问题（taskIssues）。
+ * taskIssues 不影响退出码，由 Verify 逐条记 CRITICAL（见 implementation-gate-check.md）。
+ * @returns {object} applicable、reason（不适用理由）、currentFingerprint、slices、issues（CRITICAL）、warnings、taskIssues。
  */
 function checkEvidence(repo, changeRoot, currentFingerprint) {
   const tasks = readText(changeRoot, 'tasks.md')
   const slices = tasks === null ? [] : readSlices(tasks)
+  // 阶段边界检查不依赖切片证据是否适用：平铺任务清单与未启用证据的变更也计算。
+  const taskIssues = tasks === null ? [] : findTaskIssues(tasks)
   const enabled = slices.some(slice => slice.evidenceRef) || existsSync(path.join(changeRoot, 'evidence'))
-  const notApplicable = reason => ({ applicable: false, reason, currentFingerprint, slices: [], issues: [], warnings: [] })
+  const notApplicable = reason => ({ applicable: false, reason, currentFingerprint, slices: [], issues: [], warnings: [], taskIssues })
   // 不适用必须带理由返回，由 Verify 写进报告，不能静默当作通过。
   if (tasks === null) return notApplicable('不适用：变更没有 tasks.md')
   if (!slices.length) return notApplicable('不适用：tasks.md 无垂直切片（## Slice 标题），不强制切片证据')
@@ -670,7 +1266,92 @@ function checkEvidence(repo, changeRoot, currentFingerprint) {
 
   const results = slices.map(slice => checkSlice(repo, changeRoot, slice, currentFingerprint))
   return { applicable: true, currentFingerprint, slices: results.map(item => item.slice),
-    issues: results.flatMap(item => item.issues), warnings: results.flatMap(item => item.warnings) }
+    issues: results.flatMap(item => item.issues), warnings: results.flatMap(item => item.warnings), taskIssues }
+}
+
+// ============================================================================
+// 勾选项的阶段边界（规则见 openspec-propose/shared/task-slicing.md「排除清单」）
+// ============================================================================
+
+/** 阶段命令：勾选项不能要求运行它们，也不能等它们通过后再勾选（排除清单 E1）。 */
+const PHASE_COMMANDS = ['/opsx:quality', '/opsx:verify', '/opsx:overview', '/opsx:archive', 'openspec archive', 'openspec validate']
+
+/** 运行类动词；英文按整词匹配。动词与命令之间允许空白与反引号。 */
+const RUN_VERB = '(?:运行|执行|重跑|\\brerun\\b|\\brun\\b)'
+const COMMAND_GAP = '[\\s`]*'
+
+/**
+ * 文本模式能可靠识别的两类任务问题；其他排除类别只写入规则文本，由 Verify 人工核对。
+ * 只匹配命令本身，不匹配 skill 名称或命令文件路径（如 openspec-verify-change/SKILL.md），避免误报修改阶段 skill 的任务。
+ */
+const TASK_PATTERNS = (() => {
+  const commands = PHASE_COMMANDS.map(escapeRegExp).join('|')
+  return [
+    { kind: 'phase-action', pattern: new RegExp(`${RUN_VERB}${COMMAND_GAP}(?:${commands})|(?:${commands})${COMMAND_GAP}(?:通过后|完成后)`, 'gi') },
+    { kind: 'git-action', pattern: new RegExp(`${RUN_VERB}${COMMAND_GAP}git\\s+(?:commit|push)\\b`, 'gi') },
+  ]
+})()
+
+/**
+ * 否定词（design D6）：同一分句中出现在命中位置之前时不报出（如「不执行 git commit」）。
+ * 中文词组按子串匹配，英文按整词匹配。单字「不」不算否定：「不同」「不再」「不变」等普通词不能阻止报出。
+ * 已知漏报：「原先不在范围内」中的「不在」也会阻止报出。区分它要做分词，本脚本不做，由 Verify 人工核对排除清单时补上。
+ */
+const NEGATION = /不运行|不执行|不重跑|不在|不要|不得|不必|无需|禁止|\bnever\b|\bnot\b/i
+
+/**
+ * 含否定词但不表示否定的复合词（design D6）：查找否定词之前先从分句中删除。
+ * 只排除「不必」「不得」两个词会漏掉「不得不重跑」中的「不重跑」，所以整词删除。
+ * 已知误报：「不必要」「不得不」按子串删除。「不必要求」「不得不经」中的否定词「不必」「不得」也被删除，任务仍会报出。verify 记 CRITICAL 后改写任务措辞，例如改为「不必运行」。不再逐个增加例外：原因与上一条相同，脚本不做分词。
+ */
+const NOT_NEGATION = /不必要|不得不/g
+
+/** 分句边界：中文逗号、句号、分号、冒号与换行。ASCII 冒号不算边界，因为 /opsx:verify 含冒号。 */
+const CLAUSE_BOUNDARY = /[，。；：\n]/
+
+/**
+ * 读取 tasks.md 中未勾选的勾选项；缩进的续行属于上一个勾选项，空行或顶格行结束该项。
+ * @returns {{ id: string, line: number, text: string }[]} id 取勾选框后的任务编号，没有编号时写行号。
+ */
+function readUncheckedTasks(tasks) {
+  const items = []
+  let current = null
+  tasks.split(/\r?\n/).forEach((line, index) => {
+    const box = line.match(/^\s*[-*]\s+\[([ xX])\]\s*(.*)$/)
+    if (box) {
+      const id = (box[2].match(/^([A-Za-z]*\d+(?:\.\d+)*)\b/) || [])[1] || `第 ${index + 1} 行`
+      current = box[1] === ' ' ? { id, line: index + 1, text: box[2] } : null
+      if (current) items.push(current)
+      return
+    }
+    if (current && /^\s+\S/.test(line)) current.text += `\n${line.trim()}`
+    else current = null
+  })
+  return items
+}
+
+/**
+ * 命中位置是否在同一分句的否定词之后。
+ * 「不执行」等否定词包含命中文本开头的运行动词，所以检查到命中文本末尾；命中文本本身不含否定词，找到的否定词一定从命中位置之前开始。
+ */
+function negated(text, match) {
+  const clause = text.slice(0, match.index + match[0].length).split(CLAUSE_BOUNDARY).pop()
+  return NEGATION.test(clause.replace(NOT_NEGATION, ''))
+}
+
+/**
+ * 扫描未勾选的勾选项，报出要求运行阶段命令或 git 写操作的任务。每个任务每类最多报一条，text 为首个命中文本。
+ * @returns {{ task: string, kind: string, text: string, line: number }[]}
+ */
+function findTaskIssues(tasks) {
+  const issues = []
+  for (const item of readUncheckedTasks(tasks)) {
+    for (const { kind, pattern } of TASK_PATTERNS) {
+      const hit = [...item.text.matchAll(pattern)].find(match => !negated(item.text, match))
+      if (hit) issues.push({ task: item.id, kind, text: hit[0], line: item.line })
+    }
+  }
+  return issues
 }
 
 // ============================================================================
@@ -679,11 +1360,12 @@ function checkEvidence(repo, changeRoot, currentFingerprint) {
 
 /**
  * 合并双轴评审与切片证据的阻断项；不适用的部分以理由写入 notes，不静默当作通过。
+ * 待环境补测（pending-environment）的切片不阻断，切片、负责人与补测计划写入 notes，供归档摘要列出。
  * Verify 的其他 CRITICAL（未完成任务、需求未实现等）不在本脚本判定范围，由 archive 流程另行确认。
  * @returns {object} ok、blockers、notes、warnings，以及 review / evidence 明细。
  */
 function checkArchive(repo, changeRoot, currentFingerprint) {
-  const review = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint })
+  const review = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint, repo })
   const evidence = checkEvidence(repo, changeRoot, currentFingerprint)
   const blockers = []
   const notes = []
@@ -694,8 +1376,14 @@ function checkArchive(repo, changeRoot, currentFingerprint) {
   } else {
     notes.push(review.reason)
   }
-  if (evidence.applicable) blockers.push(...evidence.issues.map(issue => `切片证据：${issue}`))
-  else notes.push(evidence.reason)
+  if (evidence.applicable) {
+    blockers.push(...evidence.issues.map(issue => `切片证据：${issue}`))
+    for (const slice of evidence.slices.filter(item => item.status === 'pending-environment')) {
+      notes.push(`切片证据：Slice ${slice.id} 待环境补测（${slice.environment}），${describePendingEnvironment(slice.pendingEnvironment)}`)
+    }
+  } else {
+    notes.push(evidence.reason)
+  }
   return { ok: blockers.length === 0, blockers, notes, warnings: [...review.warnings, ...evidence.warnings], review, evidence }
 }
 
@@ -797,6 +1485,7 @@ function checkHygiene(changeRoot) {
 const COMMAND_OPTIONS = {
   fingerprint: ['repo'],
   baseline: ['base', 'since', 'repo'],
+  classify: ['from', 'to', 'repo'],
   review: ['repo'],
   evidence: ['repo'],
   archive: ['repo'],
@@ -819,6 +1508,7 @@ function parseOptions(command, args) {
 }
 
 const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive|hygiene> <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]'
+  + '\n      node implementation-gate.mjs classify <changeRoot> --from <fingerprint> [--to <fingerprint>] [--repo <dir>]'
   + '\n      node implementation-gate.mjs regress --baseline <file> --actual <file>'
 
 /**
@@ -851,12 +1541,19 @@ function run(argv) {
     const { output, warnings } = renderBaseline(repo, changeRoot, options.base, options.since)
     return { code: EXIT.PASS, output, stderr: warnings.map(item => `${item}\n`).join('') }
   }
+  if (command === 'classify') {
+    if (!options.from) throw new GateError(`classify 缺少 --from <fingerprint>\n${USAGE}`)
+    const report = classifyCommand(repo, changeRoot, options.from, options.to || computeFingerprint(repo, changeRoot))
+    const ok = report.unregistered.length === 0
+    return { code: ok ? EXIT.PASS : EXIT.BLOCKED,
+      output: `${JSON.stringify({ command, change: path.basename(changeRoot), ok, ...report }, null, 2)}\n` }
+  }
 
   const currentFingerprint = computeFingerprint(repo, changeRoot)
   let report
   let ok
   if (command === 'review') {
-    report = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint })
+    report = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint, repo })
     ok = !report.applicable || report.verdict === 'PASSED'
   } else if (command === 'evidence') {
     report = checkEvidence(repo, changeRoot, currentFingerprint)

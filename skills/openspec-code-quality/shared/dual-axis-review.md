@@ -173,6 +173,8 @@ Standards Review 结论：有条件通过          ← Spec Fidelity 轴写 Spec
 Code Review Verdict: BLOCKED
 ```
 
+沿用轮（等价增量轮只跑 Standards，见「修复与重跑」）在「## 两轴状态」表格之前写一行 `- Carried Axis: spec-fidelity`，Spec Fidelity 行的「执行方式」写 `沿用（基线 <spec-fidelity.md 的 Fingerprint>）`。其他轮次不写这一行。
+
 ## 裁决规则
 
 | 条件 | 裁决 |
@@ -181,7 +183,7 @@ Code Review Verdict: BLOCKED
 | 两份原始报告齐全、基线一致、finding 均可定位，且两轴都没有未闭环 Blocker | `PASSED` |
 
 - 原始报告缺失、基线不一致、finding 无法定位或前缀与轴不符，说明**评审本身不完整**，不得给出 `PASSED`，补齐后重跑。
-- 「有条件通过」的每个条件必须映射到 `tasks.md` 的一个勾选项，映射不到视同 Blocker（沿用 `../openspec-technical-review/shared/gate-policy.md`）。
+- 「有条件通过」的每个条件必须对应 `tasks.md` 的一个勾选项，或者（只需修改规划产物时）对应该产物的 `<文件>:<行号>`；两者都没有时视同 Blocker（沿用 `../openspec-technical-review/shared/gate-policy.md`）。
 - 误报与 risk accepted 按 `gate-policy.md` 第 4 节在**对应轴的原始报告**里具名留痕，并把该 finding 的闭环状态改为 `false-positive` / `risk-accepted`（保留该行）。
 - **任一轴未闭环 Blocker 未清零时不得 `/opsx:archive`**。
 
@@ -193,7 +195,7 @@ Code Review Verdict: BLOCKED
 node <GATE> review <changeRoot>
 ```
 
-输出 JSON：`verdict`（由原始报告重新计算，不采信汇总自述；`PASSED` / `BLOCKED` / `INCOMPLETE`，后者表示没有 Blocker 但报告结构不完整）、各轴 `openBlockers`、`issues`（结构问题）与 `warnings`。退出码 `0` = `PASSED` 且无结构问题；`1` = `BLOCKED` 或存在结构问题；`2` = 参数或环境错误。它校验：
+输出 JSON：`verdict`（由原始报告重新计算，不采信汇总自述；`PASSED` / `BLOCKED` / `INCOMPLETE`，后者表示没有 Blocker 但报告结构不完整）、各轴 `openBlockers`、`carried`（沿用轮的核对范围，其他轮次为 `null`）、`issues`（结构问题）与 `warnings`。退出码 `0` = `PASSED` 且无结构问题；`1` = `BLOCKED` 或存在结构问题；`2` = 参数或环境错误。它校验：
 
 1. 三份文件齐全，且汇总引用了两份原始报告路径；
 2. 三份文件的基线身份四项完全一致；
@@ -203,12 +205,18 @@ node <GATE> review <changeRoot>
 6. 基线 `Fingerprint` 与当前实现不一致时给出 warning（评审之后代码又变了，需判断是否重跑）；
 7. 三份报告的 `Rules Version` 与 `Delta Since` 一致（缺省也算一个取值）；
 8. `Rules Version: 2` 的原始报告：Blocker 触发场景带 `[B1]`–`[B5]` 前缀，`## Finding 台账` 存在且满足上文三条一致性规则。台账行不计入 finding 与裁决。
+9. 汇总写 `Carried Axis` 时：取值只能是 `spec-fidelity`；第 2、7 项只比较 Standards 报告与汇总；沿用基线指纹到汇总基线指纹之间的每个变化文件只有注释差异，或登记为 `等价`，否则报结构问题并写出文件名。登记按 `classify` 的口径核对：只有档位不是 `非行为` 的合法行能证明登记。登记表有行级问题（档位或登记指纹不合法）时沿用不成立，即使该行没有列出变化文件，报结构问题并写出登记编号：不合法的行可能就是某个变化文件的登记。沿用报告的未闭环 Blocker 照常计入裁决。
 
 `issues` 非空时修正报告再重跑，不得带着结构问题进入 `/opsx:verify`。
 
 ## 修复与重跑
 
-- 修复动作回 `tasks.md` 新增勾选项再做；门禁外提交的修复先登记任务（见 `closed-loop-verification.md`「实现后双轴评审的差异」）。
+- 修复动作回 `tasks.md` 新增勾选项再做。不在未勾选任务内进行的修改（门禁外提交、评审后的补日志或重构）按档位登记到 `tasks.md` 的 `## 实现后修改登记`，`行为` 档位同时新增任务（规则见 `../openspec-apply-change/shared/post-implementation-changes.md`；门禁外提交的闭环要求见 `closed-loop-verification.md`「实现后双轴评审的差异」）。
+- **只有注释差异时不开新一轮**：`node <GATE> classify <changeRoot> --from <上一轮 Fingerprint>` 的 `other` 为空时，输出「无需新一轮」并停止，不生成新基线，三份报告保持不变。
+- **等价增量轮只跑 Standards**：同一命令的 `unregistered` 为空、`registered` 全部为 `等价` 时，本轮只重跑 Standards，Spec Fidelity 沿用：
+  - `review/spec-fidelity.md` 不修改，保留上一轮的基线区块；
+  - Standards 报告与汇总使用新的增量基线，汇总写 `- Carried Axis: spec-fidelity`（格式见「汇总报告」）；
+  - `registered` 中有 `行为` 档位时两轴都重跑。只有 Spec Fidelity 可以沿用：等价修改正是 Standards 要审查的内容。
 - **第 1 轮审查完整 diff。第 2 轮起只审查增量**：用上一轮基线的 `Fingerprint` 生成新基线，两轴仍落在同一新基线上：
 
   ```bash

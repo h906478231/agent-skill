@@ -45,8 +45,42 @@ Evidence: evidence/slice-02.md
 - `Blocked by:` 必写，无依赖时写「无（可立即开始）」
 - `Seam:` 行引用 design.md「测试 Seam 决策」区块声明的公共边界（L2/L3 变更必写）
 - `Evidence:` 行指向该切片的新鲜证据记录，路径固定为 `evidence/slice-<id>.md`（相对变更目录，`<id>` 取标题编号）；生成 tasks 时就写上，证据文件由 apply 在勾选前生成。模板、生成时机与新鲜度规则见 `../../openspec-apply-change/shared/slice-evidence.md`
-- `Blocked by:` / `Seam:` / `Evidence:` 都写在 checkbox 之外，不得塞进 `- [ ]` 行
+- `Environment:` 行可选，写法为 `Environment: <环境名称>`（如 `Environment: 测试环境`）。只在切片的验收依赖本地无法提供的环境时写，提案时声明；之后增加要走 `/opsx:update`，并经用户确认。声明后，该切片证据过期且无法在本地重跑时，可以按 `../../openspec-apply-change/shared/slice-evidence.md`「待环境补测」登记，不阻断归档
+- `Blocked by:` / `Seam:` / `Evidence:` / `Environment:` 都写在 checkbox 之外，不得塞进 `- [ ]` 行
 - 任务项编号在切片内递增，勾选状态是唯一进度事实源
+
+## 勾选项只写归档前能完成的工作
+
+勾选项是归档前要完成并可核对的工作。下列四条同时满足，才写成勾选项：
+
+| 问题 | 要求 |
+|---|---|
+| 谁来做 | 本变更的开发者或 agent，不是运维、需求方、第三方或其他团队 |
+| 在哪做 | 本仓库，或上线前可以使用的测试环境、预发环境 |
+| 什么时候完成 | 归档前完成，不等待上线，也不等待阶段动作的结果 |
+| 交付什么 | 代码、测试、SQL、配置文件、仓库或变更目录中的文档、证据文件 |
+
+### 排除清单
+
+下列内容不写成勾选项，写到对应的去处：
+
+| 编号 | 不是任务的内容 | 去处 |
+|---|---|---|
+| E1 | 阶段动作：运行 quality、verify、overview、archive，运行 `openspec validate`，做技术评审 | 各阶段结束时的下一步提示，顺序见 `../../openspec-technical-review/shared/phases.md` |
+| E2 | 阶段规则已经要求的检查：单独的完整回归、按标准自查、apply 之前的技术评审 | 阶段规则。一个任务的测试写进该任务的完成标准 |
+| E3 | 修改规划产物：proposal、specs、design、overview | `/opsx:update` |
+| E4 | 未定的决策与设计输入：细化、定稿、评估、选择策略、为设计参数采集数据 | `design.md` 的 Open Questions，或在 propose 之前的 explore 与 grill |
+| E5 | 登记与记录：门禁外提交、risk accepted、签字 | 实现后修改登记表（`../../openspec-apply-change/shared/post-implementation-changes.md`）、`design.md` 的 Risk Accepted、`review-summary.md` 的签字行 |
+| E6 | 发布动作：合并、部署、灰度、生产环境的 SQL 或数据修复 | 变更目录的 `deployment.md`（验收部署文档）的「发布前检查」「部署与回滚」，规则见 `../../openspec-apply-change/shared/deployment-document.md` |
+| E7 | 上线后观察，以及流量停止后删除旧入口 | `deployment.md` 的「上线后验收」（`../../openspec-apply-change/shared/deployment-document.md`）。删除旧入口是一个新变更 |
+| E8 | 其他人或外部系统的工作：运维配置告警、通知第三方、团队知识库、任务跟踪系统、commit、push、PR | `deployment.md` 的「交接项」，写明负责人（`../../openspec-apply-change/shared/deployment-document.md`）。commit、push 与外部回写要用户另行授权 |
+| E9 | 没有交付物的确认，如「确认 X 不受影响」 | 一个测试，或写进可能影响 X 的任务的完成标准 |
+
+- **同一项任务含两类内容时拆开写**：工作留在任务中，清单中的内容移到去处。例如「编写发布步骤并在日志平台配置告警」：发布步骤留在任务中，告警配置写成 `deployment.md` 的交接项。
+- **测试环境、预发环境的验证是任务**，所在切片声明 `Environment:`（见上文「tasks.md 格式」）。
+- **编写验收部署文档是任务**：`design.md` 的 Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件时，写一项任务：按 `../../openspec-apply-change/shared/deployment-document.md` 编写 `deployment.md`。执行其中的条目不是任务。其他变更不写这项任务。
+- **自查**：`/opsx:propose`、`/opsx:ff`、`/opsx:update` 写入或修改 tasks 时，逐项按本清单自查。
+- **核对**：门禁脚本 `../../openspec-technical-review/scripts/implementation-gate.mjs` 的 `evidence` 命令输出 `taskIssues`，报出要求运行阶段命令（E1）或执行 `git commit` / `git push`（E8）的未勾选任务，Verify 逐条记 CRITICAL，修正方式是改写任务、内容移到去处，不是等阶段动作完成或执行 git 命令（见 `../../openspec-technical-review/shared/implementation-gate-check.md`）。其他类别无法用文本模式可靠判断，由 Verify 人工核对，记 WARNING，写出类别与去处。
 
 ## 阻塞边与 frontier
 
@@ -64,11 +98,12 @@ Evidence: evidence/slice-02.md
 
 连分批都无法独立保绿时，保持顺序不变，让批次共享一个集成分支，统一在一个「集成验证」切片里保绿。
 
-## 发布前三问（用户确认后 tasks.md 才算定稿）
+## 发布前四问（用户确认后 tasks.md 才算定稿）
 
 1. **粒度是否合适**：有没有太粗（一个切片装不下一个上下文）或太细（一天能交付好几个）的切片？
 2. **阻塞边是否真实**：每个 Blocked by 是否真的 gate 它？有没有漏掉的依赖？
 3. **是否需要合并或再拆**：相邻切片是否其实是一个行为？一个切片是否藏着两个行为？
+4. **有没有排除清单中的内容**：有没有任务写入了上文「排除清单」中的内容？有时改写任务，内容移到去处。
 
 用户确认通过后，tasks.md 进入定稿状态，可进入技术评审门禁。
 
@@ -78,7 +113,7 @@ Evidence: evidence/slice-02.md
 |------|------|
 | L0 | 无要求，直接 apply |
 | L1 | 建议采用；任务少于 3 条时平铺清单亦可 |
-| L2/L3 | **必须采用**；review-summary「有条件通过」的条件仍按任务项映射，映射不到视同 Blocker（不变） |
+| L2/L3 | **必须采用**；review-summary「有条件通过」的条件对应任务项；条件只需修改规划产物时对应该产物的 `<文件>:<行号>`，不写成任务（排除清单 E3）；两者都没有时视同 Blocker（规则见 `../../openspec-technical-review/shared/gate-policy.md`） |
 
 ## 与其他规则的关系
 

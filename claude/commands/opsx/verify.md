@@ -52,6 +52,15 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    Each dimension can have CRITICAL, WARNING, or SUGGESTION issues.
 
+   **增量复核（本仓自加，非上游原文）** —— 上一份 `<changeRoot>/verification.md` 存在时，先判定本次的 `Verify Mode`（`<GATE>` = skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs`）：
+   - 下列 3 项全部满足时为 `增量`：
+     1. 上一份 `verification.md` 写有 `Fingerprint`，并且没有 CRITICAL；
+     2. `node <GATE> classify <changeRoot> --from <上一份的 Fingerprint>` 的 `unregistered` 为空（退出码 0）；
+     3. `registered` 中没有档位为 `行为` 的行。
+   - `增量` 时只重跑第 5 步的「切片证据与双轴评审闭环」（`evidence`、`review`、`hygiene`）、STE 检查与变更模型检查。三维结论、「评审条件」与第 9 步的人工核对沿用上一份报告，报告写明沿用依据（上一份的 `Fingerprint` 与 `classify` 结论）。脚本检查出现新的 CRITICAL 时照常阻断。
+   - 其他情况为 `全量`，运行全部步骤：没有上一份报告、`classify` 退出码为 1 或 2、`registered` 中有 `行为` 档位。
+   - 登记与档位规则见 skill `openspec-apply-change` 的 `shared/post-implementation-changes.md`。
+
 5. **Verify Completeness**
 
    **Task Completion**:
@@ -75,7 +84,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    **切片证据与双轴评审闭环（本仓自加，非上游原文）**：
    - 完整规则见 skill `openspec-technical-review` 的 `shared/implementation-gate-check.md`（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-technical-review/shared/implementation-gate-check.md`），**先读取该文件并按其「Verify」一节执行**
    - 运行该 skill 的 `scripts/implementation-gate.mjs evidence <changeRoot>` 与 `review <changeRoot>`
-   - 缺失 / 不完整 / 失败 / 过期的切片证据，双轴评审 `BLOCKED` 或报告不完整 → CRITICAL；证据过期按 `changedSinceEvidence` 决定重跑或登记豁免
+   - 缺失 / 不完整 / 失败 / 过期的切片证据，双轴评审 `BLOCKED` 或报告不完整 → CRITICAL；证据过期按 `changedSinceEvidence` 决定重跑或登记豁免；`pending-environment`（待环境补测）→ WARNING，写出切片、负责人与补测计划
+   - `evidence` 输出的 `taskIssues`（未勾选任务要求运行阶段命令或执行 `git commit` / `git push`）→ 每条记 CRITICAL，写出任务编号、`kind` 与命中文本；修正方式是改写任务，把内容移到 skill `openspec-propose` 的 `shared/task-slicing.md`「排除清单」的去处，不是等阶段动作完成或执行 git 命令；切片证据不适用时同样处理
    - 脚本返回「不适用」时把理由原样写进报告，不得把缺证据静默当作通过；历史变更不追溯补证据
    - 运行 `node <GATE> hygiene <changeRoot>`：每条 `warnings` 记为一条 SUGGESTION（文件路径 + `reason`），建议把补充材料移到 `evidence/attachments/`、删除 `-roundN` 副本；不阻断归档
    - 完整回归结论只写本次引入的失败数：`PASS_WITH_BASELINE`（本次引入的失败：0）记为通过；**禁止在报告中列出基线失败的测试名或数量**。本次引入的失败不为 0 → 每个测试记一条 CRITICAL，写明测试名与修复任务
@@ -129,6 +139,9 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    ```
    ## Verification Report: <change-name>
 
+   - Fingerprint: git-tree:<sha>
+   - Verify Mode: 全量 / 增量（沿用依据：上一份 Fingerprint、classify 结论）
+
    ### Summary
    | Dimension    | Status           |
    |--------------|------------------|
@@ -140,7 +153,17 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    | Review       | PASSED/BLOCKED (or 不适用: reason)   |
    | STE          | PASS/BLOCKED/ERROR (or 已跳过: reason) |
    | Change Model | PASS/BLOCKED/ERROR (or 已跳过: reason) |
+   | Deployment   | 见 deployment.md（or 不需要: reason / 缺少: WARNING） |
+
+   ### 评审条件
+   | 条件 | 映射任务或行号 | 状态 |
+   |------|---------------|------|
+   | C1 | 任务 3.2 / design.md:120 | 已闭环 / 未闭环 |
    ```
+
+   报告字段（本仓自加，非上游原文）：
+   - `Fingerprint` 取 `node <GATE> fingerprint <changeRoot>` 的输出，是下一次判定增量复核的起点。
+   - 「评审条件」按第 9 步「评审条件闭环」填写，archive 读取本小节。没有 `review-summary.md` 时写「不适用：该变更未经技术评审」。存在完整版 overview 时，在小节下写出它的「最近生成」日期与「依据轮次」，不要求刷新。
 
    **Issues by Priority**:
 
@@ -183,13 +206,17 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - [ ] 候选方案对比时提出的风险点是否在实现中得到规避？
 
    **评审条件闭环（Phase 3）**:
-   - [ ] 核对 `review-summary.md` 的「有条件通过」条件是否完成；存在 `overview.md` 时先运行 `/opsx:overview` 刷新条件矩阵
-   - [ ] ⚠️ 标记的未落地项是否已在本次实现中闭环？
+   - [ ] 直接读取 `review-summary.md` 的「有条件通过」条件，逐条核对：映射到任务时，任务已勾选、实现存在；映射到 `<文件>:<行号>` 时，该行存在并写明了条件。结果写进报告「评审条件」小节。不运行 `/opsx:overview`
+   - [ ] 任务与行号都没有的条件视同 Blocker，是否已在本次实现中闭环？
 
    **可测试性与运维成本**:
    - [ ] 关键路径是否有测试覆盖（单元测试/集成测试）？
    - [ ] 新增的组件/服务是否有运维文档（部署/监控/故障排查）？
    - [ ] 是否引入了新的运维成本（新的中间件/定时任务/资源消耗）？
+
+   **排除清单核对（本仓自加，不属于上述清单，不视同 Blocker）**：逐项核对 `tasks.md` 的任务是否写入了 skill `openspec-propose` 的 `shared/task-slicing.md`「排除清单」中的内容（E1–E9）。`taskIssues` 已报出的任务按上文记 CRITICAL；其余命中清单的任务每项记 WARNING，写出类别编号与去处。例如已勾选的「确认回滚语义不变」没有对应测试 → WARNING，类别 E9，去处是一个测试，或写进可能影响回滚语义的任务的完成标准。
+
+   **验收部署文档核对（本仓自加，不视同 Blocker）**：按 skill `openspec-apply-change` 的 `shared/deployment-document.md`「Verify 核对」执行。存在 `deployment.md` 时，逐项核对负责人，以及通过条件或达标条件，缺少时每项记 WARNING，写出小节与条目；命中创建条件（`design.md` 的 Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件）却没有该文件时，记 WARNING；都没有命中时不报出问题。报告只在 Summary 写一行指向 `deployment.md`，不重复列出条目。
 
    **人工核对建议**：
    - 在完成自动校验后，逐项核对以上清单

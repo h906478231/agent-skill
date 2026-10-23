@@ -79,7 +79,7 @@ When ready to implement, run /opsx:apply（本仓自加：先按下文 Output �
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
-   **任务切片纪律（生成 `tasks` artifact 之前）**：完整规则见 skill `openspec-propose` 自己的 `shared/task-slicing.md`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-propose/shared/`、Codex CLI `~/.codex/skills/openspec-propose/shared/`、opencode `~/.config/opencode/skills/openspec-propose/shared/` 等；找不到时用 Glob 搜 `**/openspec-propose/shared/task-slicing.md`），**生成 tasks.md 前先读取并遵守**。要点：L2/L3 变更必须按**垂直切片**组织（每个切片打穿 schema→逻辑→API→测试，独立可演示；`Blocked by:` 显式声明；`Seam:` 行引用 design.md「测试 Seam 决策」区块），禁止按技术层水平拆分；生成后按「发布前三问」（粒度 / 阻塞边 / 合并拆分）用 **AskUserQuestion** 向用户确认后才算定稿。L0 无要求，L1 建议。checkbox 行保持 `- [ ]` 格式不变（apply 与 verify 依赖它解析进度，切片分组写在 checkbox 之外）。
+   **任务切片纪律（生成 `tasks` artifact 之前）**：完整规则见 skill `openspec-propose` 自己的 `shared/task-slicing.md`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-propose/shared/`、Codex CLI `~/.codex/skills/openspec-propose/shared/`、opencode `~/.config/opencode/skills/openspec-propose/shared/` 等；找不到时用 Glob 搜 `**/openspec-propose/shared/task-slicing.md`），**生成 tasks.md 前先读取并遵守**。要点：L2/L3 变更必须按**垂直切片**组织（每个切片打穿 schema→逻辑→API→测试，独立可演示；`Blocked by:` 显式声明；`Seam:` 行引用 design.md「测试 Seam 决策」区块），禁止按技术层水平拆分；勾选项只写归档前能完成的工作，按「排除清单」逐项自查（阶段动作、发布动作、他人工作等写到对应去处）。`design.md` 的 Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件时，写一项任务：按 skill `openspec-apply-change` 的 `shared/deployment-document.md` 编写 `deployment.md`（验收部署文档）；执行其中的条目不是任务。生成后按「发布前四问」（粒度 / 阻塞边 / 合并拆分 / 排除清单）用 **AskUserQuestion** 向用户确认后才算定稿。L0 无要求，L1 建议。checkbox 行保持 `- [ ]` 格式不变（apply 与 verify 依赖它解析进度，切片分组写在 checkbox 之外）。
 
    **Phase 1/2 产物区块（创建 proposal / design artifact 之前）**：规则文件在 skill `openspec-explore` 的 `shared/`（skill 目录随 agent 而不同：Claude Code `~/.claude/skills/openspec-explore/shared/`、Codex CLI `~/.codex/skills/openspec-explore/shared/`、opencode `~/.config/opencode/skills/openspec-explore/shared/` 等；找不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md`），**创建前先读取并遵守**：
    - `proposal.md` 必须包含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证），见 `first-principles.md`；缺失时继续澄清需求，不要直接落盘。
@@ -116,7 +116,7 @@ After completing all artifacts, summarize:
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
-- **生成 `tasks` artifact 时遵守 skill `openspec-propose` 自己的 `shared/task-slicing.md` 切片规则**（Step 4）—— L2/L3 垂直切片 + 显式阻塞边，checkbox 格式不变，发布前三问用户确认后才定稿
+- **生成 `tasks` artifact 时遵守 skill `openspec-propose` 自己的 `shared/task-slicing.md` 切片规则**（Step 4）—— L2/L3 垂直切片 + 显式阻塞边，checkbox 格式不变，按排除清单自查，发布前四问用户确认后才定稿
 - Always read dependency artifacts before creating a new one
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one
