@@ -28,6 +28,7 @@
 |------|--------|-------------|
 | Phase 3 Technical Review（`/opsx:review`） | 编码前 `design.md` 方案的架构 / 并发 / 性能 / 数据库 / 安全 | 双轴**不重审**方案。实现偏离了 design 决策由 Spec Fidelity 报告；是否要改 design 并重走门禁，按 `../openspec-technical-review/shared/gate-policy.md` 第 2 节判定 |
 | Phase 5.5 双轴评审（本规则） | 实现代码的工程质量 + 实现对规格的忠实度，逐行、带 `文件:行号` 定位 | — |
+| Sonar 扫描（`/opsx:quality` Step 5，项目配置时） | 本次修改行上的重复代码、认知复杂度、未使用代码、空 catch，以及质量门 | Standards 不评这些项（`shared/sonar-scan.md`「Standards 跳过的检查项」）；问题的修复走 `tasks.md` |
 | Phase 6 Verify（`/opsx:verify`） | 最终验收：勾选完整性、切片证据新鲜度、双轴裁决是否闭环、三维快速校验、人工核对清单 | Verify **不逐行复审**忠实度，只核对双轴汇总裁决与证据；需求、场景与设计偏离读取 `review/spec-fidelity.md` 的规格覆盖矩阵与设计偏离清单（复用条件见 `../openspec-verify-change/SKILL.md`「复用 Spec Fidelity 结论」）；Verify 发现的新偏离回到对应轴处置 |
 
 ## 固定基线

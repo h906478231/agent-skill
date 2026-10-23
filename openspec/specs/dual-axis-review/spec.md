@@ -39,6 +39,25 @@ The Spec Fidelity Review SHALL check the implementation against the proposal, de
 - **WHEN** the code uses a different persistence, concurrency, or interface decision than `design.md`
 - **THEN** the Spec Fidelity Review records the deviation and requires the design or implementation to be reconciled before approval
 
+### Requirement: A configured Sonar scan SHALL cover the changed lines after the two axes
+
+When the project configures Sonar (`sonar-project.properties` or `sonar.projectKey`), `SONAR_HOST_URL` and `SONAR_TOKEN` are set, and the server status is `UP`, `/opsx:quality` SHALL run SonarScanner after the summary with branch or pull-request parameters. The scan SHALL NOT write its result into the analysis of the main branch. Only the issues on the lines changed since the `Base Commit` of the review baseline SHALL be handled; the agent SHALL record them and the failed quality-gate conditions in `review/sonar.md`. In this case the Standards Review SHALL NOT assess copy-paste duplication, cognitive complexity, unused private code and commented-out code, and empty catch blocks. Verify SHALL report a CRITICAL issue for each recorded issue or condition that the user has not marked as a false positive or accepted with a reason.
+
+#### Scenario: Sonar finds an issue on a changed line
+- **WHEN** the scan reports an issue on a line that the change modified
+- **THEN** `review/sonar.md` lists the issue
+- **AND** the main agent adds a task to fix it before verify
+
+#### Scenario: Issue on an unchanged line
+- **WHEN** the scan reports an issue on a line that the change did not modify
+- **THEN** `review/sonar.md` does not list the issue
+- **AND** the change does not fix it
+
+#### Scenario: Sonar is not configured
+- **WHEN** the project has no Sonar configuration
+- **THEN** `/opsx:quality` does not scan
+- **AND** the Standards Review assesses all its checks
+
 ### Requirement: Review outputs SHALL preserve independent reports and a separate summary
 
 The workflow SHALL store the original reports separately and MAY create a summary for status and gate decisions. The summary SHALL reference, but SHALL NOT replace, reorder, or delete the original findings.

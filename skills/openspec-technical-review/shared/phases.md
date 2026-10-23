@@ -20,7 +20,7 @@
 | Phase 4 评审确认 | 同上（汇总）                           | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工                               | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply`                    | 开始任何任务前依次做签字校验（`apply-gate-check.md`）、STE 检查、变更模型检查，任一项阻断即停止；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**（规则见 `../../openspec-apply-change/shared/tdd-discipline.md`）；**证据先于勾选**：每个切片记录绑定实现指纹的新鲜证据（规则见 `../../openspec-apply-change/shared/slice-evidence.md`） | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
-| Phase 5.5 双轴独立评审 | `/opsx:quality`                  | 同一固定基线并行跑 Standards Review（工程规范）与 Spec Fidelity Review（规格忠实度），互不读取对方报告，汇总按任一轴未闭环 Blocker 阻断（规则见 `../../openspec-code-quality/shared/dual-axis-review.md`）；**L2/L3 必跑，L0/L1 推荐** | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
+| Phase 5.5 双轴独立评审 | `/opsx:quality`                  | 同一固定基线并行跑 Standards Review（工程规范）与 Spec Fidelity Review（规格忠实度），互不读取对方报告，汇总按任一轴未闭环 Blocker 阻断（规则见 `../../openspec-code-quality/shared/dual-axis-review.md`）；项目配置了 Sonar 时，最后用 SonarScanner 扫描，只处理本次修改行上的问题（`../../openspec-code-quality/shared/sonar-scan.md`）；**L2/L3 必跑，L0/L1 推荐** | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md`（+ `review/sonar.md`，配置 Sonar 时） | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + **切片证据新鲜度与双轴裁决核对**（见 `implementation-gate-check.md`）+ STE 检查与变更模型检查（阻断项记为 CRITICAL）；**实现与设计交叉核对**（门禁侧的条件核对与增强交叉核对清单见 `phase6-verification.md`） | `verification.md`（校验报告） | 修复项 |
 | 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs（delta→main 由 skill `openspec-sync-specs` / `/opsx:sync` 执行，archive 调用；主 spec 有差异却跳过同步时需用户显式确认原因）；**归档前置校验**：签字缺失 / 未闭环 Blocker / verify 未通过 / L2/L3 双轴评审 Blocker 或报告缺失 / 切片证据缺失或过期时拒绝归档；评审、证据与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务（`../../openspec-archive-change/shared/yunzhou-task-completion.md`） | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video`                    | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕；不属于任何卡点或归档检查（规则见 `../../openspec-explainer-video/SKILL.md`） | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
@@ -97,6 +97,7 @@ OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/
       │  Standards Review      → review/standards.md
       │  Spec Fidelity Review  → review/spec-fidelity.md
       │  汇总裁决              → review/code-review-summary.md；任一轴未闭环 Blocker 不得归档
+      │  Sonar 扫描（项目配置时）→ review/sonar.md；只处理本次修改行上的问题
       ▼
 验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（读取 review-summary.md）+ 项目自有测试
       │  ※ 交叉验证 III：实现与设计交叉核对（Coherence 一致性校验）

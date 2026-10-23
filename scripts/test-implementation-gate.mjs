@@ -668,7 +668,7 @@ test('三份报告的 Delta Since 不一致时报结构问题', t => {
 test('hygiene：允许清单内的产物不报 warning，清单外的文件各报一条且不阻断', t => {
   const f = fixture(t)
   const allowed = ['.openspec.yaml', 'design.md', 'tasks.md', 'specs/gate/spec.md', 'review/security.md',
-    'review/standards.md', 'review-summary.md', 'evidence/slice-01.md', 'evidence/attachments/write-scan.txt',
+    'review/standards.md', 'review/sonar.md', 'review-summary.md', 'evidence/slice-01.md', 'evidence/attachments/write-scan.txt',
     'overview.md', 'discussion-log.md', 'video/storyboard.md']
   for (const rel of allowed) f.write(`openspec/changes/demo/${rel}`, 'x\n')
   f.write('openspec/changes/demo/review/standards-round1.md', 'x\n')

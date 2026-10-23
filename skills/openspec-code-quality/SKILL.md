@@ -1,6 +1,6 @@
 ---
 name: openspec-code-quality
-description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec apply 编码完成之后、verify 校验之前，以同一固定代码基线并行调度 Standards Review（重复/复用、可读性、死代码、复杂度、测试可维护性、项目约定）与 Spec Fidelity Review（需求、场景、任务、设计决策、Seam 的实现忠实度）两个互不读取对方报告的评审 agent，分别产出 review/standards.md 与 review/spec-fidelity.md，再汇总为 review/code-review-summary.md 并按任一轴未闭环 Blocker 阻断归档。L2/L3 必需，L0/L1 推荐（未生成不阻断归档）。只报告不改代码，修复走 tasks 勾选。
+description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec apply 编码完成之后、verify 校验之前，以同一固定代码基线并行调度 Standards Review（重复/复用、可读性、死代码、复杂度、测试可维护性、项目约定）与 Spec Fidelity Review（需求、场景、任务、设计决策、Seam 的实现忠实度）两个互不读取对方报告的评审 agent，分别产出 review/standards.md 与 review/spec-fidelity.md，再汇总为 review/code-review-summary.md 并按任一轴未闭环 Blocker 阻断归档。项目配置了 Sonar 时，最后用 SonarScanner 扫描，只处理本次修改行上的问题（review/sonar.md），Standards 不评 Sonar 已覆盖的检查项。L2/L3 必需，L0/L1 推荐（未生成不阻断归档）。只报告不改代码，修复走 tasks 勾选。
 ---
 
 # 实现后双轴独立评审（Standards + Spec Fidelity）
@@ -13,7 +13,8 @@ description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec 
 /opsx:apply（编码 + 切片证据）──> 【/opsx:quality 本 skill】──> /opsx:verify ──> /opsx:archive
                                     ├─ Standards Review      → review/standards.md
                                     ├─ Spec Fidelity Review  → review/spec-fidelity.md
-                                    └─ 汇总裁决              → review/code-review-summary.md
+                                    ├─ 汇总裁决              → review/code-review-summary.md
+                                    └─ Sonar 扫描（项目配置时）→ review/sonar.md
 ```
 
 - **输入**：同一固定基线下本次变更的 diff（第 1 轮为完整 diff，第 2 轮起为上一轮基线以来的增量）+ 变更 artifacts。
@@ -53,6 +54,7 @@ description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec 
    - 只在新增并已勾选的任务内修改的文件（按 apply 规则勾选，切片证据新鲜）：`classify` 仍把它们列入 `unregistered`，但它们不是实现后修改（事实源「定义」），不登记；勾选之后又有修改时照常登记，修改与任务对应不上或拿不准时照常登记，判断方法见事实源登记步骤 6。上一轮之后的修改全部属于这类时，进入 Step 1，两轴按增量执行。
    - 其他情况下 `unregistered` 或 `issues` 不为空（含门禁外提交）：先按档位登记到 `tasks.md` 的 `## 实现后修改登记`，再进入 Step 1。不属于上述文件的条目照常登记。`行为` 档位同时新增任务，写明提交 SHA 或文件；`等价` 档位先经用户确认。
    - 退出码 `2`（上一轮 tree 对象已被回收）：无法核对登记，自上一轮以来修改的文件按 `行为` 登记，本轮按第 1 轮审查完整 diff。
+5. **判定 Sonar 状态**：按 `shared/sonar-scan.md`「何时适用」判定为 `已配置` 或 `不适用：<原因>`。本轮 Step 2 与 Step 5 使用同一个判定。
 
 ## 执行步骤
 
@@ -84,7 +86,8 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>] --since <上一
 3. Step 1 的基线区块，并要求「报告开头原样粘贴」。评审范围：第 1 轮以 `Base Commit` 到工作区为准；基线带 `Delta Since` 时只审查 `Delta Files` 列出的文件；
 4. `changeRoot` 与 artifacts 路径；
 5. **重跑时**：本轴上一轮报告路径，要求先对台账中 `open` 的项做上轮闭环验证，原地覆盖报告并累计台账；Spec Fidelity 的规格覆盖矩阵沿用上一轮，只更新 delta 涉及的行；
-6. 明确禁止读取另一轴的原始报告与 `review/code-review-summary.md`。
+6. 明确禁止读取另一轴的原始报告与 `review/code-review-summary.md`；
+7. 只给 Standards 子 agent：前置第 5 步的 Sonar 状态。`已配置` 时，项目的质量配置关闭了 `shared/sonar-scan.md`「Standards 跳过的检查项」中的规则时，写明这些项不跳过。
 
 环境不支持子 agent 时，按「Standards → Spec Fidelity」顺序执行，并在汇总「执行方式」列标注 `顺序执行（独立性降级）`（规则见 `shared/dual-axis-review.md`「独立性」）。
 
@@ -100,10 +103,19 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>] --since <上一
 node <GATE> review <changeRoot>
 ```
 
-- 退出码 `0`：裁决 `PASSED` 且报告结构完整，可进入 `/opsx:verify`。
+- 退出码 `0`：裁决 `PASSED` 且报告结构完整。Sonar 状态为 `已配置` 时执行 Step 5，否则可进入 `/opsx:verify`。
 - 退出码 `1` 且 `issues` 非空：报告结构有问题（缺文件、基线不一致、finding 不可定位、结论与 Blocker 矛盾、汇总自述裁决不符、Blocker 缺少 `[B1]`–`[B5]` 判据、Finding 台账缺失或不一致、`Carried Axis` 沿用条件不成立），修正后重跑本步骤。沿用条件不成立时，按档位登记或两轴都重跑。
 - 退出码 `1` 且 `verdict = BLOCKED`：向用户列出各轴 `openBlockers`，按下方「裁决与闭环」处理。
 - `warnings` 中的基线陈旧提醒：评审后代码又变了，判断是否重跑双轴。
+
+### Step 5 — Sonar 扫描（Sonar 状态为 `已配置` 时）
+
+按 `shared/sonar-scan.md` 扫描，只保留本次修改行上的问题，写入 `review/sonar.md`。
+
+- 本次修改行上的问题与质量门失败的条件，处理都是「误报」或「接受」（决策人由用户填写），或者没有这类问题时：可进入 `/opsx:verify`。
+- 还有要修复的问题时：向用户列出，在 `tasks.md` 新增修复任务；修复后重跑本命令，增量评审与重新扫描在同一轮完成。
+- 扫描无法运行时：在 `review/sonar.md` 写 `Quality Gate: 无法运行：<原因>`，告诉用户 Standards 跳过的检查项没有被检查。
+- Sonar 状态为 `不适用` 时跳过本步，在输出中写明原因。
 
 ## 裁决与闭环
 
@@ -121,4 +133,4 @@ node <GATE> review <changeRoot>
 
 ## 产物的 git 归属
 
-与门禁产物同策略：三份报告随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。本 skill 不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。
+与门禁产物同策略：三份报告与 `review/sonar.md` 随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。本 skill 不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。

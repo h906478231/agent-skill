@@ -233,6 +233,8 @@ L2/L3 必跑，缺少双轴评审产物不能归档；L0/L1 推荐跑（`overvie
 
 任一轴有 **未闭环 Blocker**，必须修复后才能归档。
 
+项目配置了 Sonar 时，两轴之后用 SonarScanner 扫描，只处理本次修改的行上的问题，写入 `review/sonar.md`；Standards 不评 Sonar 已覆盖的重复代码、认知复杂度、未使用代码与空 catch（规则：`skills/openspec-code-quality/shared/sonar-scan.md`）。
+
 ---
 
 ### Step 7: 验证

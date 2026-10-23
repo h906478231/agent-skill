@@ -24,11 +24,12 @@ tags: [workflow, review, quality]
 - 两个轴用两个独立子 agent 并行执行，**互不读取对方原始报告与汇总**；finding 格式沿用 skill `openspec-technical-review` 的 `shared/finding-format.md`，前缀 `STD-` / `SPEC-`，「位置」必须精确到 `文件:行号`。
 - 汇总只做索引与裁决，不改写原始 finding；写完必须跑 `node <GATE> review <changeRoot>` 校验。
 - L2/L3 必须跑两轴；L0/L1 推荐跑，未生成不阻断归档（等级取 `overview.md` 的分级行，读不到时按 L2/L3 处理）。
+- Sonar（规则见 skill 的 `shared/sonar-scan.md`）：生成基线之前判定 Sonar 状态；`已配置` 时 Standards 不评 Sonar 已覆盖的检查项，汇总与校验之后用 SonarScanner 扫描（带分支或 PR 参数），只保留本次修改行上的问题，写入 `review/sonar.md`；要修复的问题在 `tasks.md` 新增任务，修复后重跑本命令。token 只从环境变量 `SONAR_TOKEN` 读取，不得写入文件或回复。
 - **任一轴存在未闭环 Blocker 即 `BLOCKED`，不得 `/opsx:archive`**；「有条件通过」的条件既没有对应任务、也没有对应 `<文件>:<行号>`（只需修改规划产物时）视同 Blocker。
 
 ## 产物
 
-`<changeRoot>/review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md` —— 随 `openspec archive` 归档。本命令不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。历史变更的 `review/code-quality.md` 仍被归档校验识别，不要求补跑。
+`<changeRoot>/review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md`，项目配置了 Sonar 时还有 `review/sonar.md` —— 随 `openspec archive` 归档。本命令不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。历史变更的 `review/code-quality.md` 仍被归档校验识别，不要求补跑。
 
 ## 关联
 

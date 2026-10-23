@@ -76,4 +76,4 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 
 ## 项目自有的验证动作
 
-编译、单测、集测、静态扫描（Sonar 等）按**项目自身规范**执行，本仓不做约定（这是跨项目 skill 仓，写死构建命令没有意义）。全绿才可归档。
+编译、单测、集测与 Sonar 以外的静态扫描按**项目自身规范**执行，本仓不做约定（这是跨项目 skill 仓，写死构建命令没有意义）。项目配置了 Sonar 时，扫描在 `/opsx:quality` 最后一步执行，verify 按 `../../openspec-code-quality/shared/sonar-scan.md`「Verify 核对」读取结果。全绿才可归档。
