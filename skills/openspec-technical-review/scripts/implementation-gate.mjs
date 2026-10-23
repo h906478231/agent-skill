@@ -1467,7 +1467,7 @@ const ARTIFACT_ALLOWLIST = [
   /^specs\/.+\.md$/, // openspec-propose / openspec-update-change
   /^review\/(architecture|concurrency|performance|database|security)\.md$/, // openspec-technical-review
   /^review-summary\.md$/, // openspec-technical-review
-  /^review\/(standards|spec-fidelity|code-review-summary|code-quality)\.md$/, // openspec-code-quality（code-quality.md 为历史格式）
+  /^review\/(standards|spec-fidelity|code-review-summary|code-quality|sonar)\.md$/, // openspec-code-quality（code-quality.md 为历史格式，sonar.md 为 Sonar 扫描记录）
   /^review\/finding-details-summary\.md$/, /^review\/finding-details\/[^/]+\.md$/, /^\.finding-explain\.json$/, // openspec-finding-explain
   /^verification\.md$/, // openspec-verify-change
   /^evidence\/slice-[\w.-]+\.md$/, /^evidence\/attachments\/.+$/, // openspec-apply-change

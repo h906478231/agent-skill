@@ -312,6 +312,8 @@ L0豁免：调整日志级别配置，不涉及业务逻辑
 #   → review/standards.md       Standards Review：重复/可读性/死代码/复杂度/测试可维护性/项目约定
 #   → review/spec-fidelity.md   Spec Fidelity Review：需求/场景/任务/设计决策/Seam 的实现忠实度
 #   → review/code-review-summary.md  汇总裁决：任一轴未闭环 Blocker 即 BLOCKED，不得归档
+#   → review/sonar.md           项目配置了 Sonar 时：SonarScanner 扫描，只处理本次修改行上的问题
+#     （规则：skills/openspec-code-quality/shared/sonar-scan.md）
 #   （规则：skills/openspec-code-quality/shared/dual-axis-review.md）
 
 # ── Phase 6：验证 ──────────────────────────────────
@@ -666,6 +668,7 @@ OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/
       ▼
 双轴独立评审（Phase 5.5）→ /opsx:quality → review/standards.md + review/spec-fidelity.md + review/code-review-summary.md
       │  同一固定基线、两轴并行互不读取；任一轴未闭环 Blocker 不得归档
+      │  项目配置了 Sonar 时，最后扫描本次修改的行 → review/sonar.md
       ▼
 验证（Phase 6）→ /opsx:verify 三维校验 + 条件核对（读取 review-summary.md）+ 项目自有测试 + 切片证据新鲜度
       │  ※ 交叉验证 III：实现与设计交叉核对（Coherence 一致性校验）
@@ -696,7 +699,7 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply` | 开始前通过签字校验、STE 检查、变更模型检查；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**；**证据先于勾选** | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
-| Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；L2/L3 必跑，L0/L1 推荐 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md` | 否（只报告） |
+| Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；项目配置了 Sonar 时，最后用 SonarScanner 扫描，只处理本次修改行上的问题；L2/L3 必跑，L0/L1 推荐 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md`（+ `review/sonar.md`，配置 Sonar 时） | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + 切片证据与双轴裁决核对 + STE / 变更模型检查；**实现与设计交叉核对** | `verification.md`（校验报告） | 修复项 |
 | 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video` | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕 | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
@@ -1062,6 +1065,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 **产出**（只报告，不改代码）：
 - `review/standards.md`、`review/spec-fidelity.md`：两份独立原始报告
 - `review/code-review-summary.md`：只做索引与裁决，不改写原始 finding
+- `review/sonar.md`：项目配置了 Sonar 时的扫描记录
 
 **要求**：
 - 适用范围按分级：**L2/L3 必须跑**；**L0/L1 推荐跑**，未生成不阻断归档（等级取变更目录 `overview.md` 的分级行；读不到等级时按 L2/L3 处理）。一旦创建了任一双轴产物，就必须按规则完整产出三份报告
@@ -1071,6 +1075,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - 重跑前运行 `classify --from <上一轮指纹>`：只有注释差异时不开新一轮；否则用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
 - 等价增量轮（未登记为空、登记全部为 `等价`）只跑 Standards，Spec Fidelity 沿用上一轮报告，汇总写 `- Carried Axis: spec-fidelity`；`review` 校验沿用基线以来的变化文件只有注释差异或登记为 `等价`
 - 报告原地覆盖，禁止 `-roundN` 副本；闭环历史记在每轴报告的 `## Finding 台账`
+- Sonar（项目配置了 `sonar-project.properties` 或 `sonar.projectKey`，并且 `SONAR_HOST_URL`、`SONAR_TOKEN` 可用时）：两轴之后用 SonarScanner 扫描，必须带分支或 PR 参数；只处理评审基线以来修改的行上的问题，修复走 `tasks.md`，误报与接受由用户决定；Standards 不评 Sonar 已覆盖的重复代码、认知复杂度、未使用代码与空 catch；verify 对未处理的问题记 CRITICAL（规则：`skills/openspec-code-quality/shared/sonar-scan.md`）
 - 规则唯一事实源：`skills/openspec-code-quality/shared/dual-axis-review.md`
 - 历史变更已有的 `review/code-quality.md` 继续有效，不要求补跑双轴
 
@@ -1116,7 +1121,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 
 ### 项目自有的验证动作
 
-编译、单测、集测、静态扫描（Sonar 等）按**项目自身规范**执行，本文档不做约定。
+编译、单测、集测与 Sonar 以外的静态扫描按**项目自身规范**执行，本文档不做约定。项目配置了 Sonar 时，扫描在 `/opsx:quality` 最后一步执行（规则：`skills/openspec-code-quality/shared/sonar-scan.md`）。
 
 全绿才可归档。
 

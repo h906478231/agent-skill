@@ -62,7 +62,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
      1. 上一份 `verification.md` 写有 `Fingerprint`，并且没有 CRITICAL；
      2. `node <GATE> classify <changeRoot> --from <上一份的 Fingerprint>` 的 `unregistered` 为空（退出码 0）；
      3. `registered` 中没有档位为 `行为` 的行。
-   - `增量` 时只重跑第 5 步的「切片证据与双轴评审闭环」（`evidence`、`review`、`hygiene`）、STE 检查与变更模型检查。三维结论、「评审条件」与第 9 步的人工核对沿用上一份报告，报告写明沿用依据（上一份的 `Fingerprint` 与 `classify` 结论）。脚本检查出现新的 CRITICAL 时照常阻断。
+   - `增量` 时只重跑第 5 步的「切片证据与双轴评审闭环」（`evidence`、`review`、`hygiene`）、Sonar 扫描核对、STE 检查与变更模型检查。三维结论、「评审条件」与第 9 步的人工核对沿用上一份报告，报告写明沿用依据（上一份的 `Fingerprint` 与 `classify` 结论）。脚本检查出现新的 CRITICAL 时照常阻断。
    - 其他情况为 `全量`，运行全部步骤：没有上一份报告、`classify` 退出码为 1 或 2、`registered` 中有 `行为` 档位。
    - 登记与档位规则见 `../openspec-apply-change/shared/post-implementation-changes.md`。
 
@@ -111,6 +111,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - 脚本返回「不适用」时把理由原样写进报告，不得把缺证据静默当作通过；历史变更不追溯补证据
    - 运行 `node <GATE> hygiene <changeRoot>`：每条 `warnings` 记为一条 SUGGESTION（文件路径 + `reason`），建议把补充材料移到 `evidence/attachments/`、删除 `-roundN` 副本；不阻断归档
    - 完整回归结论只写本次引入的失败数：`PASS_WITH_BASELINE`（本次引入的失败：0）记为通过；**禁止在报告中列出基线失败的测试名或数量**。本次引入的失败不为 0 → 每个测试记一条 CRITICAL，写明测试名与修复任务（规则见 `../openspec-apply-change/shared/slice-evidence.md`「结果取值」）
+
+   **Sonar 扫描核对（本仓自加，非上游原文）** —— 读取 `../openspec-code-quality/shared/sonar-scan.md`（相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-code-quality/shared/sonar-scan.md`），按其「Verify 核对」执行：`review/sonar.md`「本次修改行上的问题」与「质量门」中，处理不是「误报」「接受」的行，以及「说明」或「决策人」为空的行，每行记 CRITICAL；项目配置了 Sonar 却没有 `review/sonar.md`、`Quality Gate: 无法运行`、扫描之后代码有非注释修改时，记 WARNING；项目没有配置 Sonar 时，报告写「Sonar：不适用（<原因>）」。
 
    **STE 检查（本仓自加，非上游原文）** —— 运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Verify」列记录结果（每个阻断项记为 CRITICAL）；找不到脚本时在报告中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
 
@@ -179,6 +181,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    | Review       | PASSED/BLOCKED (or 不适用: reason)   |
    | STE          | PASS/BLOCKED/ERROR (or 已跳过: reason) |
    | Change Model | PASS/BLOCKED/ERROR (or 已跳过: reason) |
+   | Sonar        | PASSED/FAILED/无法运行 (or 不适用: reason) |
    | Deployment   | 见 deployment.md（or 不需要: reason / 缺少: WARNING） |
 
    ### 评审条件
@@ -200,6 +203,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
       - Missing / incomplete / failed / stale slice evidence; dual-axis review BLOCKED or incomplete (本仓自加)
       - STE check blocking findings, one CRITICAL per finding; STE check exit code 2 (environment error) as one CRITICAL (本仓自加)
       - Change-model check blocking findings (CM-1~CM-6), one CRITICAL per finding; change-model check exit code 2 as one CRITICAL (本仓自加)
+      - Sonar issues on changed lines and failed quality-gate conditions that the user has not marked 误报 / 接受 with a reason, one CRITICAL each (本仓自加)
       - Each with specific, actionable recommendation
 
    2. **WARNING** (Should fix):
