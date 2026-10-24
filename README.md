@@ -112,7 +112,7 @@ npx skills remove --skill ddd-aggregate
 | `openspec-grill`               | Phase 1 决策树分轮访谈：消除隐含假设，沉淀 CONTEXT.md 领域术语与 ADR（项目级资产） | `/opsx:grill` |
 | `openspec-grill-policy`        | **可选**的项目级 Grill 门禁（给需要访谈留痕与放行签字的团队）：判定表、模板、`grill-check.js` / `create-grill.js`，脚本与操作手册在仓库 `scripts/grill/` 与 `docs/` 下。默认流程用 `/opsx:grill`，不要求装它 | 由主 agent 加载 |
 | `openspec-technical-review`    | 编码前多维度技术评审门禁（含 `shared/` 规则事实源、roles、hook、workflow） | `/opsx:review` |
-| `openspec-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵 | `/opsx:overview` |
+| `openspec-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵；由一个子 agent 生成，主会话只接收结论 | `/opsx:overview` |
 | `openspec-code-quality`    | 实现后双轴独立评审：同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；项目配置了 Sonar 时最后扫描本次修改的行 | `/opsx:quality` |
 | `openspec-discussion-sync` | OpenSpec 流程内子 agent 讨论结论回流契约与落盘规则 | 无（由主 agent 加载） |
 | `openspec-finding-explain` | 为单个 finding 生成业务场景解析文档，解释它对业务意味着什么 | `/opsx:explain` |

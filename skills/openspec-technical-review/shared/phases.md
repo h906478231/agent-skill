@@ -12,7 +12,7 @@
 | 讨论回流（grill 查证，按需） | skill `openspec-discussion-sync` | grill 派出的查证子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳；explore 在主会话中讨论，不派子 agent | `discussion-log.md` | 否 |
 | Phase 1 需求澄清 | `/opsx:explore`                  | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
 | Phase 2 方案探索 | `/opsx:explore`                  | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；状态变动或流程变动命中时写 `change-model` 代码块，规则见 `../../openspec-change-overview/shared/change-model.md`） | 否 |
-| 变更总览（按需） | `/opsx:overview`                 | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
+| 变更总览（按需） | `/opsx:overview`                 | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图；由一个子 agent 整体生成，主会话只接收结论 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
 | 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载 `../../openspec-propose/shared/task-slicing.md`） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前四问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 产物检查（四个卡点） | `/opsx:propose`、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查（禁用别名 / 非受控通用词 / 模糊词），再跑变更模型检查（CM-1～CM-6）；各卡点按退出码处理（`../../openspec-ste/shared/gate-check.md`）；archive 不重跑，靠 verify 的 CRITICAL 阻断 | 无独立产物；阻断项在对应卡点输出 | 否 |
 | 分级判定 | 人工（参照下表）                         | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md`（见 `gate-levels.md`） | 否 |
@@ -40,7 +40,7 @@
 | quality | 固定基线 diff、产物、`evidence/` | 能 |
 | verify | 产物、门禁脚本输出、`review-summary.md`、上一份 `verification.md` | 能 |
 | archive | `verification.md`、门禁脚本输出、`review-summary.md` | 能。没有 `verification.md` 时拒绝归档 |
-| overview | 全部产物 | 能 |
+| overview | 全部产物（由子 agent 读取，主会话只接收结论） | 能 |
 
 ## 全景流程图
 

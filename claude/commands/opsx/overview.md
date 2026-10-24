@@ -12,10 +12,11 @@ tags: [workflow, overview, traceability]
 
 ## 执行
 
-加载 skill **`openspec-change-overview`**，按其中的前置校验与五块产出结构执行，不要在本文件里另行定义规则。
+加载 skill **`openspec-change-overview`**，按其中的前置、执行方式（一个子 agent 生成）与五块产出结构执行，不要在本文件里另行定义规则。
 
 关键约束（详见 skill）：
 
+- **由一个子 agent 整体生成，主会话只接收结论**：主会话只传 skill 目录的绝对路径、变更名、`changeRoot` 与原 `overview.md` 的分级行；子 agent 只返回固定几段（结果、条件统计、未落地的条件、无来源的任务、未决问题、变更模型阻断项）。主会话不读取 `overview.md` 全文，核对条件统计行、分级行与变更模型检查后再向用户报告。环境不支持子 agent 时，主会话直接生成并写明原因。
 - `overview.md` 是**派生视图**，整体重新生成，**禁止手改** —— 内容有误请改事实源后重跑。
 - 事实源没写的一律标 `未定义`，不得用常识补全。
 - 规则条件矩阵必须覆盖 `proposal` 验收条件 / `spec` scenario / `design` 约束 / `review-summary` 的「有条件通过」条件四类来源；**既没有对应任务、也没有对应行号的条件标 `⚠️ 未落地`，视同 Blocker**（`review-summary` 的条件只需修改规划产物时，可以对应该产物的 `<文件>:<行号>`），且未落地条数要写在文件开头。
