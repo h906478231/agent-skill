@@ -1,6 +1,6 @@
 ---
 name: openspec-change-overview
-description: 为一个 OpenSpec 变更生成单页总览 overview.md，把分散在 proposal/design/specs/tasks/review 中的信息汇成文档地图、端到端运行流程、字段变更台账、规则条件可追溯矩阵与未决问题。用于回答「规则条件有没有遗漏」「整体运行流程与过程中的字段怎么变」两类问题；按需入口：L2/L3 或字段与规则条件较多的变更推荐在 design 定稿后、门禁出结论后刷新（verify 直接核对 review-summary.md 的条件，不要求刷新总览），L0/L1 不要求（分级行只需一行，不必为它生成总览）。
+description: 为一个 OpenSpec 变更生成单页总览 overview.md，把分散在 proposal/design/specs/tasks/review 中的信息汇成文档地图、端到端运行流程、字段变更台账、规则条件可追溯矩阵与未决问题。用于回答「规则条件有没有遗漏」「整体运行流程与过程中的字段怎么变」两类问题；按需入口：L2/L3 或字段与规则条件较多的变更推荐在 design 定稿后、门禁出结论后刷新（verify 直接核对 review-summary.md 的条件，不要求刷新总览），L0/L1 不要求（分级行只需一行，不必为它生成总览）。由一个子 agent 整体生成，主会话只接收结论。
 ---
 
 # OpenSpec 变更总览（Change Overview）
@@ -34,15 +34,55 @@ description: 为一个 OpenSpec 变更生成单页总览 overview.md，把分散
 - **不臆造**。事实源没写的内容标 `未定义`，不要用常识补全 —— 标出来正是为了暴露缺口。
 - **回归结论只写本次引入的失败**。引用切片证据或完整套件结果时，写成「完整回归：PASS_WITH_BASELINE（本次引入的失败：0）」或「完整回归：FAIL（本次引入：<测试名>，修复任务 <编号>）」。**禁止列出基线失败的测试名或数量**（规则见 `../openspec-apply-change/shared/slice-evidence.md`「结果取值」）。
 
-## 前置
+## 前置（主会话）
 
 1. 解析变更名（参数 / 上下文推断 / `openspec list --json` 让用户选）。
 2. `openspec status --change "<name>" --json` 取 `changeRoot`。
-3. 读取存在的全部事实源。`design.md` 缺失时仍可生成，但第 2、3 块大量标 `未定义`，并在开头提示「design 未定稿，总览参考价值有限」。
+3. 只为记录分级结论而写的 `overview.md`（见「铁律」）由主会话直接写，不启动子 agent。
+
+## 执行方式：一个子 agent 生成
+
+五块内容要读取全部事实源，读取量大，而主会话需要的结论只有几行。因此由**一个**子 agent 整体生成，主会话只接收结论，不读取 `overview.md` 全文。做法与 `/opsx:review`、`/opsx:quality` 的子 agent 相同：子 agent 把结果写入固定文件，只向主会话返回结论。
+
+1. 主会话从原 `overview.md` 只取分级行（以 `> 分级：` 开头的一行）。没有原文件或没有该行时，用「铁律」中「未判定」的写法。
+2. 用 Agent 工具启动一个子 agent。prompt 包含且只包含：
+   - `<SKILL_DIR>`（本 SKILL.md 所在目录）的绝对路径，并说明下文全部 `<SKILL_DIR>/...` 都替换为该值；
+   - 变更名与 `changeRoot`；
+   - 第 1 步取得的分级行，要求原样写入文件头；
+   - 要求：读取 `<SKILL_DIR>/SKILL.md`，按「铁律」与「产出结构」生成；读取存在的全部事实源，`design.md` 缺失时仍生成，并在开头提示「design 未定稿，总览参考价值有限」；只写 `overview.md` 与 `overview.html`，不修改事实源，不运行 git 命令，不向用户提问（未决问题写入第 5 块）；
+   - 下面的返回格式。
+3. 子 agent 只返回下面几段，段名固定，某段没有内容时写「无」：
+
+   ```markdown
+   ## 结果
+   已生成 / 已停止：变更模型有阻断项 / 失败：<原因>
+   ## 条件统计
+   共 N 条条件，未落地 M 条
+   ## 未落地的条件
+   <条件ID>｜<来源>｜<条件内容，一句>
+   ## 无来源的任务
+   <任务编号>｜<任务内容，一句>
+   ## 未决问题
+   <问题>｜<候选选项>
+   ## 变更模型阻断项
+   design.md:<行号>｜<规则>｜<text>
+   ```
+
+4. 结果为「已生成」时，主会话核对，不读取全文：
+   - `overview.md` 中「共 N 条条件，未落地 M 条」一行与返回的条件统计一致；
+   - 分级行与第 1 步取得的一致；
+   - `design.md` 有变更模型时，`overview.html` 存在，并且 `node <SKILL_DIR>/scripts/change-model.mjs check <changeRoot>` 的退出码为 `0`。
+
+   核对不一致时如实告诉用户，不得转述为生成成功；可以重新启动一次子 agent。结果为「已停止」时，按第 2 块的规则逐项列出阻断项，建议 `/opsx:update` 修正后重跑。
+5. 主会话向用户报告：文件路径、条件统计（M > 0 时写在第一句）、未落地的条件与未决问题。
+
+- 环境不支持子 agent 时，主会话按同样的要求直接生成，并在输出中写明「主会话执行（环境不支持子 agent）」。
+- 子 agent 的结果写入固定文件，不适用 skill `openspec-discussion-sync` 的五段契约。
+
 
 ## 产出结构
 
-写入 `<changeRoot>/overview.md`，固定五块。
+子 agent 写入 `<changeRoot>/overview.md`，固定五块。`design.md` 缺失时第 2、3 块多处标 `未定义`。
 
 ### 1. 文档地图
 
