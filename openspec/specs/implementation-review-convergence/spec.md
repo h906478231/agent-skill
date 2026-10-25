@@ -96,3 +96,18 @@ To decide whether a file changed only in such tasks, the agent SHALL list the ch
 - **AND** the user confirms the class `等价`
 - **THEN** the next `/opsx:quality` run registers the commit with the class `等价` and adds no task
 - **AND** the round runs Standards Review only
+
+### Requirement: The registration exemption consistency test SHALL read each site as a whole list item
+
+The registration exemption test in `scripts/test-doc-consistency.mjs` checks step 6 of the registration steps in `skills/openspec-apply-change/shared/post-implementation-changes.md`, the re-run line in `claude/commands/opsx/quality.md`, and the item `门禁外提交` in `skills/openspec-technical-review/shared/closed-loop-verification.md`. For each of these sites, the test SHALL read the line that starts with the site prefix together with the indented lines that directly follow it. The test SHALL stop at the first line that is empty or not indented. The required phrases of a site SHALL be found in any line of that region.
+
+#### Scenario: Step 6 split into indented sub-items passes
+- **WHEN** step 6 keeps its first sentence on the numbered line
+- **AND** the text from `判断方法：` is moved into 3 indented sub-items with no word changed
+- **THEN** `npm run test:consistency` passes
+
+#### Scenario: A sub-item of step 6 loses a required phrase
+- **WHEN** step 6 is split into indented sub-items
+- **AND** `-U0` is removed from the sub-item that starts with `判断方法：`
+- **THEN** `npm run test:consistency` fails
+- **AND** the failure message names `post-implementation-changes.md` and the phrase `git diff -U0`
