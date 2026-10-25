@@ -278,14 +278,25 @@ test('实现后修改登记：「何时登记」与「命令级校验」的登�
  * 事实源登记步骤与重跑前的 3 处判定写同一口径：漏写「只在」，门禁外提交就能借同一文件的新增任务不登记；
  * 漏写「对应不上或拿不准时照常登记」，核对不出归属的修改就会按豁免处理。
  */
-const firstLine = prefix => text => text.split('\n').find(line => line.startsWith(prefix))
+/**
+ * 取以 prefix 开头的列表项：首行加其后连续的缩进行，到第一个空行或不缩进的行为止。
+ * 取值单位是列表项，不是物理行：列表项拆成缩进子项时，必需短语仍在取值区域内（STD-03）。
+ */
+const listItem = prefix => text => {
+  const lines = text.split('\n')
+  const start = lines.findIndex(line => line.startsWith(prefix))
+  if (start < 0) return undefined
+  let end = start + 1
+  while (end < lines.length && /^\s+\S/.test(lines[end])) end++
+  return lines.slice(start, end).join('\n')
+}
 /** 判断方法的事实源：登记步骤第 6 步。用具名常量取，数组顺序改变时检查对象不变（STD-13）。 */
-const TASK_EXEMPTION_SOURCE = [CHANGE_RULES, '登记步骤第 6 步', firstLine('6. 再次运行 `classify`')]
+const TASK_EXEMPTION_SOURCE = [CHANGE_RULES, '登记步骤第 6 步', listItem('6. 再次运行 `classify`')]
 const TASK_EXEMPTION_SITES = [
   TASK_EXEMPTION_SOURCE,
   ['skills/openspec-code-quality/SKILL.md', '前置', text => sectionBody(text, '前置')],
-  ['claude/commands/opsx/quality.md', '重跑前的 classify', firstLine('- 重跑前先运行')],
-  ['skills/openspec-technical-review/shared/closed-loop-verification.md', '门禁外提交', firstLine('- **门禁外提交**')],
+  ['claude/commands/opsx/quality.md', '重跑前的 classify', listItem('- 重跑前先运行')],
+  ['skills/openspec-technical-review/shared/closed-loop-verification.md', '门禁外提交', listItem('- **门禁外提交**')],
 ]
 const TASK_EXEMPTION_PHRASES = ['只在新增并已勾选的任务内修改', '勾选之后又有修改时照常登记', '对应不上或拿不准时照常登记']
 /**
@@ -296,7 +307,7 @@ const TASK_EXEMPTION_PHRASES = ['只在新增并已勾选的任务内修改', '�
  * 第 6 步必须用 `-U0` 并写明每个区块算一处（STD-14）。
  * 引用方不得复制命令：占位符 `修改前指纹的 sha` 只出现在第 6 步的命令中，复制后第 6 步再改写时副本会过期。
  * 不用 `git diff` 作禁止项，原因是 SKILL.md「前置」第 2 步有 `git diff --stat`。
- * 禁止项按整个文件检查：两个引用方的取值区域只有 1 行，只查区域时，写到相邻行的文字查不出来（STD-01）。
+ * 禁止项按整个文件检查：两个引用方的取值区域是所在的列表项，只查区域时，写到相邻行的文字查不出来（STD-01）。
  */
 const TASK_EXEMPTION_METHOD = {
   required: ['逐处核对', 'git diff -U0', '每个 `@@` 区块算一处'],
