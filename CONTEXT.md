@@ -44,6 +44,22 @@ _Avoid_: 品味测试、评测跑次
 经人工认可、用于后续对比的评测结果汇总，只保存在本地，不进 git。与评审基线、基线失败清单无关。
 _Avoid_: 评测基准、基准结果
 
+**Stage Handoff Check（阶段交接检查）**:
+按 `phases.md` 阶段表的输入与产出，检查各分支能否走到 archive 的确定性测试，不运行 agent。与链式用例无关。
+_Avoid_: 链路完整性测试、链路检查
+
+**Trace Summary（轨迹摘要）**:
+从一次评测运行的 `trace.jsonl` 归类出的工具调用汇总，按 6 类归类，按子 agent 分组，写入 `trace-summary.json`。与链式用例的「步骤」无关。
+_Avoid_: 调用清单、轨迹日志
+
+**Read Hit（读取命中）**:
+一个修改过的规则文件，在路由选中的评测用例的已完成 WORKTREE 评测运行中被读取的次数，写成 `<命中数>/<总数>`；为 0 时告警，不改变退出码。
+_Avoid_: 改动命中、读取覆盖
+
+**Test Run Record（测试运行记录）**:
+一键测试每次运行后写入 `<评测数据目录>/reports/<时间>/`（默认 `evals/reports/`）的一组文件，入口为 `report.md`；`node evals/report.mjs --run` 为已有的结果目录写入同样的一组文件。与评测运行的结果目录无关。
+_Avoid_: 测试报告、测试日志
+
 **Post-implementation Change Ledger（实现后修改登记）**:
 tasks.md 中 `## 实现后修改登记` 表：逐行记录不在未勾选任务内进行的代码修改及其修改档位；不含勾选项，不改变任务进度。与评审报告的 Finding 台账无关。
 _Avoid_: 修改台账、事后登记、补登记
