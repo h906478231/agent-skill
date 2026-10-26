@@ -29,18 +29,18 @@
 
 各阶段从文件读取输入时，可以在新会话中开始，不必在上一阶段的会话中继续。新会话不带上一阶段读过的文件与工具输出，上下文更小。下表的「能」只表示换会话不丢信息，在同一会话中连续执行也可以。
 
-| 阶段 | 读取的输入 | 能否在新会话中开始 |
-|------|-----------|-------------------|
-| grill | `CONTEXT.md`、`docs/adr/`、已有的 proposal 与 design | 能 |
-| explore | 对话；有变更时读取产物 | 否。explore 是与用户的讨论，在主会话中进行，不交给子 agent，避免讨论内容缺失导致方案偏离 |
-| propose / ff | 用户需求、`discussion-log.md`、已完成的产物 | 能。grill 没有创建变更时，共识只在 grill 的会话中，propose 要在该会话中执行 |
-| update | 修改依据与全部产物。修改依据大多来自刚才的讨论 | 通常不能，在讨论的会话中执行。修改依据已完整写在指令中时能（如「design 改为用 X」） |
-| review | proposal、design | 能 |
-| apply | proposal、specs、design、tasks、`review-summary.md` | 能。新会话中写明变更名 |
-| quality | 固定基线 diff、产物、`evidence/` | 能 |
-| verify | 产物、门禁脚本输出、`review-summary.md`、上一份 `verification.md` | 能 |
-| archive | `verification.md`、门禁脚本输出、`review-summary.md` | 能。没有 `verification.md` 时拒绝归档 |
-| overview | 全部产物（由子 agent 读取，主会话只接收结论） | 能 |
+| 阶段 | 读取的输入 | 产出 | 能否在新会话中开始 |
+|------|-----------|------|-------------------|
+| grill | `CONTEXT.md`、`docs/adr/`、`proposal.md`（已有时）、`design.md`（已有时） | `CONTEXT.md`、`docs/adr/`、`discussion-log.md` | 能 |
+| explore | 对话；有变更时读取产物 | 无。用户要求时才写入产物 | 否。explore 是与用户的讨论，在主会话中进行，不交给子 agent，避免讨论内容缺失导致方案偏离 |
+| propose / ff | 用户需求、`discussion-log.md`（grill 写入时）、已完成的产物 | `proposal.md`、`design.md`、`specs/`、`tasks.md` | 能。grill 没有创建变更时，共识只在 grill 的会话中，propose 要在该会话中执行 |
+| update | 修改依据与全部产物。修改依据大多来自刚才的讨论 | `proposal.md`、`design.md`、`specs/`、`tasks.md` | 通常不能，在讨论的会话中执行。修改依据已完整写在指令中时能（如「design 改为用 X」） |
+| review | `proposal.md`、`design.md` | `review-summary.md`、`review/` | 能 |
+| apply | `proposal.md`、`specs/`、`design.md`、`tasks.md`、`review-summary.md`（启用技术评审时） | 代码、`evidence/`、`tasks.md` | 能。新会话中写明变更名 |
+| quality | 固定基线 diff、产物、`evidence/` | `review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md`、`review/sonar.md`（配置 Sonar 时） | 能 |
+| verify | 产物、门禁脚本输出、`review-summary.md`（启用技术评审时）、`verification.md`（重跑时） | `verification.md` | 能 |
+| archive | `verification.md`、门禁脚本输出、`review-summary.md`（启用技术评审时） | `openspec/specs/`、`openspec/changes/archive/` | 能。没有 `verification.md` 时拒绝归档 |
+| overview | 全部产物（由子 agent 读取，主会话只接收结论） | `overview.md`、`overview.html`（有变更模型时） | 能 |
 
 ## 全景流程图
 
