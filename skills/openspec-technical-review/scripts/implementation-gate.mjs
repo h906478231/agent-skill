@@ -11,8 +11,8 @@
  *   - verify / archive 如何解读输出：openspec-technical-review/shared/implementation-gate-check.md
  *
  * 用法：
- *   node implementation-gate.mjs fingerprint <changeRoot> [--repo <dir>]
- *   node implementation-gate.mjs baseline    <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]
+ *   node implementation-gate.mjs fingerprint <changeRoot> [--rev <commit>] [--repo <dir>]
+ *   node implementation-gate.mjs baseline   <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]
  *   node implementation-gate.mjs classify    <changeRoot> --from <fingerprint> [--to <fingerprint>] [--repo <dir>]
  *   node implementation-gate.mjs review      <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs evidence    <changeRoot> [--repo <dir>]
@@ -32,6 +32,7 @@
  *   - 不改用户的 index、不提交；唯一副作用是向对象库写入不可达对象，由 git gc 按默认策略回收。
  *   - 排除规划目录，保证写证据、勾选 tasks.md、写评审报告不会改变指纹。
  *   - 对象写入对象库后，两个指纹之间可用 git diff-tree 求出变化文件，供过期判定与豁免核实。
+ * 提交指纹（fingerprint --rev）：算法相同，种子是该提交的树，不写入工作区的修改。
  */
 
 import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
@@ -60,9 +61,9 @@ const RULES_VERSION = '2'
 
 /**
  * 可缺省的基线身份字段：旧报告或首轮评审没有这些行时不报缺失，但三份报告取值（含缺省）必须一致。
- * Delta Since 只在第 2 轮起的增量基线中出现。
+ * Delta Since 只在第 2 轮起的增量基线中出现；Change Head 只在 tasks.md 声明了变更终点时出现。
  */
-const OPTIONAL_BASELINE_KEYS = ['Rules Version', 'Delta Since']
+const OPTIONAL_BASELINE_KEYS = ['Rules Version', 'Delta Since', 'Change Head']
 
 /** 实现后 Blocker 判据编号（B1–B5，判据表见 dual-axis-review.md）：触发场景必须以其开头。 */
 const BLOCKER_CRITERION = /^\[B[1-5]\]/
@@ -197,6 +198,36 @@ function computeFingerprint(repo, changeRoot) {
 }
 
 /**
+ * 把提交引用解析为全量 SHA。
+ * @returns {string|null} 解析不到提交时返回 null；以 - 开头的值不传给 git，避免被当作选项。
+ */
+function resolveCommit(repo, rev) {
+  if (!rev || rev.startsWith('-')) return null
+  return tryGit(repo, ['rev-parse', '--verify', '-q', `${rev}^{commit}`])
+}
+
+/**
+ * 计算一个提交的实现指纹（fingerprint --rev，add-change-head design D3）：与 computeFingerprint 同一算法，
+ * 种子是该提交的树，不写入工作区的修改。
+ * @param {string} commit 已解析的提交 SHA（见 resolveCommit）。
+ * @returns {string} `git-tree:<sha>`。
+ */
+function commitFingerprint(repo, changeRoot, commit) {
+  const index = path.join(tmpdir(), `implementation-gate-${process.pid}-${randomBytes(6).toString('hex')}.index`)
+  const env = { ...process.env, GIT_INDEX_FILE: index }
+  try {
+    git(repo, ['read-tree', commit], env)
+    const planning = planningDir(repo, changeRoot)
+    // 早期提交可能跟踪了规划目录。临时 index 与工作区、HEAD 都不同时，不带 -f 的 git rm --cached 会拒绝执行；
+    // --cached 只改临时 index，-f 不会删除工作区文件。
+    if (planning) git(repo, ['rm', '-r', '-q', '-f', '--cached', '--ignore-unmatch', '--', planning], env)
+    return FINGERPRINT_PREFIX + git(repo, ['write-tree'], env).trim()
+  } finally {
+    rmSync(index, { force: true })
+  }
+}
+
+/**
  * 读取两个指纹之间每个变化文件的 diff-tree 记录。changedFiles 与 classifyChanges 共用，两处列出的文件名一致。
  * -z 输出不转义路径：含双引号、制表符的文件名按原样返回。不做改名检测：改名的文件按删除加新增处理。
  * @returns {{ file: string, modeA: string, modeB: string, blobA: string, blobB: string, status: string }[]|null}
@@ -229,16 +260,28 @@ function changedFiles(repo, from, to) {
  * 生成评审基线区块：两轴原始报告与汇总报告原样粘贴同一块。
  * @param {string} baseRev 变更起点（省略取 HEAD）。
  * @param {string} [since] 上一轮基线指纹；给出时追加 `Delta Since` 与变化文件列表，第 2 轮起只审查该增量。
+ * @param {{ commit: string, fingerprint: string }|null} [head] 变更终点（readChangeHead）。给出时评审范围截止到终点，
+ *   Fingerprint 取终点指纹，增量比到终点指纹（add-change-head design D4）。
  * @returns {{ output: string, warnings: string[] }} warnings 写到 stderr，不进入基线区块。
- * @throws {GateError} 起点提交无法解析，或 since 不是 git-tree 指纹时抛出。
+ * @throws {GateError} 起点提交无法解析、since 不是 git-tree 指纹、起点等于变更终点，或起点不是变更终点的祖先时抛出。
  */
-function renderBaseline(repo, changeRoot, baseRev, since) {
+function renderBaseline(repo, changeRoot, baseRev, since, head = null) {
   const rev = baseRev || 'HEAD'
   const base = tryGit(repo, ['rev-parse', '--verify', '-q', `${rev}^{commit}`])
   if (!base) throw new GateError(`无法解析基线提交：${rev}（尚无提交时请先提交或用 --base 指定）`)
   if (since && !GIT_TREE_FINGERPRINT.test(since)) throw new GateError(`--since 不是 git-tree 指纹：${since}`)
+  // 起点等于终点时评审范围为空，两轴拿到空 diff 也能通过（add-change-head design D4）；
+  // 常见原因是声明了终点却没有传 --base（缺省取 HEAD），而终点就是 HEAD。
+  if (head && base === head.commit) {
+    throw new GateError(`基线提交 ${base} 等于变更终点，评审范围为空：用 --base 指定本变更的起点提交`)
+  }
+  // 起点在终点之后时，Base..终点 不是本变更的提交范围。
+  if (head && tryGit(repo, ['merge-base', '--is-ancestor', base, head.commit]) === null) {
+    throw new GateError(`基线提交 ${base} 不是变更终点 ${head.commit} 的祖先：用 --base 指定本变更的起点提交`)
+  }
   const planning = planningDir(repo, changeRoot)
-  const fingerprint = computeFingerprint(repo, changeRoot)
+  const excluded = planning ? `排除 ${planning}` : '无排除目录'
+  const fingerprint = head ? head.fingerprint : computeFingerprint(repo, changeRoot)
   const warnings = []
   const delta = []
   if (since) {
@@ -255,7 +298,10 @@ function renderBaseline(repo, changeRoot, baseRev, since) {
     `- Change: ${path.basename(changeRoot)}`,
     `- Base Commit: ${base}`,
     `- Fingerprint: ${fingerprint}`,
-    `- Review Scope: ${base.slice(0, 12)}..工作区（含已暂存 / 未暂存 / 未跟踪文件，${planning ? `排除 ${planning}` : '无排除目录'}）`,
+    head
+      ? `- Review Scope: ${base.slice(0, 12)}..${head.commit.slice(0, 12)}（${excluded}）`
+      : `- Review Scope: ${base.slice(0, 12)}..工作区（含已暂存 / 未暂存 / 未跟踪文件，${excluded}）`,
+    ...(head ? [`- Change Head: ${head.commit}`] : []),
     `- Rules Version: ${RULES_VERSION}`,
     ...delta,
     `- Baseline Recorded At: ${new Date().toISOString()}`,
@@ -699,6 +745,71 @@ function classifyCommand(repo, changeRoot, from, to) {
 }
 
 // ============================================================================
+// 变更终点（规则见 openspec-apply-change/shared/post-implementation-changes.md「变更终点」，add-change-head design D1–D6）
+// ============================================================================
+
+/** tasks.md 中变更终点区块的标题行：必须完全相等，切片标题可能含同样的词，不能按包含匹配。 */
+const CHANGE_HEAD_HEADING = /^##\s+变更终点\s*$/
+
+/** 变更终点的提交必须写全量 SHA：短 SHA 与分支名会随仓库变化指向别的提交。 */
+const FULL_COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
+/**
+ * 逐行读取 `- Key：value` 字段，返回首个匹配行的值。
+ * 不用 readField：它的冒号后 `\s*` 会跨行，值为空时读到下一行，空的判定人会被当成「- 日期：…」。
+ */
+function lineField(lines, key) {
+  const pattern = new RegExp(`^\\s*(?:[-*]\\s+)?\\**${escapeRegExp(key)}\\**[ \\t]*[:：][ \\t]*(.*)$`)
+  for (const line of lines) {
+    const match = pattern.exec(line)
+    if (match) return clean(match[1])
+  }
+  return ''
+}
+
+/**
+ * 读取并校验 tasks.md 的变更终点：提交是全量 SHA、存在、是 HEAD 或 HEAD 的祖先，判定人不为空。
+ * 判定人只能由用户填写（规则同签字行）：终点之后的修改不进入评审，把终点写早就能把本变更的修改排除在评审外。
+ * @returns {{ commit: string, fingerprint: string, decider: string }|null} 没有区块时返回 null。
+ * @throws {GateError} 区块存在但校验不通过时抛出（退出码 2）。用户写了终点却被忽略时，门禁会回到旧口径而用户发现不了。
+ */
+function readChangeHead(repo, changeRoot) {
+  const lines = readTasks(changeRoot).split(/\r?\n/)
+  const start = lines.findIndex(line => CHANGE_HEAD_HEADING.test(line))
+  if (start < 0) return null
+  const end = lines.findIndex((line, i) => i > start && /^#{1,2}\s/.test(line))
+  const block = lines.slice(start + 1, end < 0 ? lines.length : end)
+  const value = lineField(block, '提交')
+  const decider = lineField(block, '判定人')
+  const problems = []
+  let commit = null
+  if (!FULL_COMMIT_SHA.test(value)) {
+    problems.push(`提交「${value || '(空)'}」不是全量 SHA`)
+  } else if (!(commit = resolveCommit(repo, value))) {
+    problems.push(`提交 ${value} 不存在`)
+  } else if (tryGit(repo, ['merge-base', '--is-ancestor', commit, 'HEAD']) === null) {
+    // tryGit 成功时返回空串，失败时返回 null：只有 null 表示不是祖先。
+    problems.push(`提交 ${value} 不是 HEAD 的祖先`)
+  }
+  if (!decider) problems.push('判定人为空，只能由用户填写')
+  if (problems.length) throw new GateError(`tasks.md 的「## 变更终点」无效：${problems.join('；')}`)
+  return { commit, fingerprint: commitFingerprint(repo, changeRoot, commit), decider }
+}
+
+/**
+ * 变更终点之后的修改（design D5）：classify 的 changeHead 输出，archive 的 notes 与 warning 也读取它。
+ * afterHead 为终点指纹到当前指纹之间变化的文件；uncommitted 为 HEAD 的指纹到当前指纹之间变化的文件（含未跟踪文件）。
+ * 两个列表只供提示，不计入 unregistered，也不影响退出码。
+ * @returns {{ commit: string, fingerprint: string, afterHead: string[], uncommitted: string[] }}
+ */
+function describeChangeHead(repo, changeRoot, head, currentFingerprint) {
+  const headFingerprint = commitFingerprint(repo, changeRoot, resolveCommit(repo, 'HEAD'))
+  return { commit: head.commit, fingerprint: head.fingerprint,
+    afterHead: changedFiles(repo, head.fingerprint, currentFingerprint) || [],
+    uncommitted: changedFiles(repo, headFingerprint, currentFingerprint) || [] }
+}
+
+// ============================================================================
 // Markdown 解析（只识别规则文件约定的骨架，不做通用 Markdown 解析）
 // ============================================================================
 
@@ -897,8 +1008,9 @@ function checkCarried(repo, changeRoot, from, to) {
  *   repo：仓库根目录，用于判定基线以来是否只有注释差异。
  * @returns {object} applicable、verdict（PASSED / BLOCKED / INCOMPLETE）、carried（沿用轮的核对范围，非沿用轮为 null）、
  *   axes、issues、warnings 等。
+ *   options.changeHead：变更终点（readChangeHead），给出时陈旧提醒改为与终点指纹比较（add-change-head design D5）。
  */
-function checkReview(changeRoot, { required = false, currentFingerprint = null, repo = null } = {}) {
+function checkReview(changeRoot, { required = false, currentFingerprint = null, repo = null, changeHead = null } = {}) {
   const files = [...AXES.map(axis => axis.file), SUMMARY_FILE]
   if (!required && !files.some(file => existsSync(path.join(changeRoot, file)))) {
     const tier = readTier(changeRoot)
@@ -990,13 +1102,16 @@ function checkReview(changeRoot, { required = false, currentFingerprint = null, 
     }
   }
   const baseline = reference || null
+  // 声明了变更终点时与终点指纹比较：终点之后其他变更的提交不属于本变更，不应提示评审陈旧。
+  const target = changeHead ? changeHead.fingerprint : currentFingerprint
+  const targetLabel = changeHead ? `变更终点 ${changeHead.commit.slice(0, 12)} 的指纹` : '当前实现'
   // 基线以来只有注释差异时不开新一轮评审，也就不提示陈旧。
   const commentOnlySince = () => {
-    const diff = repo && classifyChanges(repo, baseline.Fingerprint, currentFingerprint)
+    const diff = repo && classifyChanges(repo, baseline.Fingerprint, target)
     return Boolean(diff) && !diff.other.length
   }
-  if (currentFingerprint && baseline && baseline.Fingerprint && baseline.Fingerprint !== currentFingerprint && !commentOnlySince()) {
-    warnings.push(`评审基线 Fingerprint ${baseline.Fingerprint} 与当前实现 ${currentFingerprint} 不一致：评审后实现有变化。`
+  if (target && baseline && baseline.Fingerprint && baseline.Fingerprint !== target && !commentOnlySince()) {
+    warnings.push(`评审基线 Fingerprint ${baseline.Fingerprint} 与${targetLabel} ${target} 不一致：评审后实现有变化。`
       + `运行 classify --from ${baseline.Fingerprint}，把 unregistered 中的文件（含门禁外提交）按档位登记到 tasks.md 的「## ${CHANGE_LEDGER_TITLE}」，`
       + '再按档位决定是否生成新基线重跑（规则见 post-implementation-changes.md）')
   }
@@ -1393,10 +1508,14 @@ function findTaskIssues(tasks) {
  * 合并双轴评审与切片证据的阻断项；不适用的部分以理由写入 notes，不静默当作通过。
  * 待环境补测（pending-environment）的切片不阻断，切片、负责人与补测计划写入 notes，供归档摘要列出。
  * Verify 的其他 CRITICAL（未完成任务、需求未实现等）不在本脚本判定范围，由 archive 流程另行确认。
- * @returns {object} ok、blockers、notes、warnings，以及 review / evidence 明细。
+ * 声明了变更终点时（add-change-head design D6）：评审陈旧提醒与终点指纹比较，证据仍与当前指纹比较；
+ * notes 写出终点、判定人与终点之后变化的文件数，有未提交的文件时输出 warning，不阻断归档。
+ * @param {{ commit: string, fingerprint: string, decider: string }|null} [head] 变更终点（readChangeHead）。
+ * @returns {object} ok、blockers、notes、warnings，以及 review / evidence 明细；声明了终点时另有 changeHead。
  */
-function checkArchive(repo, changeRoot, currentFingerprint) {
-  const review = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint, repo })
+function checkArchive(repo, changeRoot, currentFingerprint, head = null) {
+  const review = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint, repo,
+    changeHead: head })
   const evidence = checkEvidence(repo, changeRoot, currentFingerprint)
   const blockers = []
   const notes = []
@@ -1415,7 +1534,16 @@ function checkArchive(repo, changeRoot, currentFingerprint) {
   } else {
     notes.push(evidence.reason)
   }
-  return { ok: blockers.length === 0, blockers, notes, warnings: [...review.warnings, ...evidence.warnings], review, evidence }
+  const warnings = [...review.warnings, ...evidence.warnings]
+  if (!head) return { ok: blockers.length === 0, blockers, notes, warnings, review, evidence }
+  const changeHead = describeChangeHead(repo, changeRoot, head, currentFingerprint)
+  notes.push(`变更终点：${head.commit}（判定人 ${head.decider}），终点之后变化的文件 ${changeHead.afterHead.length} 个，不在本变更的评审范围内`)
+  // 未提交的文件可能是本变更没有提交的修复：只告警，不阻断（证据在当前实现上重跑，行为仍经过测试）。
+  if (changeHead.uncommitted.length) {
+    warnings.push(`工作区有 ${changeHead.uncommitted.length} 个未提交的文件，算作变更终点之后的修改，不进入评审：`
+      + `${changeHead.uncommitted.join('、')}。其中有本变更的修复时，按 post-implementation-changes.md「变更终点」从终点创建分支提交修复`)
+  }
+  return { ok: blockers.length === 0, blockers, notes, warnings, review, evidence, changeHead }
 }
 
 // ============================================================================
@@ -1514,7 +1642,7 @@ function checkHygiene(changeRoot) {
 
 /** 各子命令接受的 `--key value` 参数；其他参数一律按参数错误处理，不静默忽略。 */
 const COMMAND_OPTIONS = {
-  fingerprint: ['repo'],
+  fingerprint: ['rev', 'repo'],
   baseline: ['base', 'since', 'repo'],
   classify: ['from', 'to', 'repo'],
   review: ['repo'],
@@ -1539,6 +1667,7 @@ function parseOptions(command, args) {
 }
 
 const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive|hygiene> <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]'
+  + '\n      node implementation-gate.mjs fingerprint <changeRoot> --rev <commit> [--repo <dir>]'
   + '\n      node implementation-gate.mjs classify <changeRoot> --from <fingerprint> [--to <fingerprint>] [--repo <dir>]'
   + '\n      node implementation-gate.mjs regress --baseline <file> --actual <file>'
 
@@ -1567,14 +1696,23 @@ function run(argv) {
   }
   const repo = resolveRepo(options.repo || process.cwd())
 
-  if (command === 'fingerprint') return { code: EXIT.PASS, output: `${computeFingerprint(repo, changeRoot)}\n` }
+  if (command === 'fingerprint') {
+    if (options.rev === undefined) return { code: EXIT.PASS, output: `${computeFingerprint(repo, changeRoot)}\n` }
+    const commit = resolveCommit(repo, options.rev)
+    if (!commit) throw new GateError(`fingerprint 无法解析提交：${options.rev}`)
+    return { code: EXIT.PASS, output: `${commitFingerprint(repo, changeRoot, commit)}\n` }
+  }
+  // 变更终点只约束评审与登记的比较，evidence 不读取（design D6）；无效时在此按参数错误退出（design D2）。
+  const head = command === 'evidence' ? null : readChangeHead(repo, changeRoot)
   if (command === 'baseline') {
-    const { output, warnings } = renderBaseline(repo, changeRoot, options.base, options.since)
+    const { output, warnings } = renderBaseline(repo, changeRoot, options.base, options.since, head)
     return { code: EXIT.PASS, output, stderr: warnings.map(item => `${item}\n`).join('') }
   }
   if (command === 'classify') {
     if (!options.from) throw new GateError(`classify 缺少 --from <fingerprint>\n${USAGE}`)
-    const report = classifyCommand(repo, changeRoot, options.from, options.to || computeFingerprint(repo, changeRoot))
+    const to = options.to || (head ? head.fingerprint : computeFingerprint(repo, changeRoot))
+    const report = classifyCommand(repo, changeRoot, options.from, to)
+    if (head) report.changeHead = describeChangeHead(repo, changeRoot, head, computeFingerprint(repo, changeRoot))
     const ok = report.unregistered.length === 0
     return { code: ok ? EXIT.PASS : EXIT.BLOCKED,
       output: `${JSON.stringify({ command, change: path.basename(changeRoot), ok, ...report }, null, 2)}\n` }
@@ -1584,13 +1722,14 @@ function run(argv) {
   let report
   let ok
   if (command === 'review') {
-    report = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint, repo })
+    report = checkReview(changeRoot, { required: reviewRequired(changeRoot, readTasks(changeRoot)), currentFingerprint, repo,
+      changeHead: head })
     ok = !report.applicable || report.verdict === 'PASSED'
   } else if (command === 'evidence') {
     report = checkEvidence(repo, changeRoot, currentFingerprint)
     ok = report.issues.length === 0
   } else {
-    report = checkArchive(repo, changeRoot, currentFingerprint)
+    report = checkArchive(repo, changeRoot, currentFingerprint, head)
     ok = report.ok
   }
   return { code: ok ? EXIT.PASS : EXIT.BLOCKED,

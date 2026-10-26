@@ -47,7 +47,7 @@ description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec 
 ## 前置
 
 1. 解析变更名，`openspec status --change "<name>" --json` 取 `changeRoot`。
-2. 确认有 diff：`git status --short` 与 `git diff --stat`（变更已提交时用变更起点到 HEAD 的范围，`git log` 定位起点 commit）。**diff 为空则中止**，提示先完成 `/opsx:apply`。
+2. 确认有 diff：`git status --short` 与 `git diff --stat`（变更已提交时用变更起点到 HEAD 的范围，`git log` 定位起点 commit。`tasks.md` 声明了 `## 变更终点` 时，用变更起点到变更终点的范围）。**diff 为空则中止**，提示先完成 `/opsx:apply`。
 3. 在 `changeRoot` 下创建 `review/` 目录。
 4. **重跑时按档位登记实现后修改**：运行 `node <GATE> classify <changeRoot> --from <上一轮报告基线的 Fingerprint>`，按 `<SKILL_DIR>/../openspec-apply-change/shared/post-implementation-changes.md` 处理结果：
    - `other` 为空（全部文件只有注释差异）：输出「无需新一轮：自上一轮基线以来只有注释差异」并停止，不生成新基线，报告保持不变。
@@ -69,6 +69,7 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>] --since <上一
 
 - 第 2 轮起，`<上一轮 Fingerprint>` 取上一轮报告基线中的 `Fingerprint`。输出带 `Delta Since` 与 `Delta Files`，本轮只审查这些文件。
 - 命令在 stderr 输出 warning（上一轮 tree 对象已被回收）时，基线不带 `Delta Since`，本轮按第 1 轮审查完整 diff。
+- `tasks.md` 声明了 `## 变更终点` 时（规则见 `<SKILL_DIR>/../openspec-apply-change/shared/post-implementation-changes.md`「变更终点」），用 `--base` 传本变更的起点提交。基线的 `Review Scope` 为起点到变更终点，`Fingerprint` 为终点指纹，并带 `Change Head` 行；`--since` 的 `Delta Files` 比到终点指纹。
 
 ### Step 2 — 并行调度两个隔离的评审 agent
 
@@ -83,7 +84,7 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>] --since <上一
 
 1. `<SKILL_DIR>` 的绝对路径，并说明「下文所有 `<SKILL_DIR>/...` 路径都替换为该值」；
 2. 对应角色文件全文（其中已声明必读的共用规则，子 agent 自行读取）；
-3. Step 1 的基线区块，并要求「报告开头原样粘贴」。评审范围：第 1 轮以 `Base Commit` 到工作区为准；基线带 `Delta Since` 时只审查 `Delta Files` 列出的文件；
+3. Step 1 的基线区块，并要求「报告开头原样粘贴」。评审范围：第 1 轮以 `Base Commit` 到工作区为准，基线带 `Change Head` 时以 `git diff <Base Commit> <Change Head>` 为准；基线带 `Delta Since` 时只审查 `Delta Files` 列出的文件；
 4. `changeRoot` 与 artifacts 路径；
 5. **重跑时**：本轴上一轮报告路径，要求先对台账中 `open` 的项做上轮闭环验证，原地覆盖报告并累计台账；Spec Fidelity 的规格覆盖矩阵沿用上一轮，只更新 delta 涉及的行；
 6. 明确禁止读取另一轴的原始报告与 `review/code-review-summary.md`；

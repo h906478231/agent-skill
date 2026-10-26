@@ -553,3 +553,33 @@ test('验收部署文档：verify 报告模板只写一行指向 deployment.md�
     }
   }
 })
+
+/**
+ * 变更终点（add-change-head design D3、D6）：事实源是 post-implementation-changes.md「变更终点」一节。
+ * 声明了变更终点时，登记指纹与 verify 的 `Fingerprint` 写 `fingerprint --rev <变更终点>` 的输出。
+ * 只改一处时，另一处写出当前指纹，classify 会把终点之后其他变更的修改列为未登记。
+ */
+const CHANGE_HEAD_REFERRERS = [
+  'skills/openspec-verify-change/SKILL.md',
+  'claude/commands/opsx/verify.md',
+  'skills/openspec-apply-change/SKILL.md',
+  'claude/commands/opsx/apply.md',
+  PROCESS_DOC,
+]
+const CHANGE_HEAD_FINGERPRINT = '--rev <变更终点>'
+
+test('变更终点：事实源的区块标题与门禁脚本一致，verify、apply 与流程文档写明终点指纹并引用事实源', async () => {
+  const rules = await read(CHANGE_RULES)
+  const gate = await read('skills/openspec-technical-review/scripts/implementation-gate.mjs')
+  const heading = new RegExp(gate.match(/^const CHANGE_HEAD_HEADING = \/(.+)\/$/m)[1])
+  assert.ok(rules.includes('\n## 变更终点\n'), '事实源缺少「## 变更终点」一节')
+  assert.ok(rules.split('\n').some(line => heading.test(line)), '事实源的区块标题与门禁脚本 CHANGE_HEAD_HEADING 不一致')
+  assert.ok(rules.includes(CHANGE_HEAD_FINGERPRINT), `事实源没有写 ${CHANGE_HEAD_FINGERPRINT}`)
+  const problems = []
+  for (const file of CHANGE_HEAD_REFERRERS) {
+    const text = await read(file)
+    if (!text.includes(CHANGE_HEAD_FINGERPRINT)) problems.push(`${file}：没有写 ${CHANGE_HEAD_FINGERPRINT}`)
+    if (!text.includes('post-implementation-changes.md') || !text.includes('「变更终点」')) problems.push(`${file}：没有引用事实源「变更终点」`)
+  }
+  assert.deepEqual(problems, [], '以下位置的变更终点指纹取值与事实源不一致')
+})

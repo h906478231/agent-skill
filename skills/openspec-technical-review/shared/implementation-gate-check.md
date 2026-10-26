@@ -31,7 +31,7 @@ node <GATE> review <changeRoot>
 | `review.applicable = false` | 报告写「双轴评审：<reason>」 |
 | `review.verdict = BLOCKED` | **CRITICAL**，列出各轴 `openBlockers`，回 `/opsx:quality` 闭环 |
 | `review.verdict = INCOMPLETE` 或 `review.issues` 非空 | **CRITICAL**，补齐或修正评审报告后重跑 |
-| `review.warnings`（评审基线指纹 ≠ 当前实现，且不只有注释差异） | WARNING：评审后实现有变化。运行 `classify --from <评审基线 Fingerprint>`，未登记的文件按 `../../openspec-apply-change/shared/post-implementation-changes.md` 按档位登记，再按档位决定是否回 `/opsx:quality` 重跑 |
+| `review.warnings`（评审基线指纹 ≠ 当前实现，且不只有注释差异；`tasks.md` 声明了 `## 变更终点` 时比较的是终点指纹，终点之后其他变更的提交不触发本提醒） | WARNING：评审后实现有变化。运行 `classify --from <评审基线 Fingerprint>`，未登记的文件按 `../../openspec-apply-change/shared/post-implementation-changes.md` 按档位登记，再按档位决定是否回 `/opsx:quality` 重跑 |
 
 脚本之外，Verify 还需人工核对两点（脚本无法判断语义）：
 
@@ -50,7 +50,7 @@ node <GATE> archive <changeRoot>
 
 | 退出码 | 处理 |
 |--------|------|
-| `0` | 本项通过；把 `notes`（不适用理由，以及待环境补测切片的负责人与补测计划）与 `warnings` 写进归档摘要，继续 archive 其余前置校验。`pending-environment` 的切片不阻断归档 |
+| `0` | 本项通过；把 `notes`（不适用理由、待环境补测切片的负责人与补测计划，以及声明了变更终点时的终点、判定人与终点之后变化的文件数）与 `warnings`（含变更终点之后未提交的文件）写进归档摘要，继续 archive 其余前置校验。`pending-environment` 的切片不阻断归档 |
 | `1` | **拒绝归档**，向用户列出 `blockers`（含切片编号或 finding ID），回到对应阶段处理：评审 Blocker → `/opsx:quality`；缺失 / 过期证据 → 重跑切片验证（`/opsx:apply` 的证据规则）后 `/opsx:verify` |
 | `2` | 参数或环境错误（非 git 仓库、缺 Node.js 等）：**不得视为通过**，修复环境后重跑；证据新鲜度无法核实即按过期处理 |
 

@@ -57,7 +57,7 @@ A `行为` change that changes `design.md` SHALL go through `/opsx:update` befor
 
 ### Requirement: The gate script SHALL detect comment-only differences
 
-`implementation-gate.mjs classify <changeRoot> --from <fingerprint> [--to <fingerprint>]` SHALL compare two implementation fingerprints. `--to` SHALL default to the current fingerprint. The command SHALL output a JSON object with the lists `commentOnly`, `other`, `registered`, `unregistered` and `issues`:
+`implementation-gate.mjs classify <changeRoot> --from <fingerprint> [--to <fingerprint>]` SHALL compare two implementation fingerprints. `--to` SHALL default to the fingerprint of the change head when `tasks.md` declares a valid change head (capability `change-head`), and to the current fingerprint otherwise. The command SHALL output a JSON object with the lists `commentOnly`, `other`, `registered`, `unregistered` and `issues`:
 
 - A file SHALL be in `commentOnly` only when it exists in both trees, its type is supported, and the two versions are equal after the script removes comments and blank lines and normalizes the whitespace that the language ignores.
 - The supported types SHALL be Java, Kotlin, SQL, XML and properties files. Added, deleted, renamed, binary and unsupported files SHALL be in `other`.
@@ -103,6 +103,11 @@ The exit code SHALL be `0` when `unregistered` is empty, `1` when it is not empt
 - **AND** row M2 then registers a comment fix in `Job.java` with the class `非行为` at fingerprint D
 - **THEN** `classify --to D` lists `Job.java` in `unregistered`
 - **AND** `issues` names M1 and M2 with their reasons
+
+#### Scenario: Declared change head sets the default comparison
+- **WHEN** `tasks.md` declares a valid change head C and commits of other changes follow C
+- **THEN** `classify --from <fingerprint>` without `--to` compares with the fingerprint of C
+- **AND** the files changed only by the later commits are not in `other`
 
 ### Requirement: Spec Fidelity SHALL be carried over only after non-behavioral or equivalent changes
 

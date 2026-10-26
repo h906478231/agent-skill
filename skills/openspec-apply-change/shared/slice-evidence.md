@@ -162,6 +162,8 @@ node <GATE> regress --baseline docs/test-baseline.txt --actual <实际失败清�
 
 证据缺失、字段不完整、`Result: FAIL` 或过期的已完成切片，Verify 一律记 **CRITICAL**，不得归档（待环境补测除外）。`Result: PASS_WITH_BASELINE` 缺少 `Baseline List`（或文件不存在）、缺少 `Introduced Failures`，按字段不完整处理；`Introduced Failures` 不为 0，按 `FAIL` 处理。
 
+`tasks.md` 声明了 `## 变更终点` 时，新鲜度判定不变：证据仍与当前实现的指纹比较，终点之后其他变更的提交同样让证据过期，重跑该切片验证后刷新（规则见 `post-implementation-changes.md`「变更终点」，决策见 ADR-0008）。证据的 `Fingerprint` 仍写 `node <GATE> fingerprint <changeRoot>` 的输出，不写 `--rev`。
+
 ## 豁免记录格式（行为无关变更）
 
 只有当两个指纹之间的变化**全部**不影响本切片行为时（纯文案、注释、文档，或与本切片无依赖关系的其他文件），Verify 才可在该切片证据的「豁免记录」表追加一行，而不重跑验证：

@@ -9,7 +9,8 @@ For an enabled non-L0 change, the workflow SHALL run a Standards Review and a Sp
 
 #### Scenario: Both review axes receive the same baseline
 - **WHEN** the implementation review starts
-- **THEN** the workflow records one base commit or equivalent baseline, one current implementation fingerprint, and one review scope for both axes
+- **THEN** the workflow records one base commit or equivalent baseline, one implementation fingerprint, and one review scope for both axes
+- **AND** the implementation fingerprint is the fingerprint of the change head when `tasks.md` declares a valid change head (capability `change-head`), and the current implementation fingerprint otherwise
 
 #### Scenario: Review axes do not anchor on each other
 - **WHEN** the Standards Review or Spec Fidelity Review is executed

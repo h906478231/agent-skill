@@ -18,7 +18,7 @@ tags: [workflow, review, quality]
 
 关键约束（详见 skill）：
 
-- 基线只生成一次：`node <GATE> baseline <changeRoot>`（`<GATE>` = skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs`），两轴与汇总原样使用同一块；diff 为空则中止并提示先完成 `/opsx:apply`。
+- 基线只生成一次：`node <GATE> baseline <changeRoot>`（`<GATE>` = skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs`），两轴与汇总原样使用同一块；`tasks.md` 声明了 `## 变更终点` 时，用 `--base` 传本变更的起点提交，评审范围为起点到变更终点，基线带 `Change Head` 行（规则见 skill `openspec-apply-change` 的 `shared/post-implementation-changes.md`「变更终点」）；diff 为空则中止并提示先完成 `/opsx:apply`。
 - 重跑前先运行 `node <GATE> classify <changeRoot> --from <上一轮 Fingerprint>`：只有注释差异时输出「无需新一轮」并停止；只在新增并已勾选的任务内修改的文件不登记，两轴按增量执行，勾选之后又有修改时照常登记，修改与任务对应不上或拿不准时照常登记（判断方法见 `post-implementation-changes.md` 登记步骤 6）；有其他未登记的文件（含门禁外提交）时，先按 skill `openspec-apply-change` 的 `shared/post-implementation-changes.md` 按档位登记到 `tasks.md` 的 `## 实现后修改登记`，再生成新基线。
 - 等价增量轮：`classify` 的 `unregistered` 为空、`registered` 全部为 `等价` 时只跑 Standards，`review/spec-fidelity.md` 不修改，汇总写 `- Carried Axis: spec-fidelity`；有 `行为` 档位时两轴都重跑。
 - 两个轴用两个独立子 agent 并行执行，**互不读取对方原始报告与汇总**；finding 格式沿用 skill `openspec-technical-review` 的 `shared/finding-format.md`，前缀 `STD-` / `SPEC-`，「位置」必须精确到 `文件:行号`。
