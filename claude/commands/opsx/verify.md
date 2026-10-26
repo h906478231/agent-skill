@@ -186,7 +186,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    ```
 
    报告字段（本仓自加，非上游原文）：
-   - `Fingerprint` 取 `node <GATE> fingerprint <changeRoot>` 的输出，是下一次判定增量复核的起点。
+   - `Fingerprint` 取 `node <GATE> fingerprint <changeRoot>` 的输出，是下一次判定增量复核的起点。`tasks.md` 声明了 `## 变更终点` 时，改取 `node <GATE> fingerprint <changeRoot> --rev <变更终点>` 的输出（规则见 skill `openspec-apply-change` 的 `shared/post-implementation-changes.md`「变更终点」）：`classify` 比到终点指纹，取当前指纹会把终点之后的修改列为未登记。
    - `Spec Fidelity Reuse` 按第 4 步「复用 Spec Fidelity 结论」填写。
    - 「评审条件」按第 9 步「评审条件闭环」填写，archive 读取本小节。没有 `review-summary.md` 时写「不适用：该变更未经技术评审」。存在完整版 overview 时，在小节下写出它的「最近生成」日期与「依据轮次」，不要求刷新。
 

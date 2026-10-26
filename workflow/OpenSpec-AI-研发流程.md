@@ -1074,6 +1074,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - Blocker 只能按判据 B1–B5 判定（写错数据 / 越权 / 假勾选 / 正常输入下已有功能失败 / 吞异常记成功），触发场景以 `[Bn]` 开头；只在依赖故障或边界输入下出现的问题为 Major
 - 修复走 `tasks.md` 勾选；门禁外提交等实现后修改按档位（`非行为` / `等价` / `行为`）登记到 `tasks.md` 的 `## 实现后修改登记`，每行写登记指纹，同一文件再次修改时新增一行；`行为` 档位同时新增任务（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`）
 - 重跑前运行 `classify --from <上一轮指纹>`：只有注释差异时不开新一轮；否则用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
+- 晚归档（实现提交之后又有其他变更的提交）：由用户在 `tasks.md` 写 `## 变更终点`。评审范围为 `Base Commit..变更终点`，基线带 `Change Head` 行；`classify` 比到终点指纹，终点之后的修改不要求登记；登记指纹与 verify 的 `Fingerprint` 写 `fingerprint --rev <变更终点>` 的输出；切片证据仍与当前实现比较（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`「变更终点」，决策见 ADR-0008）
 - 等价增量轮（未登记为空、登记全部为 `等价`）只跑 Standards，Spec Fidelity 沿用上一轮报告，汇总写 `- Carried Axis: spec-fidelity`；`review` 校验沿用基线以来的变化文件只有注释差异或登记为 `等价`
 - 报告原地覆盖，禁止 `-roundN` 副本；闭环历史记在每轴报告的 `## Finding 台账`
 - Sonar（项目配置了 `sonar-project.properties` 或 `sonar.projectKey`，并且 `SONAR_HOST_URL`、`SONAR_TOKEN` 可用时）：两轴之后用 SonarScanner 扫描，必须带分支或 PR 参数；只处理评审基线以来修改的行上的问题，修复走 `tasks.md`，误报与接受由用户决定；Standards 不评 Sonar 已覆盖的重复代码、认知复杂度、未使用代码与空 catch；verify 对未处理的问题记 CRITICAL（规则：`skills/openspec-code-quality/shared/sonar-scan.md`）
@@ -1096,6 +1097,8 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 **复用 Spec Fidelity 结论**：存在 `review/spec-fidelity.md`，并且评审基线之后没有 `行为` 档修改或未登记的文件时，需求、场景与设计偏离直接读取它的规格覆盖矩阵与设计偏离清单，不逐条搜代码；有这类修改时只对这些文件自己核对，并回 `/opsx:quality` 跑两轴增量。没有运行 quality 的 L0/L1 变更照常逐条核对（口径见 `skills/openspec-verify-change/SKILL.md`「复用 Spec Fidelity 结论」）。
 
 **切片证据与双轴评审核对**：缺失 / 不完整 / 失败 / 过期的切片证据、双轴评审 `BLOCKED` 均为 CRITICAL；与本切片行为无关的变化可按豁免格式登记，无法判断即按过期重跑；声明了 `Environment:` 的切片可登记待环境补测（用户确认后为 WARNING，归档摘要列出负责人与补测计划）（口径见 `skills/openspec-technical-review/shared/implementation-gate-check.md`）。
+
+**变更终点**：`tasks.md` 声明了 `## 变更终点` 时，`verification.md` 的 `Fingerprint` 写 `fingerprint --rev <变更终点>` 的输出；归档摘要写出变更终点、判定人与终点之后变化的文件数，终点之后未提交的文件只告警，不阻断归档（口径见 `skills/openspec-apply-change/shared/post-implementation-changes.md`「变更终点」）。
 
 **产物检查**：与上一项同一阶段运行 STE 检查与变更模型检查，每个阻断项记为 CRITICAL，修正走 `/opsx:update`（口径见 `skills/openspec-ste/shared/gate-check.md`「Verify」列）。
 

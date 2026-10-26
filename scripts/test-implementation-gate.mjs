@@ -1367,3 +1367,363 @@ test('evidence：没有切片的平铺任务清单也计算 taskIssues', t => {
   assert.equal(report.applicable, false)
   assert.deepEqual(report.taskIssues.map(({ task, kind }) => `${task}:${kind}`), ['1.1:phase-action'])
 })
+
+// ---------------------------------------------------------------------------
+// add-change-head Slice 01：变更终点（Seam：fingerprint --rev、classify）
+// ---------------------------------------------------------------------------
+
+/** 提交工作区的全部修改，返回提交的全量 SHA。 */
+function commitAll(f, message) {
+  f.git('add', '-A')
+  f.git('commit', '-qm', message)
+  return f.git('rev-parse', 'HEAD')
+}
+
+/** 按 add-change-head design D1 在 tasks.md 末尾写「## 变更终点」区块；decider 为空串时写空的判定人。 */
+function writeChangeHead(f, commit, { decider = 'tigger', before = '# 实施任务\n' } = {}) {
+  f.write('openspec/changes/demo/tasks.md', [before, '## 变更终点', '', `- 提交：${commit}`, `- 判定人：${decider}`,
+    '- 日期：2026-10-26', '- 依据：之后的提交属于其他变更', ''].join('\n'))
+}
+
+const revFingerprint = (f, rev) => {
+  const result = f.run('fingerprint', f.changeRoot, '--rev', rev)
+  assert.equal(result.code, 0, result.err)
+  return result.out.trim()
+}
+
+test('fingerprint --rev：干净工作区时与 fingerprint 输出相同，未提交的修改不影响输出', t => {
+  const f = fixture(t)
+  assert.equal(revFingerprint(f, 'HEAD'), fingerprintOf(f))
+  const committed = fingerprintOf(f)
+  f.write('src/order.js', 'export const create = () => 7\n')
+  assert.equal(revFingerprint(f, 'HEAD'), committed)
+  assert.notEqual(fingerprintOf(f), committed)
+})
+
+test('fingerprint --rev：之后的提交不影响输出，两个指纹之间只差之后修改的文件', t => {
+  const f = fixture(t)
+  const a = f.git('rev-parse', 'HEAD')
+  f.write('src/b.mjs', 'export const b = 1\n')
+  commitAll(f, 'B')
+  const fromA = revFingerprint(f, a)
+  const result = f.run('classify', f.changeRoot, '--from', fromA, '--to', fingerprintOf(f))
+  assert.deepEqual(result.json().other, ['src/b.mjs'])
+})
+
+test('fingerprint --rev：提交跟踪了规划目录且与工作区不同时仍能计算，规划目录不计入指纹', t => {
+  const f = fixture(t)
+  const a = f.git('rev-parse', 'HEAD')
+  f.write('openspec/changes/demo/proposal.md', '# demo v2\n')
+  commitAll(f, 'planning only')
+  f.write('openspec/changes/demo/proposal.md', '# demo v3\n')
+  assert.equal(revFingerprint(f, a), fingerprintOf(f))
+})
+
+test('fingerprint --rev：无法解析的值或以 - 开头的值退出码 2', t => {
+  const f = fixture(t)
+  for (const rev of ['no-such-rev', '-x']) {
+    const result = f.run('fingerprint', f.changeRoot, '--rev', rev)
+    assert.equal(result.code, 2, `${rev}: ${result.out}`)
+    assert.ok(result.err.includes(rev), result.err)
+  }
+})
+
+test('变更终点：有效时 classify 输出 changeHead.commit 为全量 SHA', t => {
+  const f = fixture(t)
+  f.write('src/order.js', 'export const create = () => 10\n')
+  const c = commitAll(f, 'C')
+  writeChangeHead(f, c)
+  const result = f.run('classify', f.changeRoot, '--from', revFingerprint(f, c))
+  assert.equal(result.code, 0, result.err || result.out)
+  assert.equal(result.json().changeHead.commit, c)
+  assert.equal(result.json().changeHead.fingerprint, revFingerprint(f, c))
+})
+
+test('变更终点：不是 HEAD 的祖先、不是全量 SHA 或提交不存在时，baseline、classify、review、archive 退出码 2', t => {
+  const f = fixture(t)
+  const main = f.git('rev-parse', '--abbrev-ref', 'HEAD')
+  f.git('checkout', '-qb', 'side')
+  f.write('src/side.js', 'export const side = 1\n')
+  const side = commitAll(f, 'side')
+  f.git('checkout', '-q', main)
+  const cases = {
+    [side]: '不是 HEAD 的祖先',
+    [side.slice(0, 12)]: '全量 SHA',
+    ['0'.repeat(40)]: '不存在',
+  }
+  for (const [commit, reason] of Object.entries(cases)) {
+    writeChangeHead(f, commit)
+    for (const command of ['baseline', 'classify', 'review', 'archive']) {
+      const args = command === 'classify' ? ['--from', fingerprintOf(f)] : []
+      const result = f.run(command, f.changeRoot, ...args)
+      assert.equal(result.code, 2, `${command} ${commit}: ${result.out}`)
+      assert.ok(result.err.includes(commit) && result.err.includes(reason), `${command}: ${result.err}`)
+    }
+  }
+})
+
+test('变更终点：判定人为空时 archive 退出码 2，并写明判定人为空', t => {
+  const f = fixture(t)
+  writeChangeHead(f, f.git('rev-parse', 'HEAD'), { decider: '' })
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 2, result.out)
+  assert.ok(result.err.includes('判定人为空'), result.err)
+})
+
+test('变更终点：没有区块时 classify 仍与当前指纹比较，输出没有 changeHead', t => {
+  const f = fixture(t)
+  const from = fingerprintOf(f)
+  f.write('src/order.js', 'export const create = () => 11\n')
+  commitAll(f, 'D')
+  const report = f.run('classify', f.changeRoot, '--from', from).json()
+  assert.equal(report.to, fingerprintOf(f))
+  assert.deepEqual(report.other, ['src/order.js'])
+  assert.equal(report.changeHead, undefined)
+})
+
+test('变更终点：终点之后其他变更的提交不列为未登记，afterHead 列出这些文件', t => {
+  const f = fixture(t)
+  f.write('src/order.js', 'export const create = () => 12\n')
+  const c = commitAll(f, 'C')
+  f.write('src/order.js', 'export const create = () => 13\n')
+  f.write('src/pay.js', 'export const pay = () => 14\n')
+  f.write('src/other.js', 'export const other = 1\n')
+  commitAll(f, 'D')
+  writeChangeHead(f, c)
+  const result = f.run('classify', f.changeRoot, '--from', revFingerprint(f, c))
+  assert.equal(result.code, 0, result.out)
+  const report = result.json()
+  assert.deepEqual(report.other, [])
+  assert.deepEqual(report.unregistered, [])
+  assert.deepEqual(report.changeHead.afterHead, ['src/order.js', 'src/other.js', 'src/pay.js'])
+})
+
+test('变更终点：评审之后、终点之前本变更的修改没有登记时列为未登记，退出码 1', t => {
+  const f = fixture(t)
+  const reviewed = fingerprintOf(f)
+  f.write('src/a.mjs', 'export const a = 1\n')
+  const c = commitAll(f, 'C')
+  f.write('src/pay.js', 'export const pay = () => 15\n')
+  commitAll(f, 'D')
+  writeChangeHead(f, c)
+  const result = f.run('classify', f.changeRoot, '--from', reviewed)
+  assert.equal(result.code, 1, result.out)
+  assert.deepEqual(result.json().unregistered, ['src/a.mjs'])
+})
+
+test('变更终点：修复直接提交在其他变更的提交之后，终点改为修复提交时两者的文件都列入 other', t => {
+  const f = fixture(t)
+  f.write('src/order.js', 'export const create = () => 16\n')
+  const c = commitAll(f, 'C')
+  f.write('src/pay.js', 'export const pay = () => 17\n')
+  commitAll(f, 'D')
+  f.write('src/order.js', 'export const create = () => 18\n')
+  const fix = commitAll(f, 'F')
+  writeChangeHead(f, fix)
+  const report = f.run('classify', f.changeRoot, '--from', revFingerprint(f, c)).json()
+  assert.deepEqual(report.other, ['src/order.js', 'src/pay.js'])
+})
+
+test('变更终点：未提交的修改列入 uncommitted 与 afterHead，不列为未登记', t => {
+  const f = fixture(t)
+  f.write('src/b.mjs', 'export const b = 1\n')
+  const c = commitAll(f, 'C')
+  f.write('src/b.mjs', 'export const b = 2\n')
+  writeChangeHead(f, c)
+  const result = f.run('classify', f.changeRoot, '--from', revFingerprint(f, c))
+  assert.equal(result.code, 0, result.out)
+  const report = result.json()
+  assert.deepEqual(report.changeHead.uncommitted, ['src/b.mjs'])
+  assert.deepEqual(report.changeHead.afterHead, ['src/b.mjs'])
+  assert.deepEqual(report.unregistered, [])
+})
+
+test('变更终点：不传 --to 时与终点指纹比较，传了 --to 时用传入的值', t => {
+  const f = fixture(t)
+  const from = fingerprintOf(f)
+  f.write('src/order.js', 'export const create = () => 19\n')
+  const c = commitAll(f, 'C')
+  f.write('src/pay.js', 'export const pay = () => 20\n')
+  commitAll(f, 'D')
+  writeChangeHead(f, c)
+  const byDefault = f.run('classify', f.changeRoot, '--from', from).json()
+  assert.equal(byDefault.to, revFingerprint(f, c))
+  assert.deepEqual(byDefault.other, ['src/order.js'])
+  const explicit = f.run('classify', f.changeRoot, '--from', from, '--to', fingerprintOf(f)).json()
+  assert.deepEqual(explicit.other, ['src/order.js', 'src/pay.js'])
+})
+
+test('变更终点：切片标题含「变更终点」时不当作变更终点区块', t => {
+  const f = fixture(t)
+  const from = fingerprintOf(f)
+  f.write('openspec/changes/demo/tasks.md', '# 实施任务\n\n## Slice 01: 声明变更终点后的行为\n\n- 提交：not-a-sha\n')
+  const result = f.run('classify', f.changeRoot, '--from', from)
+  assert.equal(result.code, 0, result.err || result.out)
+  assert.equal(result.json().changeHead, undefined)
+})
+
+// ---------------------------------------------------------------------------
+// add-change-head Slice 02：评审基线截止到变更终点（Seam：baseline、review）
+// ---------------------------------------------------------------------------
+
+/** 构造「提交 C 修改 2 个文件，之后另一个变更的提交 D 修改 3 个其他文件」的仓库，返回 C、D 的全量 SHA。 */
+function lateReviewRepo(f) {
+  f.write('src/order.js', 'export const create = () => 21\n')
+  f.write('src/pay.js', 'export const pay = () => 22\n')
+  const c = commitAll(f, 'C')
+  for (const name of ['x', 'y', 'z']) f.write(`src/${name}.js`, `export const ${name} = 1\n`)
+  const d = commitAll(f, 'D')
+  return { c, d }
+}
+
+test('变更终点：晚评审的基线范围为 Base..变更终点，指纹为终点指纹，并写出 Change Head', t => {
+  const f = fixture(t)
+  const { c } = lateReviewRepo(f)
+  writeChangeHead(f, c)
+  const result = f.run('baseline', f.changeRoot, '--base', `${c}^`)
+  assert.equal(result.code, 0, result.err)
+  const base = f.git('rev-parse', `${c}^`)
+  assert.equal(field(result.out, 'Review Scope'), `${base.slice(0, 12)}..${c.slice(0, 12)}（排除 openspec）`)
+  assert.equal(field(result.out, 'Fingerprint'), revFingerprint(f, c))
+  assert.equal(field(result.out, 'Change Head'), c)
+})
+
+test('变更终点：Base Commit 在变更终点之后时 baseline 退出码 2', t => {
+  const f = fixture(t)
+  const { c, d } = lateReviewRepo(f)
+  writeChangeHead(f, c)
+  const result = f.run('baseline', f.changeRoot, '--base', d)
+  assert.equal(result.code, 2, result.out)
+  assert.ok(result.err.includes(d.slice(0, 12)) || result.err.includes(d), result.err)
+})
+
+test('变更终点：从终点开分支提交的修复合并后改为终点，baseline --since 只列出修复的文件', t => {
+  const f = fixture(t)
+  const { c } = lateReviewRepo(f)
+  const main = f.git('rev-parse', '--abbrev-ref', 'HEAD')
+  f.git('checkout', '-qb', 'fix', c)
+  f.write('src/a.mjs', 'export const a = 1\n')
+  const e = commitAll(f, 'E')
+  f.git('checkout', '-q', main)
+  f.git('-c', 'core.editor=true', 'merge', '--no-ff', '-q', '-m', 'merge fix', 'fix')
+  writeChangeHead(f, e)
+  const result = f.run('baseline', f.changeRoot, '--base', `${c}^`, '--since', revFingerprint(f, c))
+  assert.equal(result.code, 0, result.err)
+  assert.deepEqual(deltaFiles(result.out), ['src/a.mjs'])
+})
+
+test('变更终点：评审基线在变更终点、之后有其他变更的提交时，review 不输出陈旧提醒', t => {
+  const f = fixture(t)
+  const { c } = lateReviewRepo(f)
+  writeChangeHead(f, c)
+  writeReview(f, f.run('baseline', f.changeRoot, '--base', `${c}^`).out)
+  const result = f.run('review', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  assert.deepEqual(result.json().warnings, [])
+})
+
+test('变更终点：评审基线到变更终点之间本变更有修改时，review 的陈旧提醒写出变更终点', t => {
+  const f = fixture(t)
+  // 先生成评审基线、再声明变更终点：起点等于终点时 baseline 退出码 2（STD-01），不能用终点等于起点的基线。
+  writeReview(f, f.run('baseline', f.changeRoot).out)
+  f.write('src/order.js', 'export const create = () => 23\n')
+  const c = commitAll(f, 'C')
+  writeChangeHead(f, c)
+  const warnings = f.run('review', f.changeRoot).json().warnings
+  assert.equal(warnings.length, 1, JSON.stringify(warnings))
+  assert.ok(warnings[0].includes('变更终点') && warnings[0].includes(revFingerprint(f, c)), warnings[0])
+})
+
+test('变更终点：三份报告的 Change Head 不一致时报结构问题', t => {
+  const f = fixture(t)
+  const { c } = lateReviewRepo(f)
+  writeChangeHead(f, c)
+  const baseline = f.run('baseline', f.changeRoot, '--base', `${c}^`).out
+  writeReview(f, baseline, { baselines: { summary: baseline.replace(/^- Change Head: .*\n/m, '') } })
+  const report = f.run('review', f.changeRoot).json()
+  assert.ok(report.issues.some(issue => issue.includes('Change Head')), JSON.stringify(report.issues))
+})
+
+// ---------------------------------------------------------------------------
+// add-change-head Slice 03：verify 与 archive 按变更终点核对（Seam：evidence、archive）
+// ---------------------------------------------------------------------------
+
+/** 在已有 tasks.md（切片与证据引用）之后追加「## 变更终点」区块。 */
+const appendChangeHead = (f, commit) =>
+  writeChangeHead(f, commit, { before: readFileSync(join(f.changeRoot, 'tasks.md'), 'utf8') })
+
+test('变更终点：终点之后的提交让证据过期，重跑切片验证后为 fresh', t => {
+  const f = fixture(t)
+  f.write('src/order.js', 'export const create = () => 24\n')
+  const c = commitAll(f, 'C')
+  completedChange(f, ['01'])
+  appendChangeHead(f, c)
+  f.write('src/x.js', 'export const x = 1\n')
+  commitAll(f, 'D')
+  const stale = f.run('evidence', f.changeRoot).json()
+  assert.equal(stale.slices[0].status, 'stale')
+  assert.deepEqual(stale.slices[0].changedSinceEvidence, ['src/x.js'])
+  f.write('openspec/changes/demo/evidence/slice-01.md', evidence('01', fingerprintOf(f)))
+  assert.equal(f.run('evidence', f.changeRoot).json().slices[0].status, 'fresh')
+})
+
+test('变更终点：未提交的文件不阻断归档，notes 写出变更终点与判定人，warnings 列出未提交的文件', t => {
+  const f = fixture(t)
+  f.write('src/order.js', 'export const create = () => 25\n')
+  const c = commitAll(f, 'C')
+  f.write('src/x.js', 'export const x = 1\n')
+  commitAll(f, 'D')
+  f.write('src/c.mjs', 'export const c = 1\n')
+  completedChange(f)
+  appendChangeHead(f, c)
+  writeReview(f, f.run('baseline', f.changeRoot, '--base', `${c}^`).out)
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  const report = result.json()
+  const note = report.notes.find(item => item.includes(c))
+  assert.ok(note && note.includes('tigger') && note.includes('2 个'), JSON.stringify(report.notes))
+  assert.ok(report.warnings.some(item => item.includes('src/c.mjs')), JSON.stringify(report.warnings))
+  assert.ok(!report.warnings.some(item => item.includes('评审基线 Fingerprint')), JSON.stringify(report.warnings))
+  assert.deepEqual(report.changeHead.uncommitted, ['src/c.mjs'])
+})
+
+test('变更终点：没有未提交的文件时 archive 不输出变更终点的 warning', t => {
+  const f = fixture(t)
+  f.write('src/order.js', 'export const create = () => 26\n')
+  const c = commitAll(f, 'C')
+  completedChange(f)
+  appendChangeHead(f, c)
+  writeReview(f, f.run('baseline', f.changeRoot, '--base', `${c}^`).out)
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  assert.deepEqual(result.json().warnings, [])
+  assert.ok(result.json().notes.some(item => item.includes(c) && item.includes('0 个')), JSON.stringify(result.json().notes))
+})
+
+// ---------------------------------------------------------------------------
+// add-change-head 双轴评审 R1 修复（STD-01、SPEC-02）
+// ---------------------------------------------------------------------------
+
+test('变更终点：Base Commit 等于变更终点时 baseline 退出码 2，并写明评审范围为空', t => {
+  const f = fixture(t)
+  f.write('src/order.js', 'export const create = () => 27\n')
+  const c = commitAll(f, 'C')
+  writeChangeHead(f, c)
+  for (const args of [[], ['--base', c]]) {
+    const result = f.run('baseline', f.changeRoot, ...args)
+    assert.equal(result.code, 2, `baseline ${args.join(' ')}: ${result.out}`)
+    assert.ok(result.err.includes('评审范围为空') && result.err.includes('--base'), result.err)
+  }
+})
+
+test('变更终点：区块无效时 evidence 不读取区块，退出码与切片结果和没有区块时相同', t => {
+  const f = fixture(t)
+  completedChange(f, ['01'])
+  const without = f.run('evidence', f.changeRoot)
+  appendChangeHead(f, 'not-a-full-sha')
+  const withInvalid = f.run('evidence', f.changeRoot)
+  assert.equal(withInvalid.code, without.code, withInvalid.err)
+  assert.deepEqual(withInvalid.json().slices, without.json().slices)
+  // 同一个区块让读取变更终点的命令退出码 2，说明区块确实无效。
+  assert.equal(f.run('classify', f.changeRoot, '--from', fingerprintOf(f)).code, 2)
+})

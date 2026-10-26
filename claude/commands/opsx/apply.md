@@ -94,7 +94,7 @@ Implement tasks from an OpenSpec change.
 
    **完整套件存在失败时（本仓自加）** —— 用 `regress` 与基线失败清单比较：`introduced` 为空记 `PASS_WITH_BASELINE`，不为空记 `FAIL` 并新增修复任务。结论只写「本次引入的失败：N」。规则见 skill `openspec-apply-change` 的 `shared/slice-evidence.md`「基线失败清单」。
 
-   **实现后修改登记（本仓自加，非上游原文）** —— 不在某个未勾选任务内进行的代码修改（切片任务全部勾选之后、评审之后、门禁外提交；`state: "all_done"` 之后再改代码也属于这种情况），按 skill `openspec-apply-change` 的 `shared/post-implementation-changes.md`（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-apply-change/shared/post-implementation-changes.md`）在下一次 `/opsx:quality` 或 `/opsx:verify` 之前登记到 `tasks.md` 的 `## 实现后修改登记`，**先读取该文件并严格遵守**。要点：先运行 skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs classify <changeRoot> --from <修改前的指纹>`；`commentOnly` 中的文件登记为 `非行为`；其他文件判定为 `等价`（不改输入、输出、数据写入、外部调用与异常路径，**用户确认后**才写入）或 `行为`（照常新增任务）；拿不准时取较高档位。每行写登记指纹（修改与验证完成后 `fingerprint` 的输出），同一文件再次修改时新增一行。登记不改变任务进度。
+   **实现后修改登记（本仓自加，非上游原文）** —— 不在某个未勾选任务内进行的代码修改（切片任务全部勾选之后、评审之后、门禁外提交；`state: "all_done"` 之后再改代码也属于这种情况），按 skill `openspec-apply-change` 的 `shared/post-implementation-changes.md`（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-apply-change/shared/post-implementation-changes.md`）在下一次 `/opsx:quality` 或 `/opsx:verify` 之前登记到 `tasks.md` 的 `## 实现后修改登记`，**先读取该文件并严格遵守**。要点：先运行 skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs classify <changeRoot> --from <修改前的指纹>`；`commentOnly` 中的文件登记为 `非行为`；其他文件判定为 `等价`（不改输入、输出、数据写入、外部调用与异常路径，**用户确认后**才写入）或 `行为`（照常新增任务）；拿不准时取较高档位。每行写登记指纹（修改与验证完成后 `fingerprint` 的输出；声明了变更终点时写 `fingerprint --rev <变更终点>` 的输出，见事实源「变更终点」），同一文件再次修改时新增一行。登记不改变任务进度。
 
    **Pause if:**
    - Task is unclear → ask for clarification

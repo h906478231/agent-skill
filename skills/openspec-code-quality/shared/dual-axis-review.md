@@ -55,7 +55,12 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>]
 - `Change` / `Base Commit` / `Fingerprint` / `Review Scope` 四项是基线身份，三份报告必须完全一致；`Baseline Recorded At` 仅供追溯。
 - 第 2 轮起用 `--since` 生成增量基线，区块追加 `Delta Since` 与 `Delta Files`（见下文「修复与重跑」）。`Delta Since` 与 `Rules Version` 都是可缺省的身份字段：缺省不报错，但三份报告必须一致。
 - `Rules Version: 2` 是规则开关：带该行的报告必须遵守下文「Blocker 判据」与「Finding 台账」，脚本据此校验。三份报告的取值必须一致。没有该行的旧报告按旧规则检查，不追溯。
-- `Fingerprint` 是排除规划目录后整个工作区内容的 git tree 哈希（算法见 `<GATE>` 文件头），与切片证据使用同一口径。
+- `Fingerprint` 是排除规划目录后整个工作区内容的 git tree 哈希（算法见 `<GATE>` 文件头），与切片证据使用同一口径。声明了变更终点时例外，见下一条。
+- `tasks.md` 声明了 `## 变更终点` 时（规则见 `../../openspec-apply-change/shared/post-implementation-changes.md`「变更终点」）：
+  - `--base` 必须是变更终点的祖先，否则退出码 2。`--base` 等于变更终点时评审范围为空，同样退出码 2。变更已提交，`--base` 不能省略。
+  - `Fingerprint` 为终点提交的指纹（`fingerprint --rev <变更终点>`），`Review Scope` 为 `<起点短 SHA>..<终点短 SHA>（排除 openspec）`。
+  - 区块在 `Review Scope` 之后加一行 `- Change Head: <全量 SHA>`。它是可缺省的身份字段，三份报告必须一致。
+  - 两轴的固定基线 diff 为 `git diff <Base Commit> <Change Head>`，不含终点之后其他变更的修改。`--since` 的 `Delta Files` 比到终点指纹。
 - 基线生成后到两份原始报告写完之前，**不得修改实现代码**。评审中想顺手修 —— 先写完本轮报告，修复后重新生成基线再重跑。
 
 ## 独立性

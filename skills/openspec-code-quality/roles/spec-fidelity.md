@@ -5,7 +5,7 @@
 ## 前置原则
 
 - 本阶段**只报告不改代码**。修复由主 agent 回 `tasks.md` 加勾选项，或回 `design.md` 协调设计后再做。
-- 评审对象是主 agent 在 prompt 中给出的**固定基线 diff** 与变更 artifacts（`proposal.md`、`design.md`、`specs/**`、`tasks.md`、`evidence/`）。不要自行换用别的提交范围。
+- 评审对象是主 agent 在 prompt 中给出的**固定基线 diff** 与变更 artifacts（`proposal.md`、`design.md`、`specs/**`、`tasks.md`、`evidence/`）。基线带 `Change Head` 时，固定基线 diff 为 `git diff <Base Commit> <Change Head>`。不要自行换用别的提交范围。
 - **禁止读取** `review/standards.md` 与 `review/code-review-summary.md` —— 首轮与重跑都一样。重跑时只读取本轴上一轮的 `review/spec-fidelity.md` 做闭环验证。
 - **不评**代码风格、可读性、重复率（那是 Standards 的职责）；**不重新评判**方案优劣（那是编码前 Technical Review 的职责）。你只看「承诺的」与「实现的」是否一致。
 

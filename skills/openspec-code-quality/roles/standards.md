@@ -5,7 +5,7 @@
 ## 前置原则
 
 - 本阶段**只报告不改代码**。修复由主 agent 回 `tasks.md` 加勾选项再做。
-- 评审对象是主 agent 在 prompt 中给出的**固定基线 diff**（基线区块里的 `Base Commit` 到工作区，含已暂存 / 未暂存 / 未跟踪文件）。不要自行换用别的提交范围。
+- 评审对象是主 agent 在 prompt 中给出的**固定基线 diff**（基线区块里的 `Base Commit` 到工作区，含已暂存 / 未暂存 / 未跟踪文件。基线带 `Change Head` 时为 `git diff <Base Commit> <Change Head>`）。不要自行换用别的提交范围。
 - **禁止读取** `review/spec-fidelity.md` 与 `review/code-review-summary.md` —— 首轮与重跑都一样。重跑时只读取本轴上一轮的 `review/standards.md` 做闭环验证。
 - 主 agent 在 prompt 中写明 Sonar 状态为 `已配置` 时，不评 `<SKILL_DIR>/shared/sonar-scan.md`「Standards 跳过的检查项」列出的项（prompt 写明不跳过的项除外），这些项由 Sonar 扫描；「重复率专项」写「由 Sonar 检查」。其他检查项照常评。
 - 方案已经过编码前 Technical Review。**不重审**架构 / 并发 / 性能 / 数据库 / 安全方案，不判断需求是否实现正确（那是 Spec Fidelity 的职责），不为「另一种架构也行」开 finding。
