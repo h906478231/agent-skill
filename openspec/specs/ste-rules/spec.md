@@ -1,5 +1,8 @@
-## ADDED Requirements
+# ste-rules Specification
 
+## Purpose
+STE 规则：以 ASD-STE100 Issue 9 为骨架的中文规则表、自编通用受控词表、模糊词清单、项目覆盖文件 `openspec/ste.yaml` 与 `config.yaml` 规则注入片段（决策见 docs/adr/0005-ste-rules-baseline.md）。
+## Requirements
 ### Requirement: STE rules SHALL use ASD-STE100 as the baseline with traceable rule numbers
 
 The `openspec-ste` skill SHALL provide a Chinese STE rule table. Each adopted rule SHALL carry its own identifier in the form `C-R<n>.<m>` and SHALL reference the ASD-STE100 rule number it adapts. Rules that only apply to English grammar (articles, `-ing` forms, apostrophes and similar) SHALL be listed as not adopted. The rule table SHALL paraphrase rules and SHALL NOT copy ASD-STE100 text.

@@ -1,5 +1,8 @@
-## ADDED Requirements
+# ste-reply-guard Specification
 
+## Purpose
+对话回复检查：对 AI 对话回复执行禁用别名检查；Claude Code 用 Stop hook 阻断，其他 agent 用共享规则约束。
+## Requirements
 ### Requirement: Claude Code replies SHALL be blocked when they contain forbidden aliases
 
 The skill SHALL provide a Stop hook command for Claude Code. The command SHALL read the hook event from stdin, read the assistant text after the last user message from the transcript, add the `last_assistant_message` field of the event when it is present and not yet in the transcript, and check the result against the forbidden aliases of `$CLAUDE_PROJECT_DIR/CONTEXT.md`. When a forbidden alias is found, the command SHALL output a block decision whose reason lists each alias and its replacement.

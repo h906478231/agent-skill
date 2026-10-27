@@ -1,5 +1,8 @@
-## ADDED Requirements
+# ste-lint Specification
 
+## Purpose
+STE 检查：对当前变更产物与纯文本执行 STE 检查，按阻断与告警分级输出 JSON 与退出码，并在 OpenSpec propose、update、apply、verify 四个卡点调用（禁用别名阻断见 docs/adr/0003-avoid-terms-become-blocking.md）。
+## Requirements
 ### Requirement: The STE check SHALL only scan the artifacts of the current change
 
 The STE check SHALL scan `proposal.md`, `design.md`, `tasks.md` and `specs/**/*.md` under the given change root. It SHALL NOT scan `openspec/specs/`, `openspec/changes/archive/`, `review/`, `evidence/` or derived files such as `overview.md`.
