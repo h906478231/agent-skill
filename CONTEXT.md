@@ -45,11 +45,11 @@ _Avoid_: 品味测试、评测跑次
 _Avoid_: 评测基准、基准结果
 
 **Stage Handoff Check（阶段交接检查）**:
-按 `phases.md` 阶段表的输入与产出，检查各分支能否走到 archive 的确定性测试，不运行 agent。与链式用例无关。
+按 `phases.md` 阶段表的输入与产出，检查各分支能否走到 archive 的确定性测试，不运行 agent。
 _Avoid_: 链路完整性测试、链路检查
 
 **Trace Summary（轨迹摘要）**:
-从一次评测运行的 `trace.jsonl` 归类出的工具调用汇总，按 6 类归类，按子 agent 分组，写入 `trace-summary.json`。与链式用例的「步骤」无关。
+从一次评测运行的 `trace.jsonl` 归类出的工具调用汇总，按 6 类归类，按子 agent 分组，写入 `trace-summary.json`。
 _Avoid_: 调用清单、轨迹日志
 
 **Read Hit（读取命中）**:

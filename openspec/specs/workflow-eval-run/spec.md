@@ -165,6 +165,75 @@ runner SHALL 支持以下断言类型。每条断言的结果 SHALL 包含通过
 - **WHEN** `review-summary.md` 不存在，或「分级结论」小节中没有 `L0`–`L3`
 - **THEN** 断言 `decision.gate_level` 失败，依据写明「分级结论无法解析」
 
+### Requirement: 断言覆盖评审回路与总览
+
+runner SHALL 支持以下断言类型。它们都是普通断言，只在 `expect.yaml` 写有对应的键时计算。断言 MUST NOT 调用 Claude 或其他 LLM。
+
+| 断言 | 判定 |
+|---|---|
+| `artifact.contains` | 文件存在，且 `all` 中每个正则都能匹配文件内容 |
+| `artifact.unchanged` | 列出的文件相对阶段快照的提交没有修改 |
+| `artifact.changed` | 列出的文件相对阶段快照的提交有修改 |
+| `artifact.absent` | 列出的文件或目录不存在 |
+| `decision.verdict` | 从 `review-summary.md` 提取的裁决等于预期值 |
+| `overview.mermaid_matches` | `overview.md` 中 `<!-- change-model:begin -->` 与 `<!-- change-model:end -->` 之间的内容，与被测版本 `change-model.mjs mermaid` 的输出逐字一致 |
+
+裁决的提取规则：
+
+- `review-summary.md` 有行首为 `Gate-Verdict:` 的行时，取该行的 `BLOCKED` 或 `READY_FOR_HUMAN_APPROVAL`，不再看其他行。
+- 没有这一行时，只看含「裁决」的行及其后 3 行，跳过含「之前」「才能」「方可」的子句，取第一个 `BLOCKED` 或 `READY_FOR_HUMAN_APPROVAL`。
+
+#### Scenario: 有 Gate-Verdict 行
+
+- **WHEN** `review-summary.md` 的门禁裁决项写 `READY_FOR_HUMAN_APPROVAL`，人工确认区有一行 `Gate-Verdict: BLOCKED`
+- **THEN** 提取的裁决为 `BLOCKED`
+
+#### Scenario: 裁决可以解析
+
+- **WHEN** `review-summary.md` 没有 `Gate-Verdict:` 行，有一行 `## 2. 门禁裁决：\`BLOCKED\``
+- **THEN** 断言 `decision.verdict` 在预期为 `BLOCKED` 时通过
+
+#### Scenario: 条件句中的裁决不计入
+
+- **WHEN** `review-summary.md` 没有 `Gate-Verdict:` 行，唯一含「裁决」的行是 `当前裁决为 BLOCKED，得到 READY_FOR_HUMAN_APPROVAL 之前不可签字`
+- **THEN** 提取的裁决为 `BLOCKED`
+
+#### Scenario: 裁决无法解析
+
+- **WHEN** `review-summary.md` 不存在，或没有 `Gate-Verdict:` 行且含「裁决」的行中没有 `BLOCKED` 与 `READY_FOR_HUMAN_APPROVAL`
+- **THEN** 断言 `decision.verdict` 失败，依据写明「无法解析裁决」
+
+#### Scenario: Blocker 只涉及设计时 proposal 不变
+
+- **WHEN** 评测用例 `update-design-blocker` 的 `expect.yaml` 写有 `artifact.unchanged: [proposal.md]`，update 只修改了 `design.md`
+- **THEN** 断言 `artifact.unchanged` 通过
+
+#### Scenario: Mermaid 被手动修改
+
+- **WHEN** `overview.md` 标记之间的 Mermaid 与 `change-model.mjs mermaid` 的输出有一个字符不同
+- **THEN** 断言 `overview.mermaid_matches` 失败，依据写出第一处不同所在的行
+
+#### Scenario: change-model.mjs 报错
+
+- **WHEN** `change-model.mjs mermaid` 的退出码不为 `0`
+- **THEN** 断言 `overview.mermaid_matches` 失败，依据写出脚本的错误输出
+
+### Requirement: update 与 overview 阶段的评测用例
+
+`stage` SHALL 可以为 `update` 或 `overview`。这两种评测用例的 `expect.yaml` 必须写有 `change`，不能写 `stop`。
+
+update 评测用例的 prompt SHALL 以固定的授权文本 `修改已确认，直接写入。` 结尾。全部 update 评测用例使用同一句授权文本。授权文本由评测用例作者编写，runner MUST NOT 用 LLM 生成对 agent 提问的回答。
+
+#### Scenario: update 的 prompt 没有授权文本
+
+- **WHEN** `stage` 为 `update` 的评测用例，prompt 不以 `修改已确认，直接写入。` 结尾
+- **THEN** runner 以退出码 `2` 结束，Claude Code 没有被启动
+
+#### Scenario: update 评测用例写了 stop
+
+- **WHEN** `stage` 为 `update` 的评测用例在 `expect.yaml` 中写有 `stop`
+- **THEN** runner 以退出码 `2` 结束，Claude Code 没有被启动
+
 ### Requirement: 启动 Claude Code 之前校验评测用例与参数
 
 runner SHALL 在第一次启动 Claude Code 之前完成以下检查。任一项不通过时，runner MUST 以退出码 `2` 结束，并且不启动 Claude Code。
@@ -176,6 +245,7 @@ runner SHALL 在第一次启动 Claude Code 之前完成以下检查。任一项
 - `--runs` 是正整数。
 - `--ref` 指定的 git 引用存在。
 - 已有的认可结果文件是合法的 JSON。
+- 被选中的评测用例的阶段快照通过阶段快照检查。
 
 #### Scenario: expect.yaml 的键名写错
 
@@ -202,6 +272,12 @@ runner SHALL 在第一次启动 Claude Code 之前完成以下检查。任一项
 
 - **WHEN** 用户传入的 `--ref` 不是一个存在的 git 引用
 - **THEN** runner 以退出码 `2` 结束
+- **AND** Claude Code 没有被启动
+
+#### Scenario: 阶段快照检查失败
+
+- **WHEN** 被选中的评测用例的阶段快照未通过 STE 检查
+- **THEN** runner 以退出码 `2` 结束，输出评测用例名、脚本名与错误输出
 - **AND** Claude Code 没有被启动
 
 ### Requirement: 中断的评测运行可以续跑
