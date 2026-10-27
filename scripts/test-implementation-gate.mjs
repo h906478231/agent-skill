@@ -1419,6 +1419,33 @@ test('fingerprint --rev：提交跟踪了规划目录且与工作区不同时仍
   assert.equal(revFingerprint(f, a), fingerprintOf(f))
 })
 
+test('fingerprint 与 fingerprint --rev：同一棵树两条路径的指纹相同，提交跟踪了变更目录外的规划目录与命中 .gitignore 的文件时也相同', t => {
+  const f = fixture(t)
+  // 夹具只有变更目录内的规划文件；排除规则或种子只在一条路径上修改时，下面这些文件让两个指纹不再相等。
+  f.write('openspec/specs/order/spec.md', '# order\n')
+  f.write('.gitignore', 'build/\n')
+  f.write('build/keep.txt', 'tracked\n')
+  f.git('add', '-f', 'build/keep.txt')
+  commitAll(f, 'planning and ignored')
+  // 未提交的修改：修改、删除、未跟踪新增、命中 .gitignore 的未跟踪文件，以及规划目录内的修改。
+  f.write('src/order.js', 'export const create = () => 11\n')
+  rmSync(join(f.repo, 'src/pay.js'))
+  f.write('src/new.js', 'export const added = true\n')
+  f.write('build/out.txt', 'ignored\n')
+  f.write('openspec/specs/order/spec.md', '# order v2\n')
+  const worktree = fingerprintOf(f)
+  const c = commitAll(f, 'C')
+  assert.equal(revFingerprint(f, c), worktree, '提交前的工作区指纹应等于该提交的指纹')
+  // 之后只改规划目录：提交 C 跟踪的规划目录与 HEAD、工作区都不同。
+  f.write('openspec/specs/order/spec.md', '# order v3\n')
+  f.write('openspec/changes/demo/proposal.md', '# demo v2\n')
+  commitAll(f, 'planning only')
+  f.write('openspec/specs/order/spec.md', '# order v4\n')
+  assert.equal(revFingerprint(f, c), worktree)
+  assert.equal(revFingerprint(f, 'HEAD'), worktree)
+  assert.equal(fingerprintOf(f), worktree)
+})
+
 test('fingerprint --rev：无法解析的值或以 - 开头的值退出码 2', t => {
   const f = fixture(t)
   for (const rev of ['no-such-rev', '-x']) {

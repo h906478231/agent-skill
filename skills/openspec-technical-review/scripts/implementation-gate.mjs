@@ -177,24 +177,41 @@ function planningDir(repo, changeRoot) {
 }
 
 /**
+ * 在临时 index 中构造实现树并取指纹（算法见文件头）：computeFingerprint 与 commitFingerprint 只通过本函数计算，
+ * 规划目录的排除规则只写这一处。两条路径的规则不同时，变更终点指纹与当前指纹对同一目录口径不同，
+ * classify、baseline 会把不属于本变更的文件列为变化。
+ * @param {string} repo 仓库根目录。
+ * @param {string} changeRoot 变更目录，用于确定需要排除的规划目录。
+ * @param {{ seed: string|null, includeWorktree: boolean }} source seed 为读入临时 index 的提交，null 时从空 index 开始；
+ *   includeWorktree 为 true 时在种子之上写入工作区全部改动（含未跟踪文件，遵守 .gitignore）。
+ * @returns {string} `git-tree:<sha>`。
+ */
+function fingerprintFromSeed(repo, changeRoot, { seed, includeWorktree }) {
+  const index = path.join(tmpdir(), `implementation-gate-${process.pid}-${randomBytes(6).toString('hex')}.index`)
+  const env = { ...process.env, GIT_INDEX_FILE: index }
+  try {
+    if (seed) git(repo, ['read-tree', seed], env)
+    if (includeWorktree) git(repo, ['add', '-A', '--', '.'], env)
+    const planning = planningDir(repo, changeRoot)
+    // 早期提交可能跟踪了规划目录。临时 index 与工作区、HEAD 都不同时，不带 -f 的 git rm --cached 会拒绝执行；
+    // --cached 只改临时 index，-f 不会删除工作区文件。写入工作区改动后临时 index 与工作区一致，-f 不改变结果。
+    if (planning) git(repo, ['rm', '-r', '-q', '-f', '--cached', '--ignore-unmatch', '--', planning], env)
+    return FINGERPRINT_PREFIX + git(repo, ['write-tree'], env).trim()
+  } finally {
+    rmSync(index, { force: true })
+  }
+}
+
+/**
  * 计算当前实现指纹（算法见文件头）。
  * @param {string} repo 仓库根目录。
  * @param {string} changeRoot 变更目录，用于确定需要排除的规划目录。
  * @returns {string} `git-tree:<sha>`。
  */
 function computeFingerprint(repo, changeRoot) {
-  const index = path.join(tmpdir(), `implementation-gate-${process.pid}-${randomBytes(6).toString('hex')}.index`)
-  const env = { ...process.env, GIT_INDEX_FILE: index }
-  try {
-    // 以 HEAD 为种子，保留「已跟踪但命中 .gitignore」的文件；尚无提交的仓库从空 index 开始。
-    if (tryGit(repo, ['rev-parse', '--verify', '-q', 'HEAD'])) git(repo, ['read-tree', 'HEAD'], env)
-    git(repo, ['add', '-A', '--', '.'], env)
-    const planning = planningDir(repo, changeRoot)
-    if (planning) git(repo, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', planning], env)
-    return FINGERPRINT_PREFIX + git(repo, ['write-tree'], env).trim()
-  } finally {
-    rmSync(index, { force: true })
-  }
+  // 以 HEAD 为种子，保留「已跟踪但命中 .gitignore」的文件；尚无提交的仓库（解析不到 HEAD）从空 index 开始。
+  const seed = tryGit(repo, ['rev-parse', '--verify', '-q', 'HEAD'])
+  return fingerprintFromSeed(repo, changeRoot, { seed, includeWorktree: true })
 }
 
 /**
@@ -207,24 +224,13 @@ function resolveCommit(repo, rev) {
 }
 
 /**
- * 计算一个提交的实现指纹（fingerprint --rev，add-change-head design D3）：与 computeFingerprint 同一算法，
+ * 计算一个提交的实现指纹（fingerprint --rev，add-change-head design D3）：与 computeFingerprint 同一算法（fingerprintFromSeed），
  * 种子是该提交的树，不写入工作区的修改。
  * @param {string} commit 已解析的提交 SHA（见 resolveCommit）。
  * @returns {string} `git-tree:<sha>`。
  */
 function commitFingerprint(repo, changeRoot, commit) {
-  const index = path.join(tmpdir(), `implementation-gate-${process.pid}-${randomBytes(6).toString('hex')}.index`)
-  const env = { ...process.env, GIT_INDEX_FILE: index }
-  try {
-    git(repo, ['read-tree', commit], env)
-    const planning = planningDir(repo, changeRoot)
-    // 早期提交可能跟踪了规划目录。临时 index 与工作区、HEAD 都不同时，不带 -f 的 git rm --cached 会拒绝执行；
-    // --cached 只改临时 index，-f 不会删除工作区文件。
-    if (planning) git(repo, ['rm', '-r', '-q', '-f', '--cached', '--ignore-unmatch', '--', planning], env)
-    return FINGERPRINT_PREFIX + git(repo, ['write-tree'], env).trim()
-  } finally {
-    rmSync(index, { force: true })
-  }
+  return fingerprintFromSeed(repo, changeRoot, { seed: commit, includeWorktree: false })
 }
 
 /**
