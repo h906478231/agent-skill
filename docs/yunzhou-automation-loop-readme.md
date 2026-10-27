@@ -477,7 +477,7 @@ console.log(JSON.stringify({
 
 - [工作流源码](../workflow/devops-automation-loop-yunzhou.workflow.js)
 - [配置向导脚本](../scripts/setup-yunzhou-config.sh)
-- [项目编码规范](../CLAUDE.md)
+- [项目编码规范](../AGENTS.md)
 
 ### 支持
 

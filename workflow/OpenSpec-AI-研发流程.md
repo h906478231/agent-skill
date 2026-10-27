@@ -1432,7 +1432,7 @@ jq --version
 
 ## 🤝 与项目既有约定的衔接
 
-- 沟通/注释中文、禁止魔法值、异常打印堆栈（见 `CLAUDE.md`）在各阶段 Agent 提示词中作为约束继承。
+- 沟通/注释中文、禁止魔法值、异常打印堆栈（见 `AGENTS.md`）在各阶段 Agent 提示词中作为约束继承。
 - SQL 变更规范（init 建表 / test update.sql / 禁改 upgrade）在数据库评审与 `apply` 阶段强制。
 - Subagent 准则（见 `AGENTS.md`）：评审子 agent 只报告 findings 不改代码；主 agent 负责汇总、集成与最终验证。
 
