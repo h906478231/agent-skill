@@ -583,3 +583,42 @@ test('变更终点：事实源的区块标题与门禁脚本一致，verify、ap
   }
   assert.deepEqual(problems, [], '以下位置的变更终点指纹取值与事实源不一致')
 })
+
+/**
+ * agent 规则文件（STD-13）。
+ * Codex CLI、opencode、Cursor 等读取 AGENTS.md；Claude Code 有 CLAUDE.md 时只读 CLAUDE.md，靠首行 `@AGENTS.md` 导入通用规则。
+ * 此前的 AGENT.md 是 CLAUDE.md 的整段拷贝，文件名不被任何 agent 读取，两份改一处漏一处也不会报错。
+ * 这里锁定 AGENTS.md 为通用规则的唯一事实源：CLAUDE.md 只追加 Claude Code 专属规则，不得出现与 AGENTS.md 同名的章节。
+ */
+/** 扫描规则文件引用的范围：agent 读取的命令与 skill，加上面向人的流程文档、说明文档与仓库根说明。 */
+const RULE_FILE_REFERRER_DIRS = [...AGENT_READ_DIRS, 'workflow', 'docs']
+const RULE_FILE_REFERRER_ROOT_FILES = ['README.md', 'CONTEXT.md', 'AGENTS.md', 'CLAUDE.md']
+
+/** 取 markdown 代码块之外的二级标题。 */
+function sectionHeadings(markdown) {
+  let inFence = false
+  const headings = []
+  for (const line of markdown.split('\n')) {
+    if (line.trimStart().startsWith('```')) inFence = !inFence
+    else if (!inFence && line.startsWith('## ')) headings.push(line.trim())
+  }
+  return headings
+}
+
+test('agent 规则文件：AGENTS.md 为唯一事实源，CLAUDE.md 首行导入且不复制其章节', async () => {
+  const [agents, claude] = await Promise.all([read('AGENTS.md'), read('CLAUDE.md')])
+  await assert.rejects(read('AGENT.md'), { code: 'ENOENT' }, '仓库根不应再有 AGENT.md，通用规则写在 AGENTS.md')
+  assert.equal(claude.split('\n').find(line => line.trim()), '@AGENTS.md', 'CLAUDE.md 的第一行必须是 @AGENTS.md 导入')
+  const agentsHeadings = sectionHeadings(agents)
+  const shared = sectionHeadings(claude).filter(heading => agentsHeadings.includes(heading))
+  assert.deepEqual(shared, [], 'CLAUDE.md 与 AGENTS.md 有同名章节，通用规则只写在 AGENTS.md')
+  const files = [...RULE_FILE_REFERRER_ROOT_FILES]
+  for (const dir of RULE_FILE_REFERRER_DIRS) {
+    files.push(...(await listFiles(dir)).filter(f => /\.(md|mjs|js)$/.test(f)))
+  }
+  const stale = []
+  for (const file of files) {
+    if ((await read(file)).includes('AGENT.md')) stale.push(file)
+  }
+  assert.deepEqual(stale, [], `以下文件仍引用不存在的 AGENT.md：${stale.join('、')}`)
+})
