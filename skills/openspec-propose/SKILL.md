@@ -124,7 +124,7 @@ After completing all artifacts, summarize:
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
-- **When creating the `tasks` artifact, follow the slicing rules in `shared/task-slicing.md`** (Step 4) — vertical slices with explicit blocking edges for L2/L3, checkbox format preserved, three-question user confirmation before finalizing
+- **When creating the `tasks` artifact, follow the slicing rules in `shared/task-slicing.md`** (Step 4) — vertical slices with explicit blocking edges for L2/L3, checkbox format preserved, four-question user confirmation (「发布前四问」) before finalizing
 - Always read dependency artifacts before creating a new one
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one

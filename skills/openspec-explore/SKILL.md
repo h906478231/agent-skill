@@ -139,7 +139,7 @@ If the user mentions a change or you detect one is relevant:
     | New requirement discovered | `specs/<capability>/spec.md` | - |
     | Requirement changed        | `specs/<capability>/spec.md` | - |
     | **Phase 1 需求澄清完成** | `proposal.md` | **必须包含「第一性原理分析」区块**（表面需求 vs 底层问题 / 基本约束 / 必要性验证）；不通过不得进入 Phase 2 |
-    | **Phase 2 方案探索完成** | `design.md` | **必须包含「候选方案交叉验证矩阵」**（L2/L3 至少 2 个候选方案 × 四维对比 + 推荐理由；L0/L1 允许单一方案 + 不选其他方案的理由）**与「测试 Seam 决策」区块**；未通过交叉验证不得进入 Phase 3 门禁 |
+    | **Phase 2 方案探索完成** | `design.md` | **必须包含「候选方案交叉验证矩阵」**（L2/L3 至少 2 个候选方案 × 四维对比 + 推荐理由；L0/L1 允许单一方案 + 不选其他方案的理由）；**L2/L3 还必须包含「测试 Seam 决策」区块**；未通过交叉验证不得进入 Phase 3 门禁 |
     | Design decision made       | `design.md`                  | - |
     | Scope changed              | `proposal.md`                | - |
     | New work identified        | `tasks.md`                   | - |
@@ -337,7 +337,7 @@ But this summary is optional. Sometimes the thinking IS the value.
 - [ ] 是否回答了"为什么不选其他方案"？
 - [ ] 推荐方案是否回溯验证了 Phase 1 的底层问题？
 - [ ] 如果推荐 MVP，是否说明了升级路径？
-- [ ] 是否确定了测试 Seam（从哪些公共边界验证行为）并写入 design.md「测试 Seam 决策」区块？
+- [ ] 是否确定了测试 Seam（从哪些公共边界验证行为）并写入 design.md「测试 Seam 决策」区块（L2/L3 必含）？
 
 **不通过检查点的处理**：
 - Phase 1 未通过 → 继续澄清需求，补充第一性原理分析
