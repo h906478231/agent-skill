@@ -458,6 +458,53 @@ test('不追溯历史变更：无 Evidence 引用或无切片时不阻断，但�
   }
 })
 
+/** 平铺任务清单：没有切片，也没有 Evidence 引用。 */
+const flatTasks = f => f.write('openspec/changes/demo/tasks.md', '# Tasks\n\n- [x] 1.1 修改订单创建\n')
+
+test('分级行为 MVP、L2、L3 时，平铺任务清单缺少双轴评审产物也拒绝归档', t => {
+  const lines = {
+    MVP: '> 分级：方案类型 MVP；升级信号：无 ｜ 判定人：/opsx:propose（agent） ｜ 日期：2026-10-28 ｜ 依据：复用既有接口\n',
+    'MVP 旧写法': '方案类型：MVP；升级信号：无；判定人：agent；日期：2026-10-28\n',
+    'MVP 依据提到 L1': '> 分级：方案类型 MVP；升级信号：无 ｜ 判定人：用户 ｜ 日期：2026-10-28 ｜ 依据：不涉及 L1 以上的信号\n',
+    L2: '> 分级：L2 标准 ｜ 判定人：用户 ｜ 日期：2026-10-28 ｜ 依据：新增业务流程\n',
+    L3: '> 分级：L3 全量 ｜ 判定人：用户 ｜ 日期：2026-10-28 ｜ 依据：MQ 重试\n',
+  }
+  for (const [name, line] of Object.entries(lines)) {
+    const f = fixture(t)
+    flatTasks(f)
+    f.write('openspec/changes/demo/overview.md', line)
+    const archive = f.run('archive', f.changeRoot)
+    assert.equal(archive.code, 1, `${name}: ${archive.out}`)
+    const report = archive.json()
+    assert.ok(report.blockers.some(item => item.includes('review/standards.md')), `${name}: ${JSON.stringify(report.blockers)}`)
+    assert.equal(report.evidence.applicable, false, `${name}：切片证据仍按切片判定`)
+    // verify 读取同一判定：review 命令同样报出缺少的评审产物
+    const review = f.run('review', f.changeRoot)
+    assert.equal(review.code, 1, `${name}: ${review.out}`)
+    assert.equal(review.json().applicable, true, name)
+  }
+})
+
+test('平铺任务清单的 L0、L1 与没有分级行的变更不要求双轴评审，理由写明判定依据', t => {
+  const cases = {
+    L0: { line: '> 分级：L0 豁免 ｜ 判定人：/opsx:propose（agent） ｜ 日期：2026-10-28 ｜ 依据：只改日志文案\n', reason: 'L0' },
+    L1: { line: '> 分级：L1 轻量 ｜ 判定人：用户 ｜ 日期：2026-10-28 ｜ 依据：单表字段\n', reason: 'L1' },
+    没有分级行: { line: null, reason: '没有可读的分级行' },
+    未判定: { line: '> 分级：未判定 ｜ 判定人：— ｜ 日期：— ｜ 依据：—\n', reason: '没有可读的分级行' },
+  }
+  for (const [name, { line, reason }] of Object.entries(cases)) {
+    const f = fixture(t)
+    flatTasks(f)
+    if (line) f.write('openspec/changes/demo/overview.md', line)
+    const result = f.run('archive', f.changeRoot)
+    assert.equal(result.code, 0, `${name}: ${result.out}`)
+    const report = result.json()
+    assert.equal(report.review.applicable, false, name)
+    assert.ok(report.review.reason.includes(reason), `${name}: ${report.review.reason}`)
+    assert.ok(!report.review.reason.includes('L0 豁免，或'), `${name}：不再把原因笼统写成 L0 豁免`)
+  }
+})
+
 // ---------------------------------------------------------------------------
 // streamline-openspec-gates Slice 01：基线差分回归（Seam：regress / evidence）
 // ---------------------------------------------------------------------------
