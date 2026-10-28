@@ -56,7 +56,7 @@ Implement tasks from an OpenSpec change.
 
    **Handle states:**
    - If `state: "blocked"` (missing artifacts): show message, suggest using `/opsx:propose` to create the missing artifacts
-   - If `state: "all_done"`: congratulate, then suggest `/opsx:quality` (Phase 5.5) → `/opsx:verify` (Phase 6) before archive
+   - If `state: "all_done"`: congratulate, then suggest `/opsx:quality` (Phase 5.5; required for L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6) before archive
    - Otherwise: proceed to implementation
 
 5. **Read context files**
@@ -107,7 +107,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest `/opsx:quality` (Phase 5.5) → `/opsx:verify` (Phase 6), not archive
+   - If all done: suggest `/opsx:quality` (Phase 5.5; required for L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6), not archive
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -138,7 +138,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Next: `/opsx:quality` → `/opsx:verify`, then `/opsx:archive`.
+All tasks complete! Next: `/opsx:quality` (L2/L3 required, L0/L1 recommended) → `/opsx:verify`, then `/opsx:archive`.
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -166,7 +166,7 @@ What would you like to do?
 - **STE 检查存在阻断项时不开始任何任务**（Step 2，本仓自加）—— 修正产物走 `/opsx:update`，不在 apply 中顺手改
 - **遵守 skill `openspec-apply-change` 自己的 `shared/tdd-discipline.md` TDD 纪律**（Step 7）—— seam-first、red before green、重构留给 `/opsx:quality`
 - **证据先于勾选**（本仓自加）—— 切片声明了 `Evidence:` 时，按该 skill 的 `shared/slice-evidence.md` 先记录绑定当前实现指纹的验证证据再勾选；不伪造结果、不为历史变更补造证据
-- **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5）与 `/opsx:verify`（Phase 6）；任一未通过或存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序见 skill `openspec-technical-review` 的 `shared/phases.md`
+- **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5；L2/L3 必需，L0/L1 推荐，等级取 `overview.md` 分级行，读不到时按 L2/L3）与 `/opsx:verify`（Phase 6）；verify 未通过、L2/L3 缺少双轴评审报告，或已生成的双轴评审存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序见 skill `openspec-technical-review` 的 `shared/phases.md`
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing

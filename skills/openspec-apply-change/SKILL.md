@@ -60,7 +60,7 @@ Implement tasks from an OpenSpec change.
 
    **Handle states:**
    - If `state: "blocked"` (missing artifacts): show message, suggest using openspec-continue-change
-   - If `state: "all_done"`: congratulate, suggest archive
+   - If `state: "all_done"`: congratulate, then suggest `/opsx:quality` (Phase 5.5; required for L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6) before archive
    - Otherwise: proceed to implementation
 
 5. **Read context files**
@@ -111,7 +111,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest the implementation-stage checks — `/opsx:quality` (Phase 5.5, dual-axis review) then `/opsx:verify` (Phase 6); do not suggest archive before both pass
+   - If all done: suggest the implementation-stage checks — `/opsx:quality` (Phase 5.5, dual-axis review; required for L2/L3, recommended for L0/L1) then `/opsx:verify` (Phase 6); do not suggest archive before verify passes and any dual-axis review that was run is PASSED
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -142,7 +142,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Next: `/opsx:quality` (Phase 5.5) → `/opsx:verify` (Phase 6). Archive after both pass.
+All tasks complete! Next: `/opsx:quality` (Phase 5.5; required for L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6). Archive after verify passes and any dual-axis review that was run is PASSED.
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -170,7 +170,7 @@ What would you like to do?
 - **STE 检查存在阻断项时不开始任何任务**（Step 2，本仓自加）—— 修正产物走 `/opsx:update`，不在 apply 中顺手改
 - **Follow the TDD discipline in `shared/tdd-discipline.md`** (Step 7) — seam-first, red before green, refactoring is deferred to `/opsx:quality`, never on the red-green path
 - **证据先于勾选**（本仓自加）—— 切片声明了 `Evidence:` 时，按 `shared/slice-evidence.md` 先记录绑定当前实现指纹的验证证据再勾选；不伪造结果、不为历史变更补造证据
-- **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5，产出 `review/code-review-summary.md`）与 `/opsx:verify`（Phase 6，三维校验 + 评审条件核对）；任一未通过或存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序与门禁口径的唯一事实源见 `../openspec-technical-review/shared/phases.md`
+- **实现全部完成后进入质量评审与验证，不得直接归档**（本仓自加，非上游原文）—— 依次跑 `/opsx:quality`（Phase 5.5，产出 `review/code-review-summary.md`；L2/L3 必需，L0/L1 推荐，等级取 `overview.md` 分级行，读不到时按 L2/L3）与 `/opsx:verify`（Phase 6，三维校验 + 评审条件核对）；verify 未通过、L2/L3 缺少双轴评审报告，或已生成的双轴评审存在未闭环 Blocker 时禁止 `/opsx:archive`。阶段顺序与门禁口径的唯一事实源见 `../openspec-technical-review/shared/phases.md`
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
 - If task is ambiguous, pause and ask before implementing
