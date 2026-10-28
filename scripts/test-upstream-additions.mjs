@@ -39,6 +39,7 @@ const ANCHORS = {
     '**STE 检查（本仓自加',
     '**变更模型检查（本仓自加',
     '**门禁提示（本仓自加',
+    '**写入分级行（本仓自加',
     'follow the slicing rules in `shared/task-slicing.md`',
   ],
   'claude/commands/opsx/propose.md': [
@@ -50,9 +51,11 @@ const ANCHORS = {
     '**STE 检查（本仓自加',
     '**变更模型检查（本仓自加',
     '**门禁提示（本仓自加',
+    '**写入分级行（本仓自加',
   ],
   'claude/commands/opsx/ff.md': [
     '**门禁提示（本仓自加',
+    '**写入分级行（本仓自加',
     '**本仓自加的产物规则（非上游原文）**',
     '**云舟任务关联**',
     '**已有讨论记录**',

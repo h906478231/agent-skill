@@ -11,7 +11,7 @@
 
 **L0 豁免的变更不创建 `review-summary.md`**，因此天然走上面的「直接放行」分支 —— 这是设计意图，不是漏检（L0 落点见 `gate-levels.md`）。MVP 且未命中升级信号的变更同理。
 
-是否该走门禁由 `gate-levels.md` 分级决定：提醒放在 `/opsx:propose`、`/opsx:ff` 的收尾输出，豁免在 `overview.md` 开头留分级行。本节口径与 `hooks/check-review-approval.sh` 的放行分支一致，改动时两处同步。
+是否该走门禁由 `gate-levels.md` 分级决定：提醒放在 `/opsx:propose`、`/opsx:ff` 的收尾输出；判定为豁免时，这两个命令同时在 `overview.md` 开头写入分级行（`gate-levels.md`「分级决策责任」）。本节口径与 `hooks/check-review-approval.sh` 的放行分支一致，改动时两处同步。
 
 ## 校验动作（仅在 review-summary.md 存在时执行）
 

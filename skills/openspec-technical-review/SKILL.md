@@ -107,7 +107,7 @@ done
    - 判断是否为 **MVP 方案**（标志：推荐方案标为 MVP，或明确说明"优先复用现有能力"/"最小化实现"/"快速验证"）；没有写明时按完整方案处理
    - 对照 [门禁分级标准](shared/gate-levels.md)「信号到维度的映射表」，列出 proposal / design 命中的升级信号
 5. 按「方案类型 × 升级信号」判定评审范围（规则见 `shared/gate-levels.md`「方案类型维度」），向用户确认：
-   - **MVP 且未命中信号**：不做技术评审，不创建 `review-summary.md`，也不创建 `review/` 目录。在 `overview.md` 开头写 `方案类型：MVP；升级信号：无；判定人：…；日期：…`，提示可直接 `/opsx:apply`，然后**结束本 skill**。实现后双轴评审（`/opsx:quality`）照常执行。
+   - **MVP 且未命中信号**：不做技术评审，不创建 `review-summary.md`，也不创建 `review/` 目录。在 `overview.md` 开头写 `> 分级：方案类型 MVP；升级信号：无 ｜ 判定人：… ｜ 日期：… ｜ 依据：…`（写法见 `shared/gate-levels.md`「分级决策责任」；已有分级行时改为本次判定），提示可直接 `/opsx:apply`，然后**结束本 skill**。实现后双轴评审（`/opsx:quality`）照常执行。
    - **MVP 且命中信号**：只跑映射表得出的维度（各信号维度的并集），使用 MVP 评审标准（Step 1 第 3 项）；workflow 传 `{ change, tier: 'mvp', roles: [<映射出的维度>] }`。`review-summary.md` 把其余维度列为「不适用」，理由引用命中的信号行。
    - **完整方案**：沿用 L0–L3。明显属于 L0（纯文案/配置/注释）的变更，提示可豁免门禁直接 apply，不强行启动评审角色。L1–L3 的 workflow 传 `{ change, level: 'L1' | 'L2' | 'L3' }`，纳入维度由脚本按 `shared/gate-levels.md` 分级表推导，不手工翻译成 `roles`。
      **L2/L3 追加区块检查**（`../openspec-explore/shared/cross-validation.md` 与 `../openspec-explore/shared/seam-decisions.md` 的分级要求；L1 允许单一方案，不查这两项）：
@@ -183,7 +183,7 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 11. **「有条件通过」的条件清单**：`条件ID | 来源维度 | 条件内容 | 对应任务或行号 | 状态`。条件需要代码、测试、SQL、配置文件或交付文档时对应一项任务；只需修改规划产物时对应该产物的 `<文件>:<行号>`，修改走 `/opsx:update`。**既没有对应任务、也没有对应行号的条件视同 Blocker**（规则见 `shared/gate-policy.md`）。
 12. **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环，逐一给出对应的 `闭环状态` 取值。后者一律按未闭环 Blocker 计入裁决。
 13. **术语表**：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。
-14. **分级结论**：变更等级（L1/L2/L3，判定规则见 `shared/gate-levels.md`）+ 判定人 + 依据。L0 不进入本门禁，故此处的等级至少为 L1。**同时确保变更目录 `overview.md` 开头有这一行**（没有该文件时创建只含文件头与分级行的最小 `overview.md`）—— 实现阶段的归档门禁从 `overview.md` 读等级，判定双轴评审是否必需（格式见 `../../openspec-change-overview/SKILL.md`）。
+14. **分级结论**：变更等级（L1/L2/L3，判定规则见 `shared/gate-levels.md`）+ 判定人 + 依据。L0 不进入本门禁，故此处的等级至少为 L1；MVP 且命中信号时写方案类型 MVP 与命中的信号。**同时确保变更目录 `overview.md` 开头有这一行**（没有该文件时创建只含文件头与分级行的最小 `overview.md`；已有分级行时改为本次判定，如 `/opsx:propose` 写的 L0 被本门禁判为 L2）—— 实现阶段的归档门禁从 `overview.md` 读等级，判定双轴评审是否必需（写法见 `shared/gate-levels.md`「分级决策责任」，文件头格式见 `../../openspec-change-overview/SKILL.md`）。
 15. **评审输入版本**：列出本轮评审依据的 `proposal.md` / `design.md` / `specs` / `tasks.md` 的版本依据（如 `git rev-parse HEAD` 或文件哈希），供重走门禁与恢复时判断输入是否已变化。
 16. **人工确认区**：先按 `shared/gate-policy.md`「机器可读裁决行」写 `Gate-Level: <L1|L2|L3|MVP>` 与 `Gate-Verdict: <第 5 项裁决>` 两行，再留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply；L3 追加一行 `复核: __________`（建议第二人复核，非必填）。
 

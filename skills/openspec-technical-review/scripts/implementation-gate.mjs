@@ -5,7 +5,7 @@
  * 所属：skill openspec-technical-review（门禁口径中枢）。调用方：/opsx:apply（写证据前取指纹）、
  * /opsx:quality（生成固定基线、校验双轴报告）、/opsx:verify 与 /opsx:archive（证据与评审闭环校验），
  * 以及对应的 openspec-* skill。规则事实源（本脚本只做确定性判定，不重复规则说明）：
- *   - 双轴评审：openspec-code-quality/shared/dual-axis-review.md（是否必需按分级：L2/L3 必需，L0/L1 只推荐，见 reviewRequired）
+ *   - 双轴评审：openspec-code-quality/shared/dual-axis-review.md（是否必需按分级：MVP、L2/L3 必需，L0/L1 只推荐，见 reviewRequired）
  *   - 切片证据：openspec-apply-change/shared/slice-evidence.md
  *   - 实现后修改登记：openspec-apply-change/shared/post-implementation-changes.md
  *   - verify / archive 如何解读输出：openspec-technical-review/shared/implementation-gate-check.md
@@ -943,32 +943,52 @@ const declaresEvidence = tasks => /^\s*Evidence\s*[:：]/m.test(tasks)
 /** overview.md 里的分级行：允许 markdown 引用前缀 `>`，写法见 gate-levels.md「分级决策责任」。 */
 const TIER_LINE = /^\s*>?\s*分级\s*[:：]\s*(\S.*)$/
 
+/** 旧写法的 MVP 分级行（`方案类型：MVP；升级信号：无；…`）：已写过的原样保留，脚本照样识别。 */
+const LEGACY_MVP_LINE = /^\s*>?\s*方案类型\s*[:：]\s*MVP\b/i
+
+/** 分级行中等级与方案类型所在的字段：第一个 `｜` 之前，不含判定人、日期与依据，避免依据中的说明文字改变判定。 */
+const tierField = value => value.split(/[｜|]/)[0]
+
 /**
- * 从 overview.md 的分级行读取变更等级（L0–L3）。
+ * 从 overview.md 的分级行读取变更等级（L0–L3）或方案类型 MVP。
  * 读不到时返回 null：没有 overview.md、没有分级行、或写的是「未判定」都走这一支，
  * 由调用方按保守口径处理（见 reviewRequired）。
- * @returns {'L0'|'L1'|'L2'|'L3'|null} 等级；无法判定时为 null。
+ * @returns {'L0'|'L1'|'L2'|'L3'|'MVP'|null} 等级或方案类型；无法判定时为 null。
  */
 function readTier(changeRoot) {
   const overview = readText(changeRoot, 'overview.md')
   if (overview === null) return null
-  const line = overview.split(/\r?\n/).map(item => item.match(TIER_LINE)).find(Boolean)
-  if (!line) return null
-  const level = line[1].match(/\bL([0-3])\b/i)
+  const lines = overview.split(/\r?\n/)
+  const line = lines.map(item => item.match(TIER_LINE)).find(Boolean)
+  if (!line) return lines.some(item => LEGACY_MVP_LINE.test(item)) ? 'MVP' : null
+  const field = tierField(line[1])
+  // MVP 没有 L 等级（gate-levels.md「方案类型维度」）；字段同时写了 MVP 与等级时取 MVP，它要求双轴评审，判定取较大的范围。
+  if (/\bMVP\b/i.test(field)) return 'MVP'
+  // 第一个字段没有等级时（如「分级：完整方案 ｜ … ｜ 依据：属于 L2」）沿用整行查找，与本规则之前的读法相同，兼容已写过的分级行。
+  const level = field.match(/\bL([0-3])\b/i) || line[1].match(/\bL([0-3])\b/i)
   return level ? `L${level[1]}` : null
 }
 
 /**
+ * 分级行明确要求双轴评审的等级与方案类型。
+ * MVP 且未命中升级信号时跳过了编码前评审，双轴评审是它唯一的代码侧评审；命中信号时等级至少为 L3（gate-levels.md）。
+ */
+const REVIEW_REQUIRED_TIERS = new Set(['MVP', 'L2', 'L3'])
+
+/**
  * 双轴评审产物是否必需。
- * L0/L1 只推荐、不阻断归档；L2/L3 必需。判定仍以「切片声明了 Evidence 引用」为触发条件，
- * 因此历史变更（无 Evidence 引用）保持不追溯，不会被新规则追加要求。
+ * 分级行为 MVP、L2、L3 时必需，与任务清单是否按切片声明 Evidence 无关；L0/L1 只推荐、不阻断归档。
+ * 没有可读的分级行时，仍以「切片声明了 Evidence 引用」为触发条件，历史变更保持不追溯。
  * @param {string} changeRoot 变更目录。
  * @param {string} tasks tasks.md 文本。
  * @returns {boolean} true 表示缺少双轴评审产物时记阻断项。
  */
 function reviewRequired(changeRoot, tasks) {
-  if (!declaresEvidence(tasks)) return false
   const tier = readTier(changeRoot)
+  // 分级行晚于双轴评审引入：写了这一行的变更都按新规则创建，按它判定不会追溯历史变更。
+  // 平铺任务清单不声明 Evidence，只看 Evidence 会让这类 MVP、L2、L3 变更不经双轴评审就归档。
+  if (REVIEW_REQUIRED_TIERS.has(tier)) return true
+  if (!declaresEvidence(tasks)) return false
   return tier !== 'L0' && tier !== 'L1'
 }
 
@@ -1020,9 +1040,10 @@ function checkReview(changeRoot, { required = false, currentFingerprint = null, 
   const files = [...AXES.map(axis => axis.file), SUMMARY_FILE]
   if (!required && !files.some(file => existsSync(path.join(changeRoot, file)))) {
     const tier = readTier(changeRoot)
+    // 走到这里的只有 L0/L1，或没有可读分级行并且未声明 Evidence 的变更（见 reviewRequired）。
     const why = tier === 'L0' || tier === 'L1'
       ? `${tier} 推荐运行，未生成不阻断`
-      : 'L0 豁免，或未启用本能力的历史变更'
+      : 'overview.md 没有可读的分级行，tasks.md 也没有声明 Evidence:，按历史变更不追溯'
     return { applicable: false, reason: `不适用：未生成双轴评审产物（${why}）`, verdict: null,
       axes: [], issues: [], warnings: [] }
   }

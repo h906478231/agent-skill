@@ -106,7 +106,13 @@ After completing all artifacts, summarize:
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
 - Prompt: "Run `/opsx:apply` to start implementing."
-- **门禁提示（本仓自加，非上游原文）**：在 Prompt 之前先给出下一步，按 skill `openspec-technical-review` 的 `shared/gate-levels.md` 判定等级（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-technical-review/shared/gate-levels.md`）：「L1–L3，或 MVP 且命中升级信号 → 先 `/opsx:review`，人工签字后再 `/opsx:apply`；L0，或 MVP 且未命中信号 → 可直接 `/opsx:apply`，但要在 `overview.md` 开头写一行分级结论（判定人与日期）。拿不准就升一级。」缺 `review-summary.md` 时 apply 按设计放行，这条提示是 apply 之前唯一的门禁提醒，不得省略。
+- **门禁提示（本仓自加，非上游原文）**：在 Prompt 之前先给出下一步，按 skill `openspec-technical-review` 的 `shared/gate-levels.md` 判定等级（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-technical-review/shared/gate-levels.md`）：「L1–L3，或 MVP 且命中升级信号 → 先 `/opsx:review`，人工签字后再 `/opsx:apply`；L0，或 MVP 且未命中信号 → 可直接 `/opsx:apply`，分级行已写入 `overview.md`。拿不准就升一级。」缺 `review-summary.md` 时 apply 按设计放行，这条提示是 apply 之前唯一的门禁提醒，不得省略。
+- **写入分级行（本仓自加，非上游原文）**：判定为 L0，或 MVP 且未命中升级信号时，输出总结前在 `<changeRoot>/overview.md` 开头写分级行，不只给出提示。这类变更不运行 `/opsx:review`，没有其他环节写这一行。写法见 `gate-levels.md`「分级决策责任」，判定人写 `/opsx:propose（agent）`，依据写豁免理由或未命中信号的理由。
+  - 没有 `overview.md` 时，创建只含文件头与分级行的最小文件，格式见 skill `openspec-change-overview` 的 `SKILL.md`（找不到时用 Glob 搜 `**/openspec-change-overview/SKILL.md`）。
+  - 已有分级行，并且写的不是「未判定」时，保留原行。写「未判定」或没有分级行时，写入本次判定。
+  - 总结中原样写出这一行，并告诉用户：不同意判定时改这一行，或运行 `/opsx:review` 重新判定。
+  - L1–L3，或 MVP 且命中信号时不写：`/opsx:review` 汇总时写入分级行。
+  - 归档门禁按这一行判定双轴评审是否必需：MVP 必需，L0 只推荐（skill `openspec-technical-review` 的 `shared/implementation-gate-check.md`）。
 
 **Artifact Creation Guidelines**
 

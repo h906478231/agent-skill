@@ -239,7 +239,7 @@ node <GATE> review <changeRoot>
 
 - 分级沿用 `../openspec-technical-review/shared/gate-levels.md`：**L2/L3 必须**；**L0/L1 推荐**，未生成不阻断归档。等级取变更目录 `overview.md` 的分级行；读不到等级时按保守口径要求（等同 L2/L3）。
 - **MVP 且未命中升级信号仍要跑两轴**（L0/L1 的放宽不覆盖它）：这类变更已跳过编码前技术评审，双轴评审是它唯一的代码侧评审（理由见 `gate-levels.md`「方案类型维度」）。
-- **启用判据**（校验脚本据此判定）：`review/` 下存在任一双轴产物，或 `tasks.md` 任一切片声明了 `Evidence:` 引用（按新规则创建的变更）即视为启用；启用后三份文件缺一不可 —— L0/L1 一旦创建了任一双轴产物，也必须按本规则完整产出，不接受半套报告。
+- **启用判据**（校验脚本据此判定）：`review/` 下存在任一双轴产物，或 `overview.md` 分级行为 MVP、L2、L3（与任务清单是否按切片组织无关），或没有可读的分级行而 `tasks.md` 任一切片声明了 `Evidence:` 引用（按新规则创建的变更）即视为启用（口径见 `../openspec-technical-review/shared/implementation-gate-check.md`「适用范围与不追溯」）；启用后三份文件缺一不可 —— L0/L1 一旦创建了任一双轴产物，也必须按本规则完整产出，不接受半套报告。
 - **不追溯历史变更**：本规则之前产出的 `review/code-quality.md` 继续按原规则被 `/opsx:archive` 识别，不要求补跑双轴。
 
 ## 产物的 git 归属
