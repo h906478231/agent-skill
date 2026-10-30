@@ -2,7 +2,7 @@
 
 > 状态路由由 coordinator 与 workflow 内置判定：本表与下图是能力地图，不是必跑顺序。L2/L3 检查决策充分性，不强制重复 grill；有待查事实才 explore，无阻断未知直接 propose/update。恢复时复核实际产物和批准版本，不从头覆盖。
 >
-> **按需环节**（表中标「按需」者：Grill 访谈、讨论回流、变更总览、讲解视频）只在触发条件命中时运行，不进入每次变更的默认路径。变更总览在字段或规则条件较多的变更（L2/L3）推荐生成；未生成时 Verify 直接核对 `review-summary.md` 的条件清单，不阻断。
+> **按需环节**（表中标「按需」者：Grill 访谈、讨论回流、变更总览、完成清单、讲解视频）只在触发条件命中时运行，不进入每次变更的默认路径。变更总览在字段或规则条件较多的变更（L2/L3）推荐生成；未生成时 Verify 直接核对 `review-summary.md` 的条件清单，不阻断。完成清单由 archive 归档后生成；`/opsx:recap` 只在补生成、重新生成或查看跨变更总表时运行，不阻断归档。
 
 ## 各阶段职责与产物
 
@@ -22,7 +22,8 @@
 | Phase 5 代码实现 | `/opsx:apply`                    | 开始任何任务前依次做签字校验（`apply-gate-check.md`）、STE 检查、变更模型检查，任一项阻断即停止；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**（规则见 `../../openspec-apply-change/shared/tdd-discipline.md`）；**证据先于勾选**：每个切片记录绑定实现指纹的新鲜证据（规则见 `../../openspec-apply-change/shared/slice-evidence.md`） | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
 | Phase 5.5 双轴独立评审 | `/opsx:quality`                  | 同一固定基线并行跑 Standards Review（工程规范）与 Spec Fidelity Review（规格忠实度），互不读取对方报告，汇总按任一轴未闭环 Blocker 阻断（规则见 `../../openspec-code-quality/shared/dual-axis-review.md`）；项目配置了 Sonar 时，最后用 SonarScanner 扫描，只处理本次修改行上的问题（`../../openspec-code-quality/shared/sonar-scan.md`）；**L2/L3 必跑，L0/L1 推荐** | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md`（+ `review/sonar.md`，配置 Sonar 时） | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify`                   | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + **切片证据新鲜度与双轴裁决核对**（见 `implementation-gate-check.md`）+ STE 检查与变更模型检查（阻断项记为 CRITICAL）；**实现与设计交叉核对**（门禁侧的条件核对与增强交叉核对清单见 `phase6-verification.md`） | `verification.md`（校验报告） | 修复项 |
-| 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs（delta→main 由 skill `openspec-sync-specs` / `/opsx:sync` 执行，archive 调用；主 spec 有差异却跳过同步时需用户显式确认原因）；**归档前置校验**：签字缺失 / 未闭环 Blocker / verify 未通过 / MVP 与 L2/L3 双轴评审 Blocker 或报告缺失 / 切片证据缺失或过期时拒绝归档；评审、证据与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务（`../../openspec-archive-change/shared/yunzhou-task-completion.md`） | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
+| 收口 | `/opsx:archive`                  | 变更归档，能力沉淀进 specs（delta→main 由 skill `openspec-sync-specs` / `/opsx:sync` 执行，archive 调用；主 spec 有差异却跳过同步时需用户显式确认原因）；**归档前置校验**：签字缺失 / 未闭环 Blocker / verify 未通过 / MVP 与 L2/L3 双轴评审 Blocker 或报告缺失 / 切片证据缺失或过期时拒绝归档；评审、证据与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务（`../../openspec-archive-change/shared/yunzhou-task-completion.md`） | `openspec/specs/**` + `changes/archive/<name>/` + `changes/archive/<name>/recap.md`（完成清单，归档后生成，失败不回退归档） | 否 |
+| 完成清单（按需） | `/opsx:recap` | 为已归档变更补生成或重新生成完成清单，按新增、修改、删除、修复、没做与遗留列出事项，以实际结果为准；由一个子 agent 生成，主会话只接收结论；不带参数时由脚本按主题打印跨变更总表，不写文件（规则见 `../../openspec-change-recap/SKILL.md`） | `changes/archive/<name>/recap.md`（派生视图）；跨变更总表只打印 | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video`                    | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕；不属于任何卡点或归档检查（规则见 `../../openspec-explainer-video/SKILL.md`） | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
 
 ## 各阶段的输入与新会话
@@ -39,8 +40,9 @@
 | apply | `proposal.md`、`specs/`、`design.md`、`tasks.md`、`review-summary.md`（启用技术评审时） | 代码、`evidence/`、`tasks.md` | 能。新会话中写明变更名 |
 | quality | 固定基线 diff、产物、`evidence/` | `review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md`、`review/sonar.md`（配置 Sonar 时） | 能 |
 | verify | 产物、门禁脚本输出、`review-summary.md`（启用技术评审时）、`verification.md`（重跑时） | `verification.md` | 能 |
-| archive | `verification.md`、门禁脚本输出、`review-summary.md`（启用技术评审时） | `openspec/specs/`、`openspec/changes/archive/` | 能。没有 `verification.md` 时拒绝归档 |
+| archive | `verification.md`、门禁脚本输出、`review-summary.md`（启用技术评审时） | `openspec/specs/`、`openspec/changes/archive/`、`recap.md`（归档后生成） | 能。没有 `verification.md` 时拒绝归档 |
 | overview | 全部产物（由子 agent 读取，主会话只接收结论） | `overview.md`、`overview.html`（有变更模型时） | 能 |
+| recap | 归档目录中的全部产物（由子 agent 读取，主会话只接收结论）；不带参数时只读取各完成清单的头部 | `recap.md`（带变更名时） | 能。写明变更名 |
 
 ## 全景流程图
 

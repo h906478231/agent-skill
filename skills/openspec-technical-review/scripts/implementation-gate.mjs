@@ -1629,6 +1629,7 @@ const ARTIFACT_ALLOWLIST = [
   /^overview\.(md|html)$/, // openspec-change-overview
   /^discussion-log\.md$/, // openspec-discussion-sync / openspec-grill
   /^video\/(storyboard\.md|explainer\.srt)$/, /^video\/media\/.+$/, // openspec-explainer-video
+  /^recap\.md$/, // openspec-change-recap（归档后生成，只在变更的归档目录根下）
 ]
 
 /** 系统生成的文件，不计入产物检查。 */

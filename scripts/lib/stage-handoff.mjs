@@ -33,7 +33,7 @@ export const BRANCHES = [
   { name: 'MVP 跳过评审', stages: ['propose', 'apply', 'quality', 'verify', 'archive'] },
 ]
 /** 只在触发条件命中时运行、不在默认路径上的阶段。 */
-export const ON_DEMAND_STAGES = ['grill', 'explore', 'overview']
+export const ON_DEMAND_STAGES = ['grill', 'explore', 'overview', 'recap']
 /** 项目级资产不随变更产生，作为无条件输入时不要求上游产出。 */
 export const PROJECT_ASSETS = ['CONTEXT.md', 'docs/adr/']
 /**

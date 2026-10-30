@@ -173,6 +173,7 @@
 | `/opsx:verify <change>` | `openspec-verify-change` | Phase 6：验证；卡点④：STE + 变更模型检查 |
 | `/opsx:sync <change>` | `openspec-sync-specs` | delta spec 同步到主 spec（archive 会调用） |
 | `/opsx:archive <change>` | `openspec-archive-change` | 变更归档 |
+| `/opsx:recap [change]` | `openspec-change-recap` | 完成清单：带变更名时为已归档变更补生成或重新生成 `recap.md`；不带参数时按主题打印跨变更总表（archive 归档后自动生成） |
 | `/opsx:explain <change>` | `openspec-finding-explain` | Finding 详细解析（按需生成） |
 | `/opsx:video <change> [focus]` | `openspec-explainer-video` | 讲解视频（按需生成，不进默认流程） |
 
