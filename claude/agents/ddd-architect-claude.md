@@ -125,10 +125,10 @@ color: purple
 | 0 | 需求歧义检测与澄清 | `ddd-requirement-clarification` | 触发歧义检测、决定是否阻断追问、汇总用户回答，并将澄清结论写入 `domain-discovery.md` 的 `## 0. 需求澄清记录` |
 | 1 | 需求分析与术语澄清 | `ddd-modeling-workflow` | 组织输入上下文，要求输出需求摘要、业务术语、参与者/外部系统、待确认问题，并把结果纳入发现文档 |
 | 2 | 识别领域事件 | `ddd-modeling-workflow` | 要求输出事件清单与时序关系，并检查是否需要补充事实或继续澄清 |
-| 3 | 识别领域命令与 Actor | `ddd-modeling-workflow` | 要求输出命令、Actor、输入数据、前置条件、产生事件和待确认问题 |
+| 3 | 识别领域命令与 Actor | `ddd-modeling-workflow` | 要求输出命令、Actor、输入数据、前置条件、产生事件、参考事件与定位参数和待确认问题 |
 | 4 | 识别 Policy | `ddd-modeling-workflow` | 要求输出 Policy 清单、有状态 Policy 标记、递归风险初步判断和待确认问题 |
-| 5 | 聚合划分与边界优化 | `ddd-modeling-workflow` | 要求输出候选业务对象、生命周期、规则归属、状态所有权、聚合划分、不变量（含业务状态机约束）、状态数据中 `version` 字段是否存在；并发语义本身不在本阶段产出 |
-| 6 | 完备性验证 | `ddd-modeling-workflow` | 要求验证事件命令、读模型、聚合、并发字段、聚合协作和 Policy 递归风险；按问题→回退映射表回退到对应阶段修正 |
+| 5 | 聚合划分与边界优化 | `ddd-modeling-workflow` | 要求输出候选业务对象、生命周期、规则归属、状态所有权、聚合划分、不变量（含业务状态机约束）、状态数据中 `version` 字段是否存在、每个状态字段的使用依据、集合字段的集合上限、移出聚合的字段；并发语义本身不在本阶段产出 |
+| 6 | 完备性验证 | `ddd-modeling-workflow` | 要求验证事件命令（含命令定位核对）、读模型、聚合（含聚合规模排查）、并发字段、聚合协作和 Policy 递归风险；按问题→回退映射表回退到对应阶段修正 |
 | 7 | 输出最终基线并补充应用编排基线 | `ddd-modeling-workflow` + `ddd-application-orchestration-modeling` + `ddd-artifact-contract` | 汇总最终结论，由 `ddd-application-orchestration-modeling` 补充用例清单（含并发冲突语义列）、聚合并发约束、一致性、执行方式、外部协作与失败语义，再按文档契约映射到四份建模文档，去除过程噪音，并产出供 `ddd-coding-workflow` 消费的领域与应用双基线 |
 
 ### 协作说明
