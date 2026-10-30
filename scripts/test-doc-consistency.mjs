@@ -27,6 +27,8 @@ const GIT_GUARD_FILES = [
   'claude/commands/opsx/overview.md',
   'claude/commands/opsx/explain.md',
   'claude/commands/opsx/video.md',
+  'claude/commands/opsx/recap.md',
+  'claude/commands/opsx/archive.md',
   'skills/openspec-code-quality/SKILL.md',
   'skills/openspec-code-quality/shared/dual-axis-review.md',
   'skills/openspec-apply-change/shared/slice-evidence.md',
@@ -35,9 +37,24 @@ const GIT_GUARD_FILES = [
   'skills/openspec-apply-change/shared/deployment-document.md',
   'skills/openspec-discussion-sync/SKILL.md',
   'skills/openspec-change-overview/SKILL.md',
+  'skills/openspec-change-recap/SKILL.md',
+  // archive 第 7 步生成完成清单：git 边界句写在本仓自加的第 7 步内，不修改上游原文。
+  'skills/openspec-archive-change/SKILL.md',
   // 面向人的流程文档保留「门禁产物提交 git」的策略，同时写明 agent 不执行提交、以项目 .gitignore 为准。
   PROCESS_DOC,
   'workflow/quickstart-guide.md',
+]
+/**
+ * 完成清单的 git 边界（add-change-recap，评审条件 C-03）。recap.mjs check 对没有被 git 忽略的完成清单只告警，
+ * 给出建议规则；规则文本必须写明 agent 不修改 .gitignore，避免 agent 按告警把规则写入团队共享的 .gitignore。
+ * 只检查下列文件，不修改 GIT_GUARD 常量：其他产物的规则文本没有 .gitignore 告警，不要求这句话。
+ */
+const GITIGNORE_GUARD = '不修改 `.gitignore`'
+const GITIGNORE_GUARD_FILES = [
+  'claude/commands/opsx/recap.md',
+  'skills/openspec-change-recap/SKILL.md',
+  'claude/commands/opsx/archive.md',
+  'skills/openspec-archive-change/SKILL.md',
 ]
 /** 扫描范围只含 agent 读取的命令与 skill；workflow/、docs/ 面向人，按策略写「提交 git」是正确内容。 */
 const AGENT_READ_DIRS = ['claude/commands', 'skills']
@@ -156,6 +173,15 @@ test('git 边界说明：说明变更目录产物去向的文件逐字带同一�
     if (!(await read(file)).includes(GIT_GUARD)) missing.push(file)
   }
   assert.deepEqual(missing, [], `以下文件缺少 git 边界说明：${missing.join('、')}`)
+})
+
+test('git 边界说明：完成清单的规则文本写明不修改 .gitignore，且同时带 git 边界句', async () => {
+  const missing = []
+  for (const file of GITIGNORE_GUARD_FILES) {
+    if (!(await read(file)).includes(GITIGNORE_GUARD)) missing.push(file)
+  }
+  assert.deepEqual(missing, [], `以下文件缺少「${GITIGNORE_GUARD}」：${missing.join('、')}`)
+  assert.deepEqual(GITIGNORE_GUARD_FILES.filter(file => !GIT_GUARD_FILES.includes(file)), [], 'GITIGNORE_GUARD_FILES 中的文件必须同时在 GIT_GUARD_FILES 中')
 })
 
 test('git 边界说明：命令与 skill 不再要求提交变更目录产物', async () => {

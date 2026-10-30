@@ -105,7 +105,7 @@ npx skills remove --skill ddd-aggregate
 `openspec-verify-change` `openspec-propose` `openspec-apply-change`
 `openspec-update-change` `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
-### OpenSpec 流程增强（9 个）
+### OpenSpec 流程增强（10 个）
 
 | skill                      | 作用 | 命令 |
 |---|---|---|
@@ -118,6 +118,7 @@ npx skills remove --skill ddd-aggregate
 | `openspec-finding-explain` | 为单个 finding 生成业务场景解析文档，解释它对业务意味着什么 | `/opsx:explain` |
 | `openspec-ste` | 中文 STE 检查：propose / update / apply / verify 四个卡点阻断禁用别名、非受控通用词与模糊词；含 Claude Code Stop hook（需手动注册） | 无（由四个卡点调用） |
 | `openspec-explainer-video` | 按人工要求为含变更模型的变更生成讲解视频：AI 编写分镜，人工签署后用 Manim 渲染配音与中文硬字幕；默认离线 TTS，不进入默认流程。依赖由 `video.mjs doctor` 给出安装指引 | `/opsx:video` |
+| `openspec-change-recap` | 完成清单：为已归档变更按新增、修改、删除、修复、没做与遗留列出事项，以实际结果为准；脚本按主题打印跨变更总表。archive 归档后自动生成，由一个子 agent 生成 | `/opsx:recap` |
 
 ### 云舟任务评论（3 个）
 
@@ -162,7 +163,7 @@ npx skills remove --skill ddd-aggregate
 
 **升级 OpenSpec 时**：重新生成会整文件覆盖上述增强。`scripts/test-upstream-additions.mjs`（已接入 `npm test`）为每个增强主题登记了一句锚点原文，覆盖后测试会失败并列出丢失的增强。按列表用 git diff 找回内容，与新版上游合并后再提交。
 
-本仓自建资产（9 个 `openspec-*` 流程增强 skill 与 `grill`/`review`/`overview`/`quality`/`explain`/`video` 六个命令）则严格遵守单一事实源，命令文件均为薄壳。
+本仓自建资产（10 个 `openspec-*` 流程增强 skill 与 `grill`/`review`/`overview`/`quality`/`explain`/`video`/`recap` 七个命令）则严格遵守单一事实源，命令文件均为薄壳。
 
 ## 编写规范
 

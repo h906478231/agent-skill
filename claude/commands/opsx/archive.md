@@ -105,7 +105,17 @@ Archive a completed change in the experimental workflow.
    - Implementation gate result: passed, or the "不适用" reasons from `archive` notes（本仓自加）
    - Note about any warnings (incomplete artifacts/tasks)
 
-7. **归档后：云舟任务（本仓自加，非上游原文）**
+7. **归档后：完成清单（本仓自加，非上游原文）**
+
+   只在第 5 步移动目录成功之后执行；归档前置校验拒绝归档时不生成完成清单。按 skill `openspec-change-recap` 的「生成：一个子 agent」为刚归档的变更生成 `<archive>/YYYY-MM-DD-<name>/recap.md`（读取 skill `openspec-change-recap` 的 `SKILL.md`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-change-recap/SKILL.md`；格式与内容来源见该 skill 的 `shared/recap-format.md`）：
+
+   - 由一个子 agent 生成，主会话只接收结论。子 agent 只创建或覆盖该变更归档目录中的 `recap.md`，归档目录中的其他文件只读，除 `recap.mjs list` 外不运行命令，不运行 git 命令，不向用户提问。修正一次、主会话直接生成时范围相同。
+   - 主会话运行 `node <RECAP> check <recap.md 的路径>`（`<RECAP>` = skill `openspec-change-recap` 的 `scripts/recap.mjs`；找不到时用 Glob 搜 `**/openspec-change-recap/scripts/recap.mjs`），在第 6 步的总结之后显示 `recap.md` 的路径与输出 JSON 中 `header.summary` 的摘要，不读取 `recap.md` 全文。退出码为 `1` 时把 `blocking` 交给同一个子 agent 修正一次。
+   - 子 agent 失败，或修正一次后 `check` 退出码仍为 `1` 时，**不回退归档**，变更留在归档目录：显示告警与 `/opsx:recap <name>`，提示用户重新生成。
+   - git 边界：本步不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。`check` 的 `warnings` 中的 git 告警只原样显示建议规则，不修改 `.gitignore`。
+   - 本步不阻断归档，也不改变第 6 步的门禁结论。
+
+8. **归档后：云舟任务（本仓自加，非上游原文）**
 
    归档成功、并且变更关联了云舟任务时（变更名为 `yunzhou-<taskId>`，或 `proposal.md` 有一行 `云舟任务：<taskId>`），读取 skill `openspec-archive-change` 的 `shared/yunzhou-task-completion.md`（skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-archive-change/shared/yunzhou-task-completion.md`），按其步骤执行：用户确认后才把任务标记为完成，并回读确认。没有关联时跳过本步，不询问。
 

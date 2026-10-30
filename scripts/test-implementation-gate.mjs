@@ -736,6 +736,16 @@ test('hygiene：变更目录不存在时退出码 2', t => {
   assert.equal(f.run('hygiene', join(f.repo, 'openspec/changes/missing')).code, 2)
 })
 
+// add-change-recap Slice 04：完成清单进入产物允许清单（Seam：hygiene）
+test('hygiene：变更目录根下的 recap.md 不报 warning；其他目录中的 recap.md 仍报告', t => {
+  const f = fixture(t)
+  f.write('openspec/changes/demo/recap.md', 'x\n')
+  f.write('openspec/changes/demo/review/recap.md', 'x\n')
+  const result = f.run('hygiene', f.changeRoot)
+  assert.equal(result.code, 0, result.out + result.err)
+  assert.deepEqual(result.json().warnings.map(item => item.file), ['review/recap.md'])
+})
+
 // ---------------------------------------------------------------------------
 // streamline-openspec-gates Slice 07：双轴评审 R1 修复（Seam：参数解析 / hygiene / review）
 // ---------------------------------------------------------------------------

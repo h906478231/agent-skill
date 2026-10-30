@@ -20,6 +20,7 @@ explore → propose（含 tasks） → 分级判定 → （纳入范围时）rev
 | `/opsx:overview` | 字段或规则条件较多的变更（L2/L3）需要一页看懂流程与条件矩阵 |
 | `/opsx:explain` | 看不明白某个 Blocker，需要展开业务场景 |
 | `/opsx:video` | 需要向他人讲解含变更模型的变更 |
+| `/opsx:recap` | 回看已归档的变更做了什么、没做什么；为旧的归档变更补生成完成清单（archive 归档后自动生成） |
 | 讨论回流（skill `openspec-discussion-sync`，无独立命令） | grill 派查证子 agent 后，把结论按五段契约回流并落盘；explore 不派子 agent |
 
 拿不准该用 `/opsx:explore` 还是 `/opsx:grill`？见 [工作流选择指南](../docs/openspec-workflow-guide.md)。
@@ -110,6 +111,7 @@ explore → propose（含 tasks） → 分级判定 → （纳入范围时）rev
 | `/opsx:archive` | 归档 | 完整流程 |
 | `/opsx:explain` | 解析单个 finding | 按需 |
 | `/opsx:video` | 讲解视频（人工签署分镜后渲染） | 按需 |
+| `/opsx:recap` | 完成清单：补生成单个变更的 `recap.md`，不带参数时打印跨变更总表 | 按需 |
 
 ---
 

@@ -26,7 +26,7 @@
   "license": "Apache-2.0",
   "author": "tigger",
   "scripts": {
-    "test": "npm run verify && npm run test:handoff && npm run test:orchestration && npm run test:migration && npm run test:hook && npm run test:review-workflow && npm run test:gate && npm run test:ste && npm run test:change-model && npm run test:video && npm run test:consistency && npm run test:upstream",
+    "test": "npm run verify && npm run test:handoff && npm run test:orchestration && npm run test:migration && npm run test:hook && npm run test:review-workflow && npm run test:gate && npm run test:ste && npm run test:change-model && npm run test:video && npm run test:recap && npm run test:consistency && npm run test:upstream",
     "test:orchestration": "node --test scripts/test-orchestration.mjs",
     "test:gate": "node --test scripts/test-implementation-gate.mjs",
     "test:hook": "node --test scripts/test-approval-hook.mjs",
@@ -36,6 +36,7 @@
     "test:ste": "node --test scripts/test-ste-lint.mjs",
     "test:change-model": "node --test scripts/test-change-model.mjs",
     "test:video": "node --test scripts/test-explainer-video.mjs",
+    "test:recap": "node --test scripts/test-change-recap.mjs",
     "test:migration": "node --test scripts/test-migration.mjs",
     "test:handoff": "node --test scripts/test-stage-handoff.mjs",
     "pack": "bash scripts/pack-skill.sh",
