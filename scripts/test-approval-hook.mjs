@@ -24,7 +24,7 @@ function decisionOf(stdout) {
  * 造一个只含 review-summary.md 的临时项目，返回 hook 的判定结果。
  * signoffLine 为 null 时 summary 不写签字行；command 是 Bash 工具要执行的整条命令。
  */
-function runHook(t, signoffLine, { withSummary = true, command = 'openspec apply demo' } = {}) {
+function runHook(t, signoffLine, { withSummary = true, command = 'openspec apply demo', locale } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'approval-hook-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   if (withSummary) {
@@ -34,7 +34,7 @@ function runHook(t, signoffLine, { withSummary = true, command = 'openspec apply
   }
   const r = spawnSync('/bin/bash', [HOOK.pathname], {
     cwd: root,
-    env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: root, ...(locale ? { LC_ALL: locale } : {}) },
     input: JSON.stringify({ tool_input: { command } }),
     encoding: 'utf8',
   })
@@ -117,6 +117,40 @@ test('Gate-Verdict: BLOCKED 时即使已签字也拦截', (t) => {
 
 test('CRLF 换行的 summary 中 Gate-Verdict: BLOCKED 仍拦截', (t) => {
   assert.equal(runHook(t, 'Gate-Verdict: BLOCKED\r\nTechnical Review Approved: 张三 2026-10-14\r').denied, true)
+})
+
+// 全角空格（U+3000）在 C locale 下不算空白，在 UTF-8 locale 下算空白，hook 判定曾随 locale 变化，所以三种都跑。
+const LOCALES = ['C', 'zh_CN.UTF-8', 'en_US.UTF-8']
+const SIGNED = 'Technical Review Approved: 张三 2026-10-14'
+
+test('Gate-Verdict 值的前后有全角空格或全角括号说明时仍按 BLOCKED 拦截', (t) => {
+  // 中文输入法下常见的三种写法：awk 不按全角空格分词，值曾被取成「BLOCKED　（未闭环）」等，BLOCKED 的评审被放行。
+  for (const locale of LOCALES) {
+    for (const verdictLine of [
+      'Gate-Verdict: BLOCKED　（未闭环）',
+      'Gate-Verdict: BLOCKED（未闭环）',
+      'Gate-Verdict:　BLOCKED',
+    ]) {
+      assert.equal(runHook(t, `${verdictLine}\n${SIGNED}`, { locale }).denied, true, `${locale}: ${verdictLine}`)
+    }
+  }
+})
+
+test('签字值只有全角空格 → deny', (t) => {
+  // tr -d '[:space:]' 在 C locale 下不删除全角空格，签字值曾被当成非空而放行。
+  for (const locale of LOCALES) {
+    for (const signoffLine of ['Technical Review Approved: 　', 'Technical Review Approved:　 　']) {
+      assert.equal(runHook(t, signoffLine, { locale }).denied, true, `${locale}: ${JSON.stringify(signoffLine)}`)
+    }
+  }
+})
+
+test('READY 后接全角说明、签名中含全角空格 → 放行', (t) => {
+  // 防止处理全角空格时拦得过宽：裁决仍是 READY、签字行写了批准人时必须放行。
+  for (const locale of LOCALES) {
+    assert.equal(runHook(t, `Gate-Verdict: READY_FOR_HUMAN_APPROVAL　（有条件通过）\n${SIGNED}`, { locale }).denied, false, locale)
+    assert.equal(runHook(t, 'Technical Review Approved: 张三　2026-10-14', { locale }).denied, false, locale)
+  }
 })
 
 test('超长 heredoc 命令不让 hook 报错退出', (t) => {

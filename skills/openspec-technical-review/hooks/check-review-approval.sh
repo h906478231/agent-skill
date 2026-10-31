@@ -104,10 +104,15 @@ if [ ! -f "$SUMMARY" ]; then
 fi
 
 # 裁决行：Gate-Verdict: BLOCKED 时即使已签字也拦截（格式见 shared/gate-policy.md「机器可读裁决行」）。
-# 允许行首有列表 / 引用标记，值去掉反引号、星号与 CR（CRLF 文件）后取第一个词。
+# 允许行首有列表 / 引用标记。值取冒号后第一个由 ASCII 字母与下划线组成的词：
+# 先跳过词前的空格、反引号、星号等字符，再在词后第一个其他字符（空格、CR、说明文字）处截断。
+# 不按空白分词，是因为中文输入法常在值前后写出全角空格（U+3000）或直接接全角括号：
+# awk 不把全角空格当分隔符，[[:space:]] 是否包含全角空格又随 locale 变化，
+# 曾把「BLOCKED　（未闭环）」「BLOCKED（未闭环）」取成整串，不等于 BLOCKED 而放行 apply。
+# LC_ALL=C 让 sed 按字节匹配：全角字符的每个字节都不在 [A-Za-z_] 内，结果与当前 locale 无关。
 # 缺该行的旧版 summary 只校验签字行，兼容此前生成的产物。
 VERDICT="$(grep -m1 -E '^[-*>[:space:]]*Gate-Verdict:' "$SUMMARY" \
-  | sed -E 's/.*Gate-Verdict:[[:space:]]*//' | tr -d '`*\r' | awk '{print $1}' || true)"
+  | LC_ALL=C sed -E 's/.*Gate-Verdict://; s/^[^A-Za-z_]*//; s/[^A-Za-z_].*$//' || true)"
 if [ "$VERDICT" = "BLOCKED" ]; then
   deny "变更 [$CHANGE_NAME] 的技术评审裁决为 BLOCKED（review-summary.md 的 Gate-Verdict 行）：未闭环 Blocker 必须先回 design.md 闭环并重走门禁，签字不能替代闭环。禁止 apply。"
 fi
@@ -120,8 +125,12 @@ if [ -z "$SIGN_LINE" ]; then
   deny "变更 [$CHANGE_NAME] 的 review-summary.md 缺少「Technical Review Approved:」签字行，技术评审门禁产物不完整，禁止 apply。"
 fi
 
-# 取冒号后、首个「签署人」之前的内容作为签字值
-SIGN_VALUE="$(printf '%s' "$SIGN_LINE" | sed -E 's/.*Technical Review Approved:[[:space:]]*//; s/签署人.*//' | tr -d '[:space:]')"
+# 取冒号后、首个「签署人」之前的内容作为签字值，再删除其中全部空白。
+# 全角空格（U+3000）由 sed 单独删除：tr 的 [:space:] 在 C locale 下不包含它，
+# 签字值只有全角空格时曾在 C locale 下判为已签字而放行，UTF-8 locale 下才拦截。
+# 不用 tr 删全角空格：C locale 下 tr 按单字节删除，会拆坏其他中文字符；
+# sed 按三字节字面串匹配，E3 只能是 UTF-8 首字节，C 与 UTF-8 locale 下都只删全角空格本身。
+SIGN_VALUE="$(printf '%s' "$SIGN_LINE" | sed -E 's/.*Technical Review Approved:[[:space:]]*//; s/签署人.*//; s/　//g' | tr -d '[:space:]')"
 
 # 空白占位判定：为空 / 仅由下划线组成 / 以下划线开头但后面跟着括号说明 / 仍含「＜签名＞」「<签名>」类模板占位符 → 未签字
 # 注：占位符用 grep -F 做字节级子串匹配，避免全角字符在正则字符类中按字节拆分导致误判；
