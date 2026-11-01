@@ -103,22 +103,41 @@ if [ ! -f "$SUMMARY" ]; then
   exit 0
 fi
 
+# 非 ASCII 空白：与 JS 正则 \s 中的非 ASCII 字符相同（门禁脚本 implementation-gate.mjs 的 facts 用 \s 判断空白），
+# 共 19 个：U+00A0、U+1680、U+2000–U+200A、U+2028、U+2029、U+202F、U+205F、U+3000、U+FEFF。
+# 为什么要列出来：[[:space:]] 包含哪些字符随 locale 变化，C locale 下只含 ASCII 空白，
+# 行首写了全角空格或 U+00A0 的 BLOCKED 裁决行、只有这类空白的签字值，曾在 C locale 下放行 apply。
+# 为什么写成 UTF-8 字节的字面串、用 | 连接：LC_ALL=C 下方括号字符类会把多字节字符拆成单个字节，删坏其他中文字符；
+# 每个字面串都以 UTF-8 首字节开头，按整串匹配只会命中完整的空白字符，不会命中其他字符的一部分。
+# 增删字符时同步仓库 scripts/test-approval-hook.mjs 的 UNICODE_SPACES（该测试核对清单与 JS \s 相同）。
+UNICODE_SPACES=$'\xc2\xa0|\xe1\x9a\x80'\
+$'|\xe2\x80\x80|\xe2\x80\x81|\xe2\x80\x82|\xe2\x80\x83|\xe2\x80\x84|\xe2\x80\x85|\xe2\x80\x86|\xe2\x80\x87|\xe2\x80\x88|\xe2\x80\x89|\xe2\x80\x8a'\
+$'|\xe2\x80\xa8|\xe2\x80\xa9|\xe2\x80\xaf|\xe2\x81\x9f|\xe3\x80\x80|\xef\xbb\xbf'
+
+# 输出 summary，其中的非 ASCII 空白都换成 ASCII 空格。
+# 后面识别裁决行、取裁决值、取签字值都在 LC_ALL=C 下读取这份输出：空白只剩 ASCII 空白，
+# [[:space:]] 与 tr 在 C locale 下正好只处理 ASCII 空白，判定结果与当前 locale 无关。
+normalized_summary() {
+  LC_ALL=C sed -E "s/($UNICODE_SPACES)/ /g" "$SUMMARY"
+}
+
 # 裁决行：Gate-Verdict: BLOCKED 时即使已签字也拦截（格式见 shared/gate-policy.md「机器可读裁决行」）。
-# 允许行首有列表 / 引用标记。值取冒号后第一个由 ASCII 字母与下划线组成的词：
+# 允许行首有列表 / 引用标记与空白。冒号接受半角「:」与全角「：」：中文输入法常把冒号写成全角，
+# 只认半角时这类 BLOCKED 裁决行不被当作裁决行，已签字时放行 apply。
+# 全角冒号写成 (:|：) 的字面串选择，不写进方括号字符类，原因同 UNICODE_SPACES。
+# 值取冒号后第一个由 ASCII 字母与下划线组成的词：
 # 先跳过词前的空格、反引号、星号等字符，再在词后第一个其他字符（空格、CR、说明文字）处截断。
-# 不按空白分词，是因为中文输入法常在值前后写出全角空格（U+3000）或直接接全角括号：
-# awk 不把全角空格当分隔符，[[:space:]] 是否包含全角空格又随 locale 变化，
-# 曾把「BLOCKED　（未闭环）」「BLOCKED（未闭环）」取成整串，不等于 BLOCKED 而放行 apply。
-# LC_ALL=C 让 sed 按字节匹配：全角字符的每个字节都不在 [A-Za-z_] 内，结果与当前 locale 无关。
+# 不按空白分词，是因为中文输入法常在值后直接接全角括号：曾把「BLOCKED（未闭环）」取成整串，不等于 BLOCKED 而放行 apply。
+# LC_ALL=C 让 sed 按字节匹配：全角字符的每个字节都不在 [A-Za-z_] 内。
 # 缺该行的旧版 summary 只校验签字行，兼容此前生成的产物。
-VERDICT="$(grep -m1 -E '^[-*>[:space:]]*Gate-Verdict:' "$SUMMARY" \
-  | LC_ALL=C sed -E 's/.*Gate-Verdict://; s/^[^A-Za-z_]*//; s/[^A-Za-z_].*$//' || true)"
+VERDICT="$(normalized_summary | LC_ALL=C grep -m1 -E '^[-*>[:space:]]*Gate-Verdict(:|：)' \
+  | LC_ALL=C sed -E 's/.*Gate-Verdict(:|：)//; s/^[^A-Za-z_]*//; s/[^A-Za-z_].*$//' || true)"
 if [ "$VERDICT" = "BLOCKED" ]; then
   deny "变更 [$CHANGE_NAME] 的技术评审裁决为 BLOCKED（review-summary.md 的 Gate-Verdict 行）：未闭环 Blocker 必须先回 design.md 闭环并重走门禁，签字不能替代闭环。禁止 apply。"
 fi
 
-# 取签字行
-SIGN_LINE="$(grep -m1 'Technical Review Approved:' "$SUMMARY" || true)"
+# 取签字行（非 ASCII 空白已换成 ASCII 空格，见 normalized_summary）
+SIGN_LINE="$(normalized_summary | LC_ALL=C grep -m1 'Technical Review Approved:' || true)"
 
 # 无签字行 → 视为门禁产物不完整，拦截
 if [ -z "$SIGN_LINE" ]; then
@@ -126,11 +145,11 @@ if [ -z "$SIGN_LINE" ]; then
 fi
 
 # 取冒号后、首个「签署人」之前的内容作为签字值，再删除其中全部空白。
-# 全角空格（U+3000）由 sed 单独删除：tr 的 [:space:] 在 C locale 下不包含它，
-# 签字值只有全角空格时曾在 C locale 下判为已签字而放行，UTF-8 locale 下才拦截。
-# 不用 tr 删全角空格：C locale 下 tr 按单字节删除，会拆坏其他中文字符；
-# sed 按三字节字面串匹配，E3 只能是 UTF-8 首字节，C 与 UTF-8 locale 下都只删全角空格本身。
-SIGN_VALUE="$(printf '%s' "$SIGN_LINE" | sed -E 's/.*Technical Review Approved:[[:space:]]*//; s/签署人.*//; s/　//g' | tr -d '[:space:]')"
+# 非 ASCII 空白在 normalized_summary 中已换成 ASCII 空格，这里只需删除 ASCII 空白：
+# tr 的 [:space:] 曾随 locale 变化，C locale 下不删 U+00A0、U+2003 等，只有这类空白的签字值被判为已签字；
+# U+00A0 写在下划线占位之前时，签字值也不以两个下划线开头，同样被判为已签字。
+# LC_ALL=C 让 sed 与 tr 按字节处理：只删 ASCII 空白字节，不会拆坏中文字符，结果与当前 locale 无关。
+SIGN_VALUE="$(printf '%s' "$SIGN_LINE" | LC_ALL=C sed -E 's/.*Technical Review Approved:[[:space:]]*//; s/签署人.*//' | LC_ALL=C tr -d '[:space:]')"
 
 # 空白占位判定：为空 / 仅由下划线组成 / 以下划线开头但后面跟着括号说明 / 仍含「＜签名＞」「<签名>」类模板占位符 → 未签字
 # 注：占位符用 grep -F 做字节级子串匹配，避免全角字符在正则字符类中按字节拆分导致误判；
