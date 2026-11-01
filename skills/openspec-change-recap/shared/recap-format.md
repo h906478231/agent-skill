@@ -97,7 +97,7 @@ Finding 状态只从实现后的双轴报告 `review/standards.md`、`review/spe
 - 一份报告中 `open` 的 finding 合并成一条事项，写出数量、每个严重级别的数量与 ID，例如「`review/standards.md` 有 8 个 `open` 的 finding：Minor 7 个、Major 1 个（STD-02～STD-08、STD-10）」。
 - 状态为 `risk-accepted` 的 finding 单独写一条 Risk Accepted 事项，写出 ID 与留痕位置。
 - 状态为 `closed`、`false-positive` 的 finding 不写入 `没做与遗留`。
-- 变更没有双轴报告时（L0、L1 可以不运行 `/opsx:quality`），finding 部分写「没有双轴评审报告」，不写 `无`。
+- 变更没有双轴报告时（L0、L1 可以不运行 `/opsx:quality`），finding 部分写 `未定义（没有双轴评审报告）`，不写 `无`：这是第 3 条「两处都没有状态」的一种情况，括号中写出原因。
 
 ### 事项的写法
 
