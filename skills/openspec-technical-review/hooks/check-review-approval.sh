@@ -115,7 +115,7 @@ $'|\xe2\x80\x80|\xe2\x80\x81|\xe2\x80\x82|\xe2\x80\x83|\xe2\x80\x84|\xe2\x80\x85
 $'|\xe2\x80\xa8|\xe2\x80\xa9|\xe2\x80\xaf|\xe2\x81\x9f|\xe3\x80\x80|\xef\xbb\xbf'
 
 # 把 stdin 中的非 ASCII 空白都换成 ASCII 空格。
-# 之后识别裁决行、取裁决值、取签字值都在 LC_ALL=C 下进行：空白只剩 ASCII 空白，
+# 识别裁决行、取裁决值、删除签字值空白都在替换之后、LC_ALL=C 下进行：空白只剩 ASCII 空白，
 # [[:space:]] 与 tr 在 C locale 下正好只处理 ASCII 空白，判定结果与当前 locale 无关。
 normalize_spaces() {
   LC_ALL=C sed -E "s/($UNICODE_SPACES)/ /g"
@@ -136,22 +136,24 @@ if [ "$VERDICT" = "BLOCKED" ]; then
   deny "变更 [$CHANGE_NAME] 的技术评审裁决为 BLOCKED（review-summary.md 的 Gate-Verdict 行）：未闭环 Blocker 必须先回 design.md 闭环并重走门禁，签字不能替代闭环。禁止 apply。"
 fi
 
-# 取签字行：标记按字面匹配原文，选中后再替换其中的非 ASCII 空白（见 normalize_spaces）。
+# 取签字行：标记按字面匹配原文，不先替换非 ASCII 空白。
 # 先替换再找标记会把「Technical<U+00A0>Review Approved: 张三」这类行当作签字行，比修复前放得更宽；
 # facts 也按字面找标记（line.includes），两边选中同一行。
-SIGN_LINE="$(LC_ALL=C grep -m1 'Technical Review Approved:' "$SUMMARY" | normalize_spaces || true)"
+SIGN_LINE="$(LC_ALL=C grep -m1 'Technical Review Approved:' "$SUMMARY" || true)"
 
 # 无签字行 → 视为门禁产物不完整，拦截
 if [ -z "$SIGN_LINE" ]; then
   deny "变更 [$CHANGE_NAME] 的 review-summary.md 缺少「Technical Review Approved:」签字行，技术评审门禁产物不完整，禁止 apply。"
 fi
 
-# 取冒号后、首个「签署人」之前的内容作为签字值，再删除其中全部空白。
-# 非 ASCII 空白在 normalize_spaces 中已换成 ASCII 空格，这里只需删除 ASCII 空白：
-# tr 的 [:space:] 曾随 locale 变化，C locale 下不删 U+00A0、U+2003 等，只有这类空白的签字值被判为已签字；
-# U+00A0 写在下划线占位之前时，签字值也不以两个下划线开头，同样被判为已签字。
+# 取最后一个标记之后、首个「签署人」之前的内容作为签字值，再删除其中全部空白。
+# 定位标记与「签署人」都在原文上进行，之后才用 normalize_spaces 把非 ASCII 空白换成 ASCII 空格：
+# 先替换会让「Technical<U+00A0>Review Approved:」变成第二个标记，签字值的位置就与 facts（原文上的 lastIndexOf）不同。
+# 替换后只需删除 ASCII 空白：tr 的 [:space:] 曾随 locale 变化，C locale 下不删 U+00A0、U+2003 等，
+# 只有这类空白的签字值被判为已签字；U+00A0 写在下划线占位之前时，签字值也不以两个下划线开头，同样被判为已签字。
 # LC_ALL=C 让 sed 与 tr 按字节处理：只删 ASCII 空白字节，不会拆坏中文字符，结果与当前 locale 无关。
-SIGN_VALUE="$(printf '%s' "$SIGN_LINE" | LC_ALL=C sed -E 's/.*Technical Review Approved:[[:space:]]*//; s/签署人.*//' | LC_ALL=C tr -d '[:space:]')"
+SIGN_VALUE="$(printf '%s' "$SIGN_LINE" | LC_ALL=C sed -E 's/.*Technical Review Approved://; s/签署人.*//' \
+  | normalize_spaces | LC_ALL=C tr -d '[:space:]')"
 
 # 空白占位判定：为空 / 仅由下划线组成 / 以下划线开头但后面跟着括号说明 / 仍含「＜签名＞」「<签名>」类模板占位符 → 未签字
 # 注：占位符用 grep -F 做字节级子串匹配，避免全角字符在正则字符类中按字节拆分导致误判；
