@@ -109,7 +109,9 @@ fi
 # 行首写了全角空格或 U+00A0 的 BLOCKED 裁决行、只有这类空白的签字值，曾在 C locale 下放行 apply。
 # 为什么写成 UTF-8 字节的字面串、用 | 连接：LC_ALL=C 下方括号字符类会把多字节字符拆成单个字节，删坏其他中文字符；
 # 每个字面串都以 UTF-8 首字节开头，按整串匹配只会命中完整的空白字符，不会命中其他字符的一部分。
-# 增删字符时同步仓库 scripts/test-approval-hook.mjs 的 UNICODE_SPACES（该测试核对清单与 JS \s 相同）。
+# 同一组规则在 ../scripts/implementation-gate.mjs 的 verdictOf / approvalOf 中另有一份（进度视图读取 facts）。
+# 增删字符时同步仓库 scripts/lib/review-approval-samples.mjs 的 UNICODE_SPACES（hook 测试核对清单与 JS \s 相同）；
+# 新增写法时把样本加到该文件，hook 测试与 facts 的一致性测试一起覆盖。
 UNICODE_SPACES=$'\xc2\xa0|\xe1\x9a\x80'\
 $'|\xe2\x80\x80|\xe2\x80\x81|\xe2\x80\x82|\xe2\x80\x83|\xe2\x80\x84|\xe2\x80\x85|\xe2\x80\x86|\xe2\x80\x87|\xe2\x80\x88|\xe2\x80\x89|\xe2\x80\x8a'\
 $'|\xe2\x80\xa8|\xe2\x80\xa9|\xe2\x80\xaf|\xe2\x81\x9f|\xe3\x80\x80|\xef\xbb\xbf'

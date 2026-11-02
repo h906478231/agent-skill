@@ -1673,11 +1673,17 @@ function checkHygiene(changeRoot) {
 // 变更事实（facts，供进度视图 openspec-change-progress 读取）
 // ============================================================================
 
-/** 裁决行的标记（gate-policy.md「机器可读裁决行」）：hook 用它识别裁决行，并删除到它为止再取裁决值。 */
-const GATE_VERDICT_MARKER = 'Gate-Verdict:'
+/**
+ * 裁决行的标记（gate-policy.md「机器可读裁决行」）：hook 用它识别裁决行，并删除到最后一个标记为止再取裁决值。
+ * 冒号可以是半角「:」或全角「：」，与 hook 的 `Gate-Verdict(:|：)` 相同：中文输入法常把冒号写成全角。
+ */
+const GATE_VERDICT_MARKER = /Gate-Verdict[:：]/
 
-/** review-summary.md 的机器可读裁决行：允许行首有列表或引用标记，与 hook 的 grep 相同。标记只写在 GATE_VERDICT_MARKER 一处。 */
-const GATE_VERDICT_LINE = new RegExp(`^[-*>\\s]*${escapeRegExp(GATE_VERDICT_MARKER)}`)
+/**
+ * review-summary.md 的机器可读裁决行：允许行首有列表、引用标记与空白，与 hook 的 grep 相同。标记只写在 GATE_VERDICT_MARKER 一处。
+ * `\s` 中的非 ASCII 空白与 hook 的 UNICODE_SPACES 是同一组（清单见仓库 scripts/lib/review-approval-samples.mjs）。
+ */
+const GATE_VERDICT_LINE = new RegExp(`^[-*>\\s]*${GATE_VERDICT_MARKER.source}`)
 
 /** 签字行的标记：与 hook 相同，按包含匹配，不要求在行首。 */
 const APPROVAL_MARKER = 'Technical Review Approved:'
@@ -1688,11 +1694,12 @@ const SIGNER_MARKER = '签署人'
 /**
  * 签字值是否仍是空白占位，规则与 hook 相同：删除全部空白后为空、只有下划线、以两个下划线开头（占位符后补了说明），
  * 或含模板占位符时为 blank。真实签名不会以连续下划线开头。
+ * 空白是 JS `\s`：hook 删除 ASCII 空白与 UNICODE_SPACES 中的非 ASCII 空白，是同一组字符。
  * @param {string} line 第一行含 APPROVAL_MARKER 的行。
  * @returns {'signed'|'blank'}
  */
 function approvalOf(line) {
-  // hook 的 sed 用贪婪匹配删除到最后一个标记，「签署人」按最左匹配截断，这里取同样的位置。
+  // hook 在原文上用贪婪匹配删除到最后一个标记，「签署人」按最左匹配截断，之后才替换空白，这里取同样的位置。
   const after = line.slice(line.lastIndexOf(APPROVAL_MARKER) + APPROVAL_MARKER.length)
   const signer = after.indexOf(SIGNER_MARKER)
   const value = (signer < 0 ? after : after.slice(0, signer)).replace(/\s/g, '')
@@ -1702,13 +1709,13 @@ function approvalOf(line) {
 }
 
 /**
- * 裁决行中的裁决值，规则与 hook 相同（提交 75eb718）：最后一个标记之后第一个由 ASCII 字母与下划线组成的词。
+ * 裁决行中的裁决值，规则与 hook 相同：最后一个标记（半角或全角冒号）之后第一个由 ASCII 字母与下划线组成的词。
  * @param {string} line 第一行匹配 GATE_VERDICT_LINE 的行。
  * @returns {string|null} 没有这样的词时为 null（例如「待定」），进度视图按 R4 交给人工核对。
  */
 function verdictOf(line) {
-  // hook 的 sed `.*Gate-Verdict:` 是贪婪匹配，删除到最后一个标记为止，所以这里取最后一个标记之后的内容。
-  const after = line.slice(line.lastIndexOf(GATE_VERDICT_MARKER) + GATE_VERDICT_MARKER.length)
+  // hook 的 sed `.*Gate-Verdict(:|：)` 是贪婪匹配，删除到最后一个标记为止，所以这里取最后一个标记之后的内容。
+  const after = line.split(GATE_VERDICT_MARKER).pop()
   // 不按空白分词：中文输入法常在值前后写全角空格，或在值后直接接全角括号说明，按空白分词会把说明并进裁决值。
   // 反引号、星号、CR 与全角字符都不在 [A-Za-z_] 内，自然被跳过或截断，与 hook 的 LC_ALL=C sed 结果相同。
   return after.match(/[A-Za-z_]+/)?.[0] ?? null
