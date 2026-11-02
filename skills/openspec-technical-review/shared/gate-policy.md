@@ -38,6 +38,7 @@ Technical Review Approved: __________
 
 - 重走门禁、驳回或 risk accepted 改变裁决时，同步更新 `Gate-Verdict` 行。
 - `Gate-Verdict: BLOCKED` 时，**即使签字行已签也禁止 apply**（hook 与 `apply-gate-check.md` 都按此拦截）。
+- 读取时容许手写变体（生成时仍按上面的格式写）：键名前可以有列表、引用标记与空白；键名后的冒号可以是半角 `:` 或全角 `：`；裁决值取冒号后第一个由 ASCII 字母与下划线组成的词。空白包括全角空格、U+00A0 等非 ASCII 空白，与 JS 正则 `\s` 相同（清单见 `hooks/check-review-approval.sh` 的 `UNICODE_SPACES`），签字值删除空白时也用这一组。hook 与 apply 前置校验按同一规则读取，结果与 locale 无关。
 - L3 在签字行后追加 `复核: __________`，对应分级表的「建议第二人复核」。**这一行是建议项**：留空不拦截，hook 与 apply 前置校验都不检查它。
 - 本格式引入前生成的 `review-summary.md` 没有 `Gate-Verdict` 行：hook 只校验签字行，apply 前置校验从门禁裁决项读裁决。
 

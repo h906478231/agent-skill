@@ -16,16 +16,16 @@
 ## 校验动作（仅在 review-summary.md 存在时执行）
 
 ```bash
-grep -m1 -E '^[-*>[:space:]]*Gate-Verdict:' "openspec/changes/<name>/review-summary.md"
+grep -n -E 'Gate-Verdict(:|：)' "openspec/changes/<name>/review-summary.md"
 grep -m1 'Technical Review Approved:' "openspec/changes/<name>/review-summary.md"
 ```
 
-`Gate-Verdict` 行的格式见 `gate-policy.md`「机器可读裁决行」。
+裁决行是第一条命令输出中第一个满足这个条件的行：`Gate-Verdict` 之前只有列表、引用标记与空白。格式与读取规则见 `gate-policy.md`「机器可读裁决行」，与 hook 相同。行首不用 grep 的 `[[:space:]]` 判断：它是否包含全角空格、U+00A0 等非 ASCII 空白随 locale 变化。
 
 | 情况 | 处理 |
 |------|------|
 | **`Gate-Verdict: BLOCKED`** | 即使有签字也**停止**。未闭环 Blocker 必须先回 `design.md` 闭环并重走门禁 |
-| **签字行仍是空白占位**（空、`____`、`<签名>`、以下划线开头再补括号说明如 `__________ （签字 / 日期）`） | 门禁跑过但无人批准。**停止**，请用户审阅 `review/*.md` 后签字（判定规则与 `hooks/check-review-approval.sh` 一致） |
+| **签字行仍是空白占位**（空或只有空白，含全角空格等非 ASCII 空白、`____`、`<签名>`、以下划线开头再补括号说明如 `__________ （签字 / 日期）`） | 门禁跑过但无人批准。**停止**，请用户审阅 `review/*.md` 后签字（判定规则与 `hooks/check-review-approval.sh` 一致） |
 | **缺 `Gate-Verdict` 行**（本格式引入前生成的旧版产物） | 从门禁裁决项读裁决：`BLOCKED` 或读不出裁决时**停止**并请用户确认；`READY_FOR_HUMAN_APPROVAL` 再按签字行判断 |
 | **已签字且 `Gate-Verdict: READY_FOR_HUMAN_APPROVAL`** | 放行，继续实现 |
 

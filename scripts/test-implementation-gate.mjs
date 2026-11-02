@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { snapshot } from './lib/fs-snapshot.mjs'
-import { FULL_WIDTH_LINES, SIGNATURE_LINES, VERDICT_LINES } from './lib/review-approval-samples.mjs'
+import { FULL_WIDTH_LINES, SIGNATURE_LINES, UNICODE_SPACE_LINES, VERDICT_LINES } from './lib/review-approval-samples.mjs'
 
 // 通过 /opsx:quality、/opsx:apply、/opsx:verify、/opsx:archive 实际调用的确定性校验入口验证行为；
 // 每个用例在临时 git 仓库里构造真实变更目录，不连接远端、不改动本仓库。
@@ -2006,8 +2006,9 @@ test('facts：Open Questions 只写「无。」、没有该节或没有 design.m
 const approvalHook = fileURLToPath(new URL('../skills/openspec-technical-review/hooks/check-review-approval.sh', import.meta.url))
 
 /**
- * 签字行样本：前 9 个是 hook 测试也使用的共享样本（scripts/lib/review-approval-samples.mjs，含全角写法），null 表示没有签字行，
- * 其余覆盖 hook 的其他判定分支：空值、单个下划线、模板占位符、「签署人」之后的内容不算签字值、行首有列表与加粗标记。
+ * 签字行样本：开头是 hook 测试也使用的共享样本（scripts/lib/review-approval-samples.mjs，含全角与非 ASCII 空白写法），null 表示没有签字行，
+ * 其余覆盖 hook 的其他判定分支：空值、单个下划线、模板占位符、「签署人」之后的内容不算签字值、行首有列表与加粗标记，
+ * 以及替换非 ASCII 空白后才出现的第二个标记：签字值取原文中最后一个标记之后的内容，替换空白不能改变标记位置。
  */
 const SIGNATURE_SAMPLES = [
   ...SIGNATURE_LINES.placeholder,
@@ -2015,6 +2016,9 @@ const SIGNATURE_SAMPLES = [
   ...SIGNATURE_LINES.signed,
   ...FULL_WIDTH_LINES.blankSignature,
   ...FULL_WIDTH_LINES.signedSignature,
+  ...UNICODE_SPACE_LINES.blankSignature,
+  ...UNICODE_SPACE_LINES.signedSignature,
+  ...UNICODE_SPACE_LINES.brokenMarker,
   null,
   'Technical Review Approved:',
   'Technical Review Approved: _',
@@ -2023,13 +2027,17 @@ const SIGNATURE_SAMPLES = [
   'Technical Review Approved: __________ 签署人：张三',
   'Technical Review Approved: 签署人：张三',
   '- **Technical Review Approved:** 张三 2026-10-30',
+  'Technical Review Approved: 张三 Technical\u00A0Review Approved: __________',
 ]
 
-/** 用 apply 前的签字 hook 判定 demo 变更（hook 以项目根为 cwd）：返回 true 表示放行。 */
-function hookAllows(f) {
+/** 一致性测试运行 hook 的 locale：C locale 下 grep 与 tr 只把 ASCII 空白当作空白，hook 曾只在 C locale 下与 facts 判定相反（STD-07）。 */
+const HOOK_LOCALES = ['C', 'zh_CN.UTF-8']
+
+/** 在 locale 下用 apply 前的签字 hook 判定 demo 变更（hook 以项目根为 cwd）：返回 true 表示放行。 */
+function hookAllows(f, locale) {
   const result = spawnSync('/bin/bash', [approvalHook], {
     cwd: f.repo,
-    env: { ...process.env, CLAUDE_PROJECT_DIR: f.repo },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: f.repo, LC_ALL: locale },
     input: JSON.stringify({ tool_input: { command: 'openspec apply demo' } }),
     encoding: 'utf8',
   })
@@ -2039,13 +2047,16 @@ function hookAllows(f) {
 
 test('facts：签字行判定与 apply 前的签字 hook 一致，hook 放行的样本为 signed，拦截的样本为 blank 或 missing', t => {
   const f = fixture(t)
-  const outcomes = SIGNATURE_SAMPLES.map(sample => {
+  const outcomes = SIGNATURE_SAMPLES.flatMap(sample => {
     writeSummary(f, ...(sample === null ? [] : [sample]))
     const approval = factsOf(f).technicalReview.approval
-    const allowed = hookAllows(f)
-    if (allowed) assert.equal(approval, 'signed', String(sample))
-    else assert.ok(['blank', 'missing'].includes(approval), `${sample}：hook 拦截，facts 为 ${approval}`)
-    return { sample, allowed, approval }
+    return HOOK_LOCALES.map(locale => {
+      const allowed = hookAllows(f, locale)
+      const label = `${locale}: ${JSON.stringify(sample)}`
+      if (allowed) assert.equal(approval, 'signed', label)
+      else assert.ok(['blank', 'missing'].includes(approval), `${label}：hook 拦截，facts 为 ${approval}`)
+      return { sample, allowed, approval }
+    })
   })
   // 两种结果都要出现，避免 hook 或 facts 对全部样本给出同一结果时测试仍通过。
   assert.deepEqual([...new Set(outcomes.map(item => item.allowed))].sort(), [false, true])
@@ -2058,7 +2069,7 @@ test('facts：裁决行判定与 apply 前的签字 hook 一致，hook 因 BLOCK
   for (const [line, blocked] of samples) {
     // 签字行已签：hook 拦截只能来自裁决行。期望结论取自样本分组，不由任何一份实现推算。
     writeSummary(f, line, SIGNATURE_LINES.signed[0])
-    assert.equal(hookAllows(f), !blocked, `hook：${JSON.stringify(line)}`)
+    for (const locale of HOOK_LOCALES) assert.equal(hookAllows(f, locale), !blocked, `hook ${locale}：${JSON.stringify(line)}`)
     assert.equal(factsOf(f).technicalReview.gateVerdict === 'BLOCKED', blocked, `facts：${JSON.stringify(line)}`)
   }
 })
