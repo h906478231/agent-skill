@@ -5,7 +5,7 @@
 ## 目录结构
 
 ```
-skills/          跨 agent 通用能力（41 个），SKILL.md 标准格式
+skills/          跨 agent 通用能力（45 个），SKILL.md 标准格式
 claude/          Claude Code 专用资产（command / subagent），其他 agent 不支持
 workflow/        云舟编排脚本（`.workflow.js`）与研发流程文档
 mcp-servers/     云舟平台 MCP 集成服务器
@@ -28,7 +28,7 @@ docs/            接入与使用文档
 
 ### 一键安装（推荐）
 
-安装所有 43 个 skills 到支持的 AI 编码工具：
+安装所有 45 个 skills 到支持的 AI 编码工具：
 
 ```bash
 npx skills add h906478231/agent-skill -g -a '*'
@@ -105,7 +105,7 @@ npx skills remove --skill ddd-aggregate
 `openspec-verify-change` `openspec-propose` `openspec-apply-change`
 `openspec-update-change` `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
-### OpenSpec 流程增强（10 个）
+### OpenSpec 流程增强（11 个）
 
 | skill                      | 作用 | 命令 |
 |---|---|---|
@@ -119,6 +119,7 @@ npx skills remove --skill ddd-aggregate
 | `openspec-ste` | 中文 STE 检查：propose / update / apply / verify 四个卡点阻断禁用别名、非受控通用词与模糊词；含 Claude Code Stop hook（需手动注册） | 无（由四个卡点调用） |
 | `openspec-explainer-video` | 按人工要求为含变更模型的变更生成讲解视频：AI 编写分镜，人工签署后用 Manim 渲染配音与中文硬字幕；默认离线 TTS，不进入默认流程。依赖由 `video.mjs doctor` 给出安装指引 | `/opsx:video` |
 | `openspec-change-recap` | 完成清单：为已归档变更按新增、修改、删除、修复、没做与遗留列出事项，以实际结果为准；脚本按主题打印跨变更总表。archive 归档后自动生成，由一个子 agent 生成 | `/opsx:recap` |
+| `openspec-change-progress` | 进度视图：只读当前项目的 `openspec/`，为每个活跃变更列出分级、阶段、任务勾选数、待决定条数、卡点与下一步命令；阶段推导读取门禁脚本 `facts` 的输出，`--json` 供 agent 读取 | `/opsx:progress` |
 
 ### 云舟任务评论（3 个）
 
@@ -148,7 +149,7 @@ npx skills remove --skill ddd-aggregate
 
 | 资产 | 说明 | 手动安装位置 |
 |---|---|---|
-| `commands/opsx/` | opsx 命令组（14 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
+| `commands/opsx/` | opsx 命令组（16 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
 | `agents/ddd-modeler.md` | DDD 建模 subagent | `~/.claude/agents/` |
 | `agents/ddd-architect-claude.md` | DDD 主控 subagent（含子 agent 结论回流规则） | `~/.claude/agents/` |
 | `agents/ddd-architect.md` | 同上能力的 opencode 形态（`mode: primary` + permission 白名单） | 按目标 agent 的 agents 目录放置 |
@@ -163,7 +164,7 @@ npx skills remove --skill ddd-aggregate
 
 **升级 OpenSpec 时**：重新生成会整文件覆盖上述增强。`scripts/test-upstream-additions.mjs`（已接入 `npm test`）为每个增强主题登记了一句锚点原文，覆盖后测试会失败并列出丢失的增强。按列表用 git diff 找回内容，与新版上游合并后再提交。
 
-本仓自建资产（10 个 `openspec-*` 流程增强 skill 与 `grill`/`review`/`overview`/`quality`/`explain`/`video`/`recap` 七个命令）则严格遵守单一事实源，命令文件均为薄壳。
+本仓自建资产（11 个 `openspec-*` 流程增强 skill 与 `grill`/`review`/`overview`/`quality`/`explain`/`video`/`recap`/`progress` 八个命令）则严格遵守单一事实源，命令文件均为薄壳。
 
 ## 编写规范
 
