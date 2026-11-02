@@ -219,7 +219,7 @@ Technical Review Approved: 你的名字  2026-08-23
 
 ### Step 6: 双轴独立评审
 
-L2/L3 必跑，缺少双轴评审产物不能归档；L0/L1 推荐跑（`overview.md` 分级行写明等级），平铺任务清单与历史变更不强制。
+MVP 与 L2/L3 必跑，缺少双轴评审产物不能归档；L0/L1 推荐跑（`overview.md` 分级行写明等级），平铺任务清单与历史变更不强制。
 
 ```bash
 /opsx:quality add-user-nickname

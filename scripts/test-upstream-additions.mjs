@@ -59,6 +59,9 @@ const ANCHORS = {
     '**本仓自加的产物规则（非上游原文）**',
     '**云舟任务关联**',
     '**已有讨论记录**',
+    '**可视化判定**',
+    '**STE 检查（本仓自加',
+    '**变更模型检查（本仓自加',
   ],
   'skills/openspec-apply-change/SKILL.md': [
     '**Technical Review Gate check (BLOCKING',

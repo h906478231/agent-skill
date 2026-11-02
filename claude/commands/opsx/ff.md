@@ -70,6 +70,10 @@ Fast-forward through artifact creation - generate everything needed to start imp
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
+   **STE 检查（本仓自加，非上游原文）** —— 全部产物写完后、输出总结前运行 `node <STE> check <changeRoot>`（`<STE>` = skill `openspec-ste` 的 `scripts/ste-lint.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按该 skill 的 `shared/gate-check.md` 的「Propose」列处理结果（ff 与 propose 同属卡点①）；找不到脚本时在总结中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
+
+   **变更模型检查（本仓自加，非上游原文）** —— STE 检查之后、输出总结前运行 `node <CM> check <changeRoot>`（`<CM>` = skill `openspec-change-overview` 的 `scripts/change-model.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-change-overview/scripts/change-model.mjs`），退出码按 skill `openspec-ste` 的 `shared/gate-check.md` 的「Propose」列处理，与 STE 检查相同；按「6 项检查」表修正阻断项并重跑，直到退出码 `0` 才输出总结；修正方式见 skill `openspec-change-overview` 的 `shared/change-model.md`「6 项检查」。找不到脚本时在总结中写明「变更模型检查已跳过：未找到 openspec-change-overview（<原因>）」，不得静默跳过。
+
 5. **Show final status**
    ```bash
    openspec status --change "<name>"
@@ -108,6 +112,7 @@ After completing all artifacts, summarize:
 - **已有讨论记录**：变更目录已有 `discussion-log.md` 时（grill 写入的用户决策、子 agent 回流的结论与未采纳记录），生成 proposal 与 design 之前先读取：已定决策写入 proposal「第一性原理分析」区块与 design 的方案选择，弃掉的方案写入「为什么不选其他方案」，不再向用户重复问已定决策。
 - **proposal（Phase 1）**：必须包含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证），见 `openspec-explore` 的 `shared/first-principles.md`。
 - **design（Phase 2）**：必须包含「候选方案交叉验证矩阵」（L2/L3：至少 2 个有实质差异的方案 × 成本/性能/复杂度/风险四维，并回答「为什么不选其他方案」；L0/L1 允许单一方案 + 不选其他方案的理由）；L2/L3 变更还必须包含「测试 Seam 决策」区块。见 `openspec-explore` 的 `shared/cross-validation.md` 与 `shared/seam-decisions.md`。
+- **可视化判定**：`design.md` 必须包含「可视化判定」小节，逐条声明状态变动、流程变动是否命中；命中时按 skill `openspec-change-overview` 的 `shared/change-model.md`（找不到时用 Glob 搜 `**/openspec-change-overview/shared/change-model.md`）在同一 design.md 中编写变更模型（`change-model` 代码块）：删除的元素保留并标 `diff: removed`，新增与修改的迁移、步骤必须引用 Scenario。判定不依赖变更等级。缺少这一小节时，变更模型检查（CM-5）阻断。
 - **tasks**：必须按垂直切片 + 阻塞 DAG 组织并保持 checkbox 兼容（`/opsx:apply` 与 `/opsx:verify` 依赖 `- [ ]` 解析进度）；勾选项只写归档前能完成的工作，按「排除清单」逐项自查；Migration Plan 有在生产环境执行的步骤，或 Risk Accepted 写了上线后的复查条件，或「测试 Seam 决策」有 e2e 测试时，写一项编写 `deployment.md` 的任务（见 `openspec-apply-change` 的 `shared/deployment-document.md`）。见 `openspec-propose` 的 `shared/task-slicing.md`。
 
 上述区块缺失时，不得宣称本变更已 ready for implementation。

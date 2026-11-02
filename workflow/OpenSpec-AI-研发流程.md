@@ -165,7 +165,7 @@
 | `/opsx:explore <change>` | `openspec-explore` | Phase 1-2：需求澄清 + 方案探索 |
 | `/opsx:overview <change>` | `openspec-change-overview` | 生成变更总览（文档地图、字段台账、条件矩阵；有变更模型时另生成 `overview.html`） |
 | `/opsx:propose <change>` | `openspec-propose` | 生成 proposal / design / specs / tasks（含任务拆分）；卡点①：STE + 变更模型检查 |
-| `/opsx:ff <change>` | 无（上游命令） | 一次生成全部产物；**不跑卡点①检查**，产物问题要到 apply 才被拦下，建议用 `/opsx:propose` |
+| `/opsx:ff <change>` | 无（上游命令） | 一次生成全部产物；卡点①：STE + 变更模型检查（与 propose 相同） |
 | `/opsx:update <change>` | `openspec-update-change` | 修改已有产物并保持一致；卡点②：STE + 变更模型检查 |
 | `/opsx:review <change>` | `openspec-technical-review` | Phase 3-4：技术评审门禁 |
 | `/opsx:apply <change>` | `openspec-apply-change` | Phase 5：代码实施；卡点③：签字校验 + STE + 变更模型检查 |
@@ -308,7 +308,7 @@ Skill(skill: "openspec-explore", args: "user-nickname-field")
 #   ※ 证据先于勾选：每个切片写 evidence/slice-<id>.md，绑定实现指纹
 #     （规则：skills/openspec-apply-change/shared/slice-evidence.md）
 
-# ── Phase 5.5：双轴独立评审（L2/L3 必跑；L0/L1 推荐）────
+# ── Phase 5.5：双轴独立评审（MVP 与 L2/L3 必跑；L0/L1 推荐）────
 /opsx:quality <change-name>
 #   同一固定基线，两个子 agent 并行、互不读取对方报告：
 #   → review/standards.md       Standards Review：重复/可读性/死代码/复杂度/测试可维护性/项目约定
@@ -634,7 +634,7 @@ OpenSpec Explore
       │
       ├─ tasks.md 任务拆分：垂直切片 + 阻塞 DAG（openspec-propose 的 shared/task-slicing.md）
       │    ※ 每个切片端到端可演示，Blocked by 显式声明，用户四问确认后定稿
-      │    ◆ 卡点①（/opsx:propose）：STE 检查 → 变更模型检查，退出码 0 才输出总结
+      │    ◆ 卡点①（/opsx:propose、/opsx:ff）：STE 检查 → 变更模型检查，退出码 0 才输出总结
       │
       ├─ /opsx:overview（按需）→ overview.md（文档地图 / 端到端流程 / 字段台账 / 条件矩阵）
       │                    + overview.html（有变更模型时）
@@ -696,13 +696,13 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**（L2/L3 至少 2 个方案，L0/L1 允许单一方案 + 不选其他方案的理由）；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；命中时含 `change-model` 代码块） | 否 |
 | 变更总览（按需） | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图；由一个子 agent 整体生成，主会话只接收结论 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
 | 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前四问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
-| 产物检查（四个卡点） | `/opsx:propose`、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查，再跑变更模型检查；阻断时 propose / update 修正后重跑，apply 停止，verify 记 CRITICAL | 无独立产物 | 否 |
-| 分级判定 | 人工（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md` | 否 |
+| 产物检查（四个卡点） | `/opsx:propose`（`/opsx:ff` 同属卡点①）、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查，再跑变更模型检查；阻断时 propose / update 修正后重跑，apply 停止，verify 记 CRITICAL | 无独立产物 | 否 |
+| 分级判定 | `/opsx:propose`、`/opsx:ff` 收尾或 `/opsx:review` 汇总时由 agent 判定；人可改分级行（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md` | 否 |
 | Phase 3 技术评审门禁 | `/opsx:review` | 专项 Agent 并行评审已确定方案；**多角色多维度交叉验证（角色数按分级）** | `review/*.md` | 否 |
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply` | 开始前通过签字校验、STE 检查、变更模型检查；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**；**证据先于勾选** | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
-| Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；项目配置了 Sonar 时，最后用 SonarScanner 扫描，只处理本次修改行上的问题；L2/L3 必跑，L0/L1 推荐 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md`（+ `review/sonar.md`，配置 Sonar 时） | 否（只报告） |
+| Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；项目配置了 Sonar 时，最后用 SonarScanner 扫描，只处理本次修改行上的问题；MVP 与 L2/L3 必跑，L0/L1 推荐 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md`（+ `review/sonar.md`，配置 Sonar 时） | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + 切片证据与双轴裁决核对 + STE / 变更模型检查；**实现与设计交叉核对** | `verification.md`（校验报告） | 修复项 |
 | 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video` | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕 | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
@@ -1312,7 +1312,7 @@ git check-ignore -v openspec/changes/*/review-summary.md openspec/changes/*/revi
 
 **所以**：别把门禁当成「代码不可能未经评审进主干」的保证。**真正的兜底仍然是 PR review 与 CI。** 门禁的价值在于让正常路径上「评审」成为默认动作而非可选动作。
 
-**产物检查的强制力与第②道相同**：STE 检查与变更模型检查只在 propose / update / apply / verify 四个卡点由 skill 或 command 调用，属于提示词级约束。`/opsx:ff`、`/opsx:explore` 生成或修改产物时不运行，产物问题要到 apply 才被拦下。对话回复的 STE 阻断只有 Claude Code 能做，需单独注册 Stop hook（见下方部署说明）。
+**产物检查的强制力与第②道相同**：STE 检查与变更模型检查只在 propose / update / apply / verify 四个卡点由 skill 或 command 调用，属于提示词级约束。`/opsx:ff` 与 propose 同属卡点①；`/opsx:explore` 生成或修改产物时不运行，产物问题要到下一个卡点才被拦下。对话回复的 STE 阻断只有 Claude Code 能做，需单独注册 Stop hook（见下方部署说明）。
 
 ---
 

@@ -60,7 +60,7 @@ Implement tasks from an OpenSpec change.
 
    **Handle states:**
    - If `state: "blocked"` (missing artifacts): show message, suggest using openspec-continue-change
-   - If `state: "all_done"`: congratulate, then suggest `/opsx:quality` (Phase 5.5; required for L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6) before archive
+   - If `state: "all_done"`: congratulate, then suggest `/opsx:quality` (Phase 5.5; required for MVP and L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6) before archive
    - Otherwise: proceed to implementation
 
 5. **Read context files**
@@ -111,7 +111,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest the implementation-stage checks — `/opsx:quality` (Phase 5.5, dual-axis review; required for L2/L3, recommended for L0/L1) then `/opsx:verify` (Phase 6); do not suggest archive before verify passes and any dual-axis review that was run is PASSED
+   - If all done: suggest the implementation-stage checks — `/opsx:quality` (Phase 5.5, dual-axis review; required for MVP and L2/L3, recommended for L0/L1) then `/opsx:verify` (Phase 6); do not suggest archive before verify passes and any dual-axis review that was run is PASSED
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -142,7 +142,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Next: `/opsx:quality` (Phase 5.5; required for L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6). Archive after verify passes and any dual-axis review that was run is PASSED.
+All tasks complete! Next: `/opsx:quality` (Phase 5.5; required for MVP and L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6). Archive after verify passes and any dual-axis review that was run is PASSED.
 ```
 
 **Output On Pause (Issue Encountered)**
