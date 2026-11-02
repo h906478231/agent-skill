@@ -697,7 +697,7 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | 变更总览（按需） | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图；由一个子 agent 整体生成，主会话只接收结论 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
 | 任务拆分 | `/opsx:propose`（生成 tasks artifact 时加载切片规则） | tasks.md 按垂直切片 + 阻塞 DAG 组织；发布前四问由用户确认 | `tasks.md`（切片结构，checkbox 兼容） | 否 |
 | 产物检查（四个卡点） | `/opsx:propose`（`/opsx:ff` 同属卡点①）、`/opsx:update`、`/opsx:apply`、`/opsx:verify` 内置 | 先跑 STE 检查，再跑变更模型检查；阻断时 propose / update 修正后重跑，apply 停止，verify 记 CRITICAL | 无独立产物 | 否 |
-| 分级判定 | 人工（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md` | 否 |
+| 分级判定 | `/opsx:propose`、`/opsx:ff` 收尾或 `/opsx:review` 汇总时由 agent 判定；人可改分级行（参照分级表） | 判断变更等级，决定跑哪些维度或直接豁免 | 记录在 `overview.md` 开头；走门禁时同时写入 `review-summary.md` | 否 |
 | Phase 3 技术评审门禁 | `/opsx:review` | 专项 Agent 并行评审已确定方案；**多角色多维度交叉验证（角色数按分级）** | `review/*.md` | 否 |
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
