@@ -1,6 +1,6 @@
 # STE 检查卡点的处理口径（唯一事实源）
 
-> OpenSpec 四个卡点运行 `ste-lint.mjs check` 后如何处理结果。`openspec-propose`、`openspec-update-change`、`openspec-apply-change`、`openspec-verify-change` 四个 skill 与 `claude/commands/opsx/` 下对应的四个命令都只写一行引用，不复制本文件内容。
+> OpenSpec 四个卡点运行 `ste-lint.mjs check` 后如何处理结果。`openspec-propose`、`openspec-update-change`、`openspec-apply-change`、`openspec-verify-change` 四个 skill 与 `claude/commands/opsx/` 下对应的四个命令都只写一行引用，不复制本文件内容；`/opsx:ff`（只有命令形态）与 propose 同属卡点①，按「Propose」列处理。
 > 脚本 `<STE>` = `../scripts/ste-lint.mjs`（相对本文件）；其他 skill 用 `../openspec-ste/scripts/ste-lint.mjs` 解析，读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`。规则编号与含义见 `shared/ste-rules.md`。
 
 ## 运行
