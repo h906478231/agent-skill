@@ -4,11 +4,13 @@
  *
  * 所属：skill openspec-technical-review（门禁口径中枢）。调用方：/opsx:apply（写证据前取指纹）、
  * /opsx:quality（生成固定基线、校验双轴报告）、/opsx:verify 与 /opsx:archive（证据与评审闭环校验），
- * 以及对应的 openspec-* skill。规则事实源（本脚本只做确定性判定，不重复规则说明）：
+ * /opsx:progress（进度视图读取 facts），以及对应的 openspec-* skill。规则事实源（本脚本只做确定性判定，不重复规则说明）：
  *   - 双轴评审：openspec-code-quality/shared/dual-axis-review.md（是否必需按分级：MVP、L2/L3 必需，L0/L1 只推荐，见 reviewRequired）
  *   - 切片证据：openspec-apply-change/shared/slice-evidence.md
  *   - 实现后修改登记：openspec-apply-change/shared/post-implementation-changes.md
  *   - verify / archive 如何解读输出：openspec-technical-review/shared/implementation-gate-check.md
+ *   - 裁决行与签字行（facts 读取）：openspec-technical-review/hooks/check-review-approval.sh；两份实现的测试共用仓库
+ *     scripts/lib/review-approval-samples.mjs 中的签字行与裁决行样本
  *
  * 用法：
  *   node implementation-gate.mjs fingerprint <changeRoot> [--rev <commit>] [--repo <dir>]
@@ -17,6 +19,7 @@
  *   node implementation-gate.mjs review      <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs evidence    <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs archive     <changeRoot> [--repo <dir>]
+ *   node implementation-gate.mjs facts       <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs hygiene     <changeRoot>
  *   node implementation-gate.mjs regress     --baseline <file> --actual <file>
  *
@@ -25,6 +28,8 @@
  * other 中未在 tasks.md「## 实现后修改登记」表登记的文件（unregistered）不为空时退出码 1；tree 对象不存在时退出码 2。
  * regress 比较实际失败清单与已知基线失败清单，只有本次引入的失败（introduced）影响退出码。
  * hygiene 列出变更目录中允许清单外的产物，只给 warning，退出码恒为 0（参数错误除外）。
+ * facts 输出一个变更的事实（分级、技术评审裁决与签字、verify 报告指纹、Open Questions 条数、archive 的检查结果），
+ * 只报告不判定：存在阻断项时退出码仍为 0（参数或环境错误除外）。
  * 退出码：0 通过；1 存在阻断项；2 参数或环境错误（非 git 仓库、变更目录不存在等）。
  *
  * 实现指纹：在临时 index 中以 HEAD 为种子写入工作区全部改动（含未跟踪文件，遵守 .gitignore），
@@ -1665,6 +1670,156 @@ function checkHygiene(changeRoot) {
 }
 
 // ============================================================================
+// 变更事实（facts，供进度视图 openspec-change-progress 读取）
+// ============================================================================
+
+/** 裁决行的标记（gate-policy.md「机器可读裁决行」）：hook 用它识别裁决行，并删除到它为止再取裁决值。 */
+const GATE_VERDICT_MARKER = 'Gate-Verdict:'
+
+/** review-summary.md 的机器可读裁决行：允许行首有列表或引用标记，与 hook 的 grep 相同。标记只写在 GATE_VERDICT_MARKER 一处。 */
+const GATE_VERDICT_LINE = new RegExp(`^[-*>\\s]*${escapeRegExp(GATE_VERDICT_MARKER)}`)
+
+/** 签字行的标记：与 hook 相同，按包含匹配，不要求在行首。 */
+const APPROVAL_MARKER = 'Technical Review Approved:'
+
+/** 签字值在「签署人」处截断：hook 只把它之前的内容当作签字值。 */
+const SIGNER_MARKER = '签署人'
+
+/**
+ * 签字值是否仍是空白占位，规则与 hook 相同：删除全部空白后为空、只有下划线、以两个下划线开头（占位符后补了说明），
+ * 或含模板占位符时为 blank。真实签名不会以连续下划线开头。
+ * @param {string} line 第一行含 APPROVAL_MARKER 的行。
+ * @returns {'signed'|'blank'}
+ */
+function approvalOf(line) {
+  // hook 的 sed 用贪婪匹配删除到最后一个标记，「签署人」按最左匹配截断，这里取同样的位置。
+  const after = line.slice(line.lastIndexOf(APPROVAL_MARKER) + APPROVAL_MARKER.length)
+  const signer = after.indexOf(SIGNER_MARKER)
+  const value = (signer < 0 ? after : after.slice(0, signer)).replace(/\s/g, '')
+  const blank = value === '' || /^[_＿]+$/.test(value) || /^(?:__|＿＿)/.test(value)
+    || value.includes('＜签名＞') || value.includes('<签名>')
+  return blank ? 'blank' : 'signed'
+}
+
+/**
+ * 裁决行中的裁决值，规则与 hook 相同（提交 75eb718）：最后一个标记之后第一个由 ASCII 字母与下划线组成的词。
+ * @param {string} line 第一行匹配 GATE_VERDICT_LINE 的行。
+ * @returns {string|null} 没有这样的词时为 null（例如「待定」），进度视图按 R4 交给人工核对。
+ */
+function verdictOf(line) {
+  // hook 的 sed `.*Gate-Verdict:` 是贪婪匹配，删除到最后一个标记为止，所以这里取最后一个标记之后的内容。
+  const after = line.slice(line.lastIndexOf(GATE_VERDICT_MARKER) + GATE_VERDICT_MARKER.length)
+  // 不按空白分词：中文输入法常在值前后写全角空格，或在值后直接接全角括号说明，按空白分词会把说明并进裁决值。
+  // 反引号、星号、CR 与全角字符都不在 [A-Za-z_] 内，自然被跳过或截断，与 hook 的 LC_ALL=C sed 结果相同。
+  return after.match(/[A-Za-z_]+/)?.[0] ?? null
+}
+
+/**
+ * 读取技术评审的裁决行与签字状态。判定规则与 hooks/check-review-approval.sh 相同；两份实现的测试共用仓库
+ * scripts/lib/review-approval-samples.mjs 中的签字行与裁决行样本（add-change-progress-view 风险 R2），
+ * 新增写法时加入该文件，hook 与 facts 的测试一起覆盖。
+ * 只报告事实，不放行 apply：放行仍由 hook 与 shared/apply-gate-check.md 判断。
+ * @returns {{ exists: boolean, gateVerdict: string|null, approval: 'signed'|'blank'|'missing' }}
+ *   gateVerdict 见 verdictOf，没有文件、没有裁决行或值中没有 ASCII 词时为 null；
+ *   approval 在没有文件或没有签字行时为 missing。
+ */
+function readTechnicalReview(changeRoot) {
+  const summary = readText(changeRoot, 'review-summary.md')
+  if (summary === null) return { exists: false, gateVerdict: null, approval: 'missing' }
+  // 按 \n 分行、保留 CR，与 hook 的 grep 相同；CR 在取裁决值与签字值时删除。
+  const lines = summary.split('\n')
+  const verdictLine = lines.find(line => GATE_VERDICT_LINE.test(line))
+  const signLine = lines.find(line => line.includes(APPROVAL_MARKER))
+  return { exists: true, gateVerdict: verdictLine === undefined ? null : verdictOf(verdictLine),
+    approval: signLine === undefined ? 'missing' : approvalOf(signLine) }
+}
+
+/**
+ * 读取 verify 报告的指纹，并与 verify 写指纹时的取值比较（add-change-progress-view design D2，评审 ARCH-01）。
+ * 只比较指纹，不判断报告有没有 CRITICAL：verification.md 没有固定的结论行。
+ * @param {string} expectedFingerprint verify 应写的指纹：声明了变更终点时为终点指纹，否则为当前指纹。
+ * @returns {{ exists: boolean, fingerprint: string|null, current: boolean|null, expectedFingerprint: string }}
+ *   没有报告或报告没有合法指纹时 current 为 null：没有 Fingerprint 行，或值不是 git-tree 指纹（含指纹后接说明文字）。
+ */
+function readVerification(changeRoot, expectedFingerprint) {
+  const report = readText(changeRoot, 'verification.md')
+  // verify 报告字段 `- Fingerprint: git-tree:<sha>`（openspec-verify-change/SKILL.md）用 lineField 读取：允许列表标记、加粗与全角冒号，
+  // 与变更终点、登记表的字段读取相同；值不是合法指纹时（含指纹后接说明文字）按没有指纹处理，与其他指纹字段的校验相同。
+  const value = report === null ? '' : lineField(report.split(/\r?\n/), 'Fingerprint')
+  const fingerprint = GIT_TREE_FINGERPRINT.test(value) ? value : null
+  return { exists: report !== null, fingerprint, current: fingerprint === null ? null : fingerprint === expectedFingerprint,
+    expectedFingerprint }
+}
+
+/** design.md 中待决定事项所在的二级标题，不区分大小写。 */
+const OPEN_QUESTIONS_HEADING = /^##\s+open questions\s*$/i
+
+/** 代码块的围栏行（``` 或 ~~~，可带语言标记）。 */
+const CODE_FENCE = /^\s*(`{3,}|~{3,})/
+
+/** 不在 `### ` 标题下时自成一个条目的顶层列表项：行首 `- `、`* ` 或 `<数字>. `。 */
+const TOP_LEVEL_ITEM = /^(?:[-*]|\d+\.)\s/
+
+/** 条目已决的标记：标题行或正文写了「结论」。用户 2026-10-30 决定不为 Open Questions 新增标记。 */
+const DECIDED_MARKER = '结论'
+
+/**
+ * 统计 design.md「## Open Questions」一节的条目数与待决定条数（add-change-progress-view design D4）。
+ * 一节从该标题到下一个一级或二级标题为止。每个 `### ` 标题是一个条目，到下一个条目之前的行（含列表项）是它的正文；
+ * 不在 `### ` 标题下的顶层列表项各是一个条目，之后的缩进行是它的正文。代码块内的行整体忽略。只写「无。」时没有条目。
+ * 条数只供展示，不参与进度视图的阶段推导，由用户或 agent 判断是否阻断。
+ * @returns {{ pending: number, total: number }}
+ */
+function countOpenQuestions(changeRoot) {
+  const items = []
+  let inSection = false
+  let fence = null
+  for (const line of (readText(changeRoot, 'design.md') || '').split(/\r?\n/)) {
+    const marker = CODE_FENCE.exec(line)
+    // 代码块里的标题与列表项是示例，不是结构；围栏按同一字符、不短于开头的长度闭合。
+    if (fence) {
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null
+      continue
+    }
+    if (marker) {
+      fence = marker[1]
+      continue
+    }
+    if (/^#{1,2}\s/.test(line)) {
+      inSection = OPEN_QUESTIONS_HEADING.test(line)
+      continue
+    }
+    if (!inSection) continue
+    const last = items[items.length - 1]
+    if (/^###\s/.test(line)) items.push({ heading: true, text: line })
+    else if (TOP_LEVEL_ITEM.test(line) && !(last && last.heading)) items.push({ heading: false, text: line })
+    else if (last) last.text += `\n${line}`
+  }
+  return { pending: items.filter(item => !item.text.includes(DECIDED_MARKER)).length, total: items.length }
+}
+
+/**
+ * 一个变更的事实（facts 子命令，add-change-progress-view design D2）：分级、技术评审裁决与签字、verify 报告指纹、
+ * Open Questions 条数，以及与 archive 子命令相同的检查结果。只报告事实，不做门禁判定：阻断项不改变退出码，
+ * 阶段与下一步由进度视图（openspec-change-progress 的 progress.mjs）推导。
+ * @param {{ commit: string, fingerprint: string, decider: string }|null} head 变更终点（readChangeHead）。
+ * @returns {object} tier、technicalReview、verification、openQuestions、currentFingerprint、archive。
+ */
+function collectFacts(repo, changeRoot, head) {
+  const currentFingerprint = computeFingerprint(repo, changeRoot)
+  return {
+    tier: readTier(changeRoot),
+    technicalReview: readTechnicalReview(changeRoot),
+    // verify 写指纹的规则（post-implementation-changes.md「变更终点」）：声明了变更终点时写终点指纹，否则写当前指纹。
+    // 与当前指纹直接比较时，终点之后有其他提交的变更会一直停在「重新运行 verify」。
+    verification: readVerification(changeRoot, head ? head.fingerprint : currentFingerprint),
+    openQuestions: countOpenQuestions(changeRoot),
+    currentFingerprint,
+    archive: checkArchive(repo, changeRoot, currentFingerprint, head),
+  }
+}
+
+// ============================================================================
 // 命令入口
 // ============================================================================
 
@@ -1676,6 +1831,7 @@ const COMMAND_OPTIONS = {
   review: ['repo'],
   evidence: ['repo'],
   archive: ['repo'],
+  facts: ['repo'],
   hygiene: [],
   regress: ['baseline', 'actual'],
 }
@@ -1694,7 +1850,7 @@ function parseOptions(command, args) {
   return options
 }
 
-const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive|hygiene> <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]'
+const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive|facts|hygiene> <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]'
   + '\n      node implementation-gate.mjs fingerprint <changeRoot> --rev <commit> [--repo <dir>]'
   + '\n      node implementation-gate.mjs classify <changeRoot> --from <fingerprint> [--to <fingerprint>] [--repo <dir>]'
   + '\n      node implementation-gate.mjs regress --baseline <file> --actual <file>'
@@ -1732,6 +1888,11 @@ function run(argv) {
   }
   // 变更终点只约束评审与登记的比较，evidence 不读取（design D6）；无效时在此按参数错误退出（design D2）。
   const head = command === 'evidence' ? null : readChangeHead(repo, changeRoot)
+  // facts 只报告事实，阻断项不改变退出码（add-change-progress-view design D2）。
+  if (command === 'facts') {
+    return { code: EXIT.PASS,
+      output: `${JSON.stringify({ command, change: path.basename(changeRoot), ...collectFacts(repo, changeRoot, head) }, null, 2)}\n` }
+  }
   if (command === 'baseline') {
     const { output, warnings } = renderBaseline(repo, changeRoot, options.base, options.since, head)
     return { code: EXIT.PASS, output, stderr: warnings.map(item => `${item}\n`).join('') }
