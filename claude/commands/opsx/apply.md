@@ -56,7 +56,7 @@ Implement tasks from an OpenSpec change.
 
    **Handle states:**
    - If `state: "blocked"` (missing artifacts): show message, suggest using `/opsx:propose` to create the missing artifacts
-   - If `state: "all_done"`: congratulate, then suggest `/opsx:quality` (Phase 5.5; required for L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6) before archive
+   - If `state: "all_done"`: congratulate, then suggest `/opsx:quality` (Phase 5.5; required for MVP and L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6) before archive
    - Otherwise: proceed to implementation
 
 5. **Read context files**
@@ -107,7 +107,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest `/opsx:quality` (Phase 5.5; required for L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6), not archive
+   - If all done: suggest `/opsx:quality` (Phase 5.5; required for MVP and L2/L3, recommended for L0/L1) → `/opsx:verify` (Phase 6), not archive
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -138,7 +138,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Next: `/opsx:quality` (L2/L3 required, L0/L1 recommended) → `/opsx:verify`, then `/opsx:archive`.
+All tasks complete! Next: `/opsx:quality` (MVP and L2/L3 required, L0/L1 recommended) → `/opsx:verify`, then `/opsx:archive`.
 ```
 
 **Output On Pause (Issue Encountered)**

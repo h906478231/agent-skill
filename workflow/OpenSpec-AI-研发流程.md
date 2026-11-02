@@ -308,7 +308,7 @@ Skill(skill: "openspec-explore", args: "user-nickname-field")
 #   ※ 证据先于勾选：每个切片写 evidence/slice-<id>.md，绑定实现指纹
 #     （规则：skills/openspec-apply-change/shared/slice-evidence.md）
 
-# ── Phase 5.5：双轴独立评审（L2/L3 必跑；L0/L1 推荐）────
+# ── Phase 5.5：双轴独立评审（MVP 与 L2/L3 必跑；L0/L1 推荐）────
 /opsx:quality <change-name>
 #   同一固定基线，两个子 agent 并行、互不读取对方报告：
 #   → review/standards.md       Standards Review：重复/可读性/死代码/复杂度/测试可维护性/项目约定
@@ -702,7 +702,7 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | Phase 4 评审确认 | 同上（汇总） | 汇总风险与修改建议，给出门禁裁决 | `review-summary.md` | 否 |
 | 人工门禁 | 人工 | 审阅评审结论，认可后写入批准标记 | `review-summary.md` 批准区 | 否 |
 | Phase 5 代码实现 | `/opsx:apply` | 开始前通过签字校验、STE 检查、变更模型检查；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**；**证据先于勾选** | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
-| Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；项目配置了 Sonar 时，最后用 SonarScanner 扫描，只处理本次修改行上的问题；L2/L3 必跑，L0/L1 推荐 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md`（+ `review/sonar.md`，配置 Sonar 时） | 否（只报告） |
+| Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；项目配置了 Sonar 时，最后用 SonarScanner 扫描，只处理本次修改行上的问题；MVP 与 L2/L3 必跑，L0/L1 推荐 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md`（+ `review/sonar.md`，配置 Sonar 时） | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + 切片证据与双轴裁决核对 + STE / 变更模型检查；**实现与设计交叉核对** | `verification.md`（校验报告） | 修复项 |
 | 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video` | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕 | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
