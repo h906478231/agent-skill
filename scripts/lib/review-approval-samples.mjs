@@ -20,10 +20,11 @@ export const SIGNATURE_LINES = {
     'Technical Review Approved: ____________________    （签名 / 日期）',
     'Technical Review Approved: ＿＿＿（签名）',
   ],
-  /** 写入了批准人：hook 放行。 */
+  /** 写入了批准人：hook 放行。最后一行以 CR 结尾，对应 CRLF 换行的 summary：hook 与 facts 都按 \n 分行，CR 留在行内。 */
   signed: [
     'Technical Review Approved: 张三  2026-10-14',
     'Technical Review Approved: 张三（研发负责人） 2026-10-14',
+    'Technical Review Approved: 张三 2026-10-14\r',
   ],
 }
 

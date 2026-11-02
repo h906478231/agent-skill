@@ -22,13 +22,13 @@
 
 ### Requirement: The facts command SHALL read the technical review verdict and the signature line with the rules of the approval hook
 
-`technicalReview.exists` SHALL be `true` only when `review-summary.md` exists. `technicalReview.gateVerdict` SHALL be the first word of ASCII letters and underscores after the last `Gate-Verdict:` on the first line that matches `^[-*>\s]*Gate-Verdict:`. It SHALL be `null` when the file, the line or such a word does not exist. `technicalReview.approval` SHALL be:
+`technicalReview.exists` SHALL be `true` only when `review-summary.md` exists. `technicalReview.gateVerdict` SHALL be the first word of ASCII letters and underscores after the last `Gate-Verdict:` or `Gate-Verdict：` (full-width colon) on the first line that matches `^[-*>\s]*Gate-Verdict[:：]`. It SHALL be `null` when the file, the line or such a word does not exist. `technicalReview.approval` SHALL be:
 
 - `missing` when the file does not exist or has no line with `Technical Review Approved:`;
 - `blank` when the value after `Technical Review Approved:` and before `签署人`, without white space, is empty, has only underscores (`_` or the full-width `＿`), starts with `__` or `＿＿`, or contains `<签名>` or `＜签名＞`;
 - `signed` in all other cases.
 
-These rules SHALL give the same result as `skills/openspec-technical-review/hooks/check-review-approval.sh` for each verdict line and each signature line in the shared samples `scripts/lib/review-approval-samples.mjs`. In the C locale the hook treats only ASCII white space as white space, and it also removes U+3000 from the signature value. So verdict lines with non-ASCII white space before `Gate-Verdict:`, and signature values with non-ASCII white space other than U+3000, are outside this requirement (design.md risk R2).
+White space in these rules SHALL be the white space of the JavaScript `\s` class: ASCII white space and the non-ASCII characters in `UNICODE_SPACES` of the shared samples `scripts/lib/review-approval-samples.mjs` (for example U+3000 and U+00A0). These rules SHALL give the same result as `skills/openspec-technical-review/hooks/check-review-approval.sh` for each verdict line and each signature line in the shared samples, when the hook runs in the C locale and in a UTF-8 locale.
 
 #### Scenario: Blocked verdict
 - **WHEN** `review-summary.md` contains the line `Gate-Verdict: BLOCKED`
@@ -38,12 +38,24 @@ These rules SHALL give the same result as `skills/openspec-technical-review/hook
 - **WHEN** `review-summary.md` contains the line `Gate-Verdict: BLOCKED（未闭环）`
 - **THEN** `technicalReview.gateVerdict` is `BLOCKED`
 
+#### Scenario: Verdict line with a full-width colon
+- **WHEN** `review-summary.md` contains the line `Gate-Verdict：BLOCKED`
+- **THEN** `technicalReview.gateVerdict` is `BLOCKED`
+
+#### Scenario: Verdict line after non-ASCII white space
+- **WHEN** `review-summary.md` contains a line that starts with a full-width space (U+3000) followed by `Gate-Verdict: BLOCKED`
+- **THEN** `technicalReview.gateVerdict` is `BLOCKED`
+
 #### Scenario: Verdict value without an ASCII word
 - **WHEN** `review-summary.md` contains the line `Gate-Verdict: 待定`
 - **THEN** `technicalReview.gateVerdict` is `null`
 
 #### Scenario: Signature line with a placeholder and a note
 - **WHEN** the signature line is `Technical Review Approved: __________ （签字 / 日期）`
+- **THEN** `technicalReview.approval` is `blank`
+
+#### Scenario: Signature value with only a no-break space
+- **WHEN** the signature line is `Technical Review Approved:` followed by one space and one no-break space (U+00A0)
 - **THEN** `technicalReview.approval` is `blank`
 
 #### Scenario: Signed review

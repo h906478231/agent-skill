@@ -80,7 +80,7 @@ test('非 apply 命令一律放行', (t) => {
   assert.equal(r.stdout.includes('deny'), false)
 })
 
-const UNSIGNED = 'Technical Review Approved: __________'
+const UNSIGNED = SIGNATURE_LINES.placeholder[0]
 
 test('只是提到 openspec apply 的命令 → 放行', (t) => {
   // 正则曾对整条命令做子串匹配，查 git 历史、写日志、grep 统计都会被未签字的门禁误拦。
@@ -116,12 +116,14 @@ test('Gate-Verdict: BLOCKED 时即使已签字也拦截', (t) => {
 })
 
 test('CRLF 换行的 summary 中 Gate-Verdict: BLOCKED 仍拦截', (t) => {
-  assert.equal(runHook(t, 'Gate-Verdict: BLOCKED\r\nTechnical Review Approved: 张三 2026-10-14\r').denied, true)
+  // 裁决行与签字行都以 CR 结尾，取自共享样本中以 CR 结尾的写法。
+  const endsWithCr = line => line.endsWith('\r')
+  assert.equal(runHook(t, `${VERDICT_LINES.blocked.find(endsWithCr)}\n${SIGNATURE_LINES.signed.find(endsWithCr)}`).denied, true)
 })
 
 // 全角空格（U+3000）在 C locale 下不算空白，在 UTF-8 locale 下算空白，hook 判定曾随 locale 变化，所以三种都跑。
 const LOCALES = ['C', 'zh_CN.UTF-8', 'en_US.UTF-8']
-const SIGNED = 'Technical Review Approved: 张三 2026-10-14'
+const SIGNED = SIGNATURE_LINES.signed[0]
 
 test('Gate-Verdict 值的前后有全角空格或全角括号说明时仍按 BLOCKED 拦截', (t) => {
   // 中文输入法下常见的三种写法：awk 不按全角空格分词，值曾被取成「BLOCKED　（未闭环）」等，BLOCKED 的评审被放行。
@@ -225,7 +227,7 @@ test('Gate-Verdict 为 READY 或缺该行（旧版产物）时只看签字', (t)
     assert.equal(runHook(t, `${line}\n${SIGNATURE_LINES.signed[0]}`).denied, false, JSON.stringify(line))
     assert.equal(runHook(t, `${line}\n${SIGNATURE_LINES.placeholder[0]}`).denied, true, JSON.stringify(line))
   }
-  assert.equal(runHook(t, 'Technical Review Approved: 张三 2026-10-14').denied, false)
+  assert.equal(runHook(t, SIGNED).denied, false)
 })
 
 test('研发流程文档的「行为验证」片段对当前 hook 输出 1', () => {
