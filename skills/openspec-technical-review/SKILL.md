@@ -141,7 +141,7 @@ done
 2. 对应 `<SKILL_DIR>/roles/<role>.md` 全文 —— 其中已声明必读的共用规则文件，子 agent 自行读取；
 3. **如果识别为 MVP 方案**：在 prompt 开头明确说明 `本次评审使用 MVP 标准。必须先阅读 <SKILL_DIR>/shared/mvp-review-standard.md 理解 MVP 评审原则，只报告阻断性问题，不报告 MVP 已接受的权衡。`
 4. 变更的 `proposal.md` / `design.md` 全文；
-5. **若 `design.md` 末尾存在「## 评审意见闭环记录」区块**（说明这是重走门禁）：把该区块一并放进 prompt，并要求子 agent 先按 `<SKILL_DIR>/shared/closed-loop-verification.md` 做上轮闭环验证、再做本轮审查。子 agent 是全新上下文，没有上轮记忆 —— 不给该区块，它要么重复报同一问题，要么完全漏掉验证；
+5. **若 `design.md` 末尾存在「## 评审意见闭环记录」区块**（说明这是重走门禁）：该区块已在第 4 项的 `design.md` 全文中，**不再单独放入 prompt**；在 prompt 中要求子 agent 先按 `<SKILL_DIR>/shared/closed-loop-verification.md` 处理区块中「维度」属于本角色的每一行，并结合角色文件的「本维度闭环判据」做上轮闭环验证，再做本轮审查（与 `technical-review-gate.workflow.js` 第三步一致）。子 agent 是全新上下文，没有上轮记忆 —— 不要求这一步，它要么重复报同一问题，要么完全漏掉验证；
 6. 「把结论写入 `review/<role>.md`」。
 
 finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一句话白话 / 触发场景可复现 / 不修的后果）与维度结论取值，统一见 `shared/finding-format.md`，此处不重复。
