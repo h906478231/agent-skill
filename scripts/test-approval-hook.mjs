@@ -230,6 +230,14 @@ test('READY 裁决行或签名中含非 ASCII 空白 → 放行', (t) => {
   }
 })
 
+test('签字行标记的词之间是非 ASCII 空白 → 不算签字行，deny', (t) => {
+  // 签字行标记按字面匹配原文，与 facts 的 includes 相同；替换非 ASCII 空白只作用于选中的签字行。
+  // 先替换再找标记时，这一行会被当作已签字的签字行，比修复前放得更宽，facts 也找不到它。
+  for (const locale of LOCALES) {
+    assert.equal(runHook(t, 'Technical\u00A0Review Approved: 张三 2026-10-14', { locale }).denied, true, locale)
+  }
+})
+
 test('超长 heredoc 命令不让 hook 报错退出', (t) => {
   // 首行取法曾走 printf | head 管道，超过管道缓冲时 SIGPIPE 会在 pipefail 下让 hook 以非 0 退出。
   const body = 'x'.repeat(200 * 1024)

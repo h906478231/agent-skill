@@ -114,11 +114,11 @@ UNICODE_SPACES=$'\xc2\xa0|\xe1\x9a\x80'\
 $'|\xe2\x80\x80|\xe2\x80\x81|\xe2\x80\x82|\xe2\x80\x83|\xe2\x80\x84|\xe2\x80\x85|\xe2\x80\x86|\xe2\x80\x87|\xe2\x80\x88|\xe2\x80\x89|\xe2\x80\x8a'\
 $'|\xe2\x80\xa8|\xe2\x80\xa9|\xe2\x80\xaf|\xe2\x81\x9f|\xe3\x80\x80|\xef\xbb\xbf'
 
-# 输出 summary，其中的非 ASCII 空白都换成 ASCII 空格。
-# 后面识别裁决行、取裁决值、取签字值都在 LC_ALL=C 下读取这份输出：空白只剩 ASCII 空白，
+# 把 stdin 中的非 ASCII 空白都换成 ASCII 空格。
+# 之后识别裁决行、取裁决值、取签字值都在 LC_ALL=C 下进行：空白只剩 ASCII 空白，
 # [[:space:]] 与 tr 在 C locale 下正好只处理 ASCII 空白，判定结果与当前 locale 无关。
-normalized_summary() {
-  LC_ALL=C sed -E "s/($UNICODE_SPACES)/ /g" "$SUMMARY"
+normalize_spaces() {
+  LC_ALL=C sed -E "s/($UNICODE_SPACES)/ /g"
 }
 
 # 裁决行：Gate-Verdict: BLOCKED 时即使已签字也拦截（格式见 shared/gate-policy.md「机器可读裁决行」）。
@@ -130,14 +130,16 @@ normalized_summary() {
 # 不按空白分词，是因为中文输入法常在值后直接接全角括号：曾把「BLOCKED（未闭环）」取成整串，不等于 BLOCKED 而放行 apply。
 # LC_ALL=C 让 sed 按字节匹配：全角字符的每个字节都不在 [A-Za-z_] 内。
 # 缺该行的旧版 summary 只校验签字行，兼容此前生成的产物。
-VERDICT="$(normalized_summary | LC_ALL=C grep -m1 -E '^[-*>[:space:]]*Gate-Verdict(:|：)' \
+VERDICT="$(normalize_spaces < "$SUMMARY" | LC_ALL=C grep -m1 -E '^[-*>[:space:]]*Gate-Verdict(:|：)' \
   | LC_ALL=C sed -E 's/.*Gate-Verdict(:|：)//; s/^[^A-Za-z_]*//; s/[^A-Za-z_].*$//' || true)"
 if [ "$VERDICT" = "BLOCKED" ]; then
   deny "变更 [$CHANGE_NAME] 的技术评审裁决为 BLOCKED（review-summary.md 的 Gate-Verdict 行）：未闭环 Blocker 必须先回 design.md 闭环并重走门禁，签字不能替代闭环。禁止 apply。"
 fi
 
-# 取签字行（非 ASCII 空白已换成 ASCII 空格，见 normalized_summary）
-SIGN_LINE="$(normalized_summary | LC_ALL=C grep -m1 'Technical Review Approved:' || true)"
+# 取签字行：标记按字面匹配原文，选中后再替换其中的非 ASCII 空白（见 normalize_spaces）。
+# 先替换再找标记会把「Technical<U+00A0>Review Approved: 张三」这类行当作签字行，比修复前放得更宽；
+# facts 也按字面找标记（line.includes），两边选中同一行。
+SIGN_LINE="$(LC_ALL=C grep -m1 'Technical Review Approved:' "$SUMMARY" | normalize_spaces || true)"
 
 # 无签字行 → 视为门禁产物不完整，拦截
 if [ -z "$SIGN_LINE" ]; then
@@ -145,7 +147,7 @@ if [ -z "$SIGN_LINE" ]; then
 fi
 
 # 取冒号后、首个「签署人」之前的内容作为签字值，再删除其中全部空白。
-# 非 ASCII 空白在 normalized_summary 中已换成 ASCII 空格，这里只需删除 ASCII 空白：
+# 非 ASCII 空白在 normalize_spaces 中已换成 ASCII 空格，这里只需删除 ASCII 空白：
 # tr 的 [:space:] 曾随 locale 变化，C locale 下不删 U+00A0、U+2003 等，只有这类空白的签字值被判为已签字；
 # U+00A0 写在下划线占位之前时，签字值也不以两个下划线开头，同样被判为已签字。
 # LC_ALL=C 让 sed 与 tr 按字节处理：只删 ASCII 空白字节，不会拆坏中文字符，结果与当前 locale 无关。
