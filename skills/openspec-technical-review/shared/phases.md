@@ -111,6 +111,7 @@ OpenSpec Archive → 归档前置阻断（`implementation-gate.mjs archive`）�
 旁路（不进默认流程，不参与任何卡点）：
   /opsx:explain → review/finding-details/<ID>.md（解析单个 finding）
   /opsx:video   → video/storyboard.md（人工签署）→ 渲染讲解视频（需要变更模型）
+  /opsx:progress → 终端表格或 --json（活跃变更的阶段、卡点与下一步命令；只读，不写产物）
 ```
 
 ## 产物检查卡点

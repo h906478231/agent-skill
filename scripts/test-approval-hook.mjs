@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { FULL_WIDTH_LINES, SIGNATURE_LINES, VERDICT_LINES } from './lib/review-approval-samples.mjs'
 
 /**
  * 人工签字门禁 hook 的判定测试。
@@ -11,6 +12,7 @@ import { spawnSync } from 'node:child_process'
  * hook 是 apply 前的硬门禁：review-summary.md 存在但签字行仍是空白占位时必须 deny，
  * 写入了批准人姓名时才放行。判定一旦放宽就会静默放过未签字的变更，因此这里逐个固定住边界写法。
  * 被测脚本：skills/openspec-technical-review/hooks/check-review-approval.sh
+ * 签字行与裁决行样本取自 scripts/lib/review-approval-samples.mjs，facts 的一致性测试用同一组样本。
  */
 const HOOK = new URL('../skills/openspec-technical-review/hooks/check-review-approval.sh', import.meta.url)
 
@@ -44,20 +46,17 @@ function runHook(t, signoffLine, { withSummary = true, command = 'openspec apply
 }
 
 test('签字行仍是下划线占位 → deny', (t) => {
-  assert.equal(runHook(t, 'Technical Review Approved: __________').denied, true)
+  for (const line of SIGNATURE_LINES.placeholder) assert.equal(runHook(t, line).denied, true, line)
 })
 
 test('保留占位符再补括号说明（未写批准人）→ deny', (t) => {
   // 评测里实际观察到的两种写法：占位下划线后跟「（签字 / 日期）」「（签名 / 日期）」。
   // 这类行没写任何批准人，若被当成已签字放行，等于绕过人工门禁。
-  assert.equal(runHook(t, 'Technical Review Approved: __________ （签字 / 日期）').denied, true)
-  assert.equal(runHook(t, 'Technical Review Approved: ____________________    （签名 / 日期）').denied, true)
-  assert.equal(runHook(t, 'Technical Review Approved: ＿＿＿（签名）').denied, true)
+  for (const line of SIGNATURE_LINES.placeholderWithNote) assert.equal(runHook(t, line).denied, true, line)
 })
 
 test('写入了批准人姓名 → 放行', (t) => {
-  assert.equal(runHook(t, 'Technical Review Approved: 张三  2026-10-14').denied, false)
-  assert.equal(runHook(t, 'Technical Review Approved: 张三（研发负责人） 2026-10-14').denied, false)
+  for (const line of SIGNATURE_LINES.signed) assert.equal(runHook(t, line).denied, false, line)
 })
 
 test('review-summary.md 不存在（未启用门禁）→ 放行', (t) => {
@@ -111,8 +110,9 @@ test('在可执行位置运行 apply → 拦截', (t) => {
 })
 
 test('Gate-Verdict: BLOCKED 时即使已签字也拦截', (t) => {
-  assert.equal(runHook(t, 'Gate-Level: L2\nGate-Verdict: BLOCKED\nTechnical Review Approved: 张三 2026-10-14').denied, true)
-  assert.equal(runHook(t, '- Gate-Verdict: `BLOCKED`\nTechnical Review Approved: 张三 2026-10-14').denied, true)
+  for (const line of VERDICT_LINES.blocked) {
+    assert.equal(runHook(t, `Gate-Level: L2\n${line}\n${SIGNATURE_LINES.signed[0]}`).denied, true, JSON.stringify(line))
+  }
 })
 
 test('CRLF 换行的 summary 中 Gate-Verdict: BLOCKED 仍拦截', (t) => {
@@ -126,11 +126,7 @@ const SIGNED = 'Technical Review Approved: 张三 2026-10-14'
 test('Gate-Verdict 值的前后有全角空格或全角括号说明时仍按 BLOCKED 拦截', (t) => {
   // 中文输入法下常见的三种写法：awk 不按全角空格分词，值曾被取成「BLOCKED　（未闭环）」等，BLOCKED 的评审被放行。
   for (const locale of LOCALES) {
-    for (const verdictLine of [
-      'Gate-Verdict: BLOCKED　（未闭环）',
-      'Gate-Verdict: BLOCKED（未闭环）',
-      'Gate-Verdict:　BLOCKED',
-    ]) {
+    for (const verdictLine of FULL_WIDTH_LINES.blockedVerdict) {
       assert.equal(runHook(t, `${verdictLine}\n${SIGNED}`, { locale }).denied, true, `${locale}: ${verdictLine}`)
     }
   }
@@ -139,7 +135,7 @@ test('Gate-Verdict 值的前后有全角空格或全角括号说明时仍按 BLO
 test('签字值只有全角空格 → deny', (t) => {
   // tr -d '[:space:]' 在 C locale 下不删除全角空格，签字值曾被当成非空而放行。
   for (const locale of LOCALES) {
-    for (const signoffLine of ['Technical Review Approved: 　', 'Technical Review Approved:　 　']) {
+    for (const signoffLine of FULL_WIDTH_LINES.blankSignature) {
       assert.equal(runHook(t, signoffLine, { locale }).denied, true, `${locale}: ${JSON.stringify(signoffLine)}`)
     }
   }
@@ -148,8 +144,12 @@ test('签字值只有全角空格 → deny', (t) => {
 test('READY 后接全角说明、签名中含全角空格 → 放行', (t) => {
   // 防止处理全角空格时拦得过宽：裁决仍是 READY、签字行写了批准人时必须放行。
   for (const locale of LOCALES) {
-    assert.equal(runHook(t, `Gate-Verdict: READY_FOR_HUMAN_APPROVAL　（有条件通过）\n${SIGNED}`, { locale }).denied, false, locale)
-    assert.equal(runHook(t, 'Technical Review Approved: 张三　2026-10-14', { locale }).denied, false, locale)
+    for (const verdictLine of FULL_WIDTH_LINES.readyVerdict) {
+      assert.equal(runHook(t, `${verdictLine}\n${SIGNED}`, { locale }).denied, false, `${locale}: ${verdictLine}`)
+    }
+    for (const signoffLine of FULL_WIDTH_LINES.signedSignature) {
+      assert.equal(runHook(t, signoffLine, { locale }).denied, false, `${locale}: ${signoffLine}`)
+    }
   }
 })
 
@@ -160,8 +160,10 @@ test('超长 heredoc 命令不让 hook 报错退出', (t) => {
 })
 
 test('Gate-Verdict 为 READY 或缺该行（旧版产物）时只看签字', (t) => {
-  assert.equal(runHook(t, 'Gate-Verdict: READY_FOR_HUMAN_APPROVAL\nTechnical Review Approved: 张三 2026-10-14').denied, false)
-  assert.equal(runHook(t, 'Gate-Verdict: READY_FOR_HUMAN_APPROVAL\nTechnical Review Approved: __________').denied, true)
+  for (const line of VERDICT_LINES.notBlocked) {
+    assert.equal(runHook(t, `${line}\n${SIGNATURE_LINES.signed[0]}`).denied, false, JSON.stringify(line))
+    assert.equal(runHook(t, `${line}\n${SIGNATURE_LINES.placeholder[0]}`).denied, true, JSON.stringify(line))
+  }
   assert.equal(runHook(t, 'Technical Review Approved: 张三 2026-10-14').denied, false)
 })
 

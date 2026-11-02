@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { snapshot } from './lib/fs-snapshot.mjs'
+import { FULL_WIDTH_LINES, SIGNATURE_LINES, VERDICT_LINES } from './lib/review-approval-samples.mjs'
 
 // 通过 /opsx:quality、/opsx:apply、/opsx:verify、/opsx:archive 实际调用的确定性校验入口验证行为；
 // 每个用例在临时 git 仓库里构造真实变更目录，不连接远端、不改动本仓库。
@@ -1810,4 +1812,253 @@ test('变更终点：区块无效时 evidence 不读取区块，退出码与切�
   assert.deepEqual(withInvalid.json().slices, without.json().slices)
   // 同一个区块让读取变更终点的命令退出码 2，说明区块确实无效。
   assert.equal(f.run('classify', f.changeRoot, '--from', fingerprintOf(f)).code, 2)
+})
+
+// ---------------------------------------------------------------------------
+// add-change-progress-view Slice 01：facts 输出一个变更的事实（Seam：implementation-gate.mjs facts）
+// ---------------------------------------------------------------------------
+
+/** 运行 facts 并解析 JSON；退出码不是 0 时直接失败，并写出 stderr。 */
+const factsOf = f => {
+  const result = f.run('facts', f.changeRoot)
+  assert.equal(result.code, 0, result.err)
+  return result.json()
+}
+
+/** 写 review-summary.md，lines 为正文行。 */
+const writeSummary = (f, ...lines) =>
+  f.write('openspec/changes/demo/review-summary.md', ['# 技术评审汇总（demo）', '', ...lines, ''].join('\n'))
+
+/** 写 verification.md；fingerprint 为 null 时不写 Fingerprint 行。 */
+const writeVerification = (f, fingerprint) => f.write('openspec/changes/demo/verification.md',
+  ['# Verify 报告（demo）', '', ...(fingerprint ? [`- Fingerprint: ${fingerprint}`] : []), '- Verify Mode: 全量', ''].join('\n'))
+
+/** 写 design.md：lines 为 Open Questions 一节的正文。前后各有一节带列表项，确认只统计该节。 */
+const writeDesign = (f, lines, heading = '## Open Questions') => f.write('openspec/changes/demo/design.md',
+  ['## Context', '', '- 背景说明', '', heading, '', ...lines, '', '## 评审意见闭环记录', '', '- 不是待决定事项', ''].join('\n'))
+
+test('facts：存在阻断项时退出码 0，archive 与 archive 子命令的输出相同，不写变更目录', t => {
+  const f = fixture(t)
+  completedChange(f, ['01'])
+  f.write('src/order.js', 'export const create = () => 42\n')
+  const before = snapshot(f.changeRoot)
+  const result = f.run('facts', f.changeRoot)
+  assert.equal(result.code, 0, result.err)
+  const facts = result.json()
+  assert.deepEqual(Object.keys(facts).sort(),
+    ['archive', 'change', 'command', 'currentFingerprint', 'openQuestions', 'technicalReview', 'tier', 'verification'])
+  assert.equal(facts.command, 'facts')
+  assert.equal(facts.change, 'demo')
+  assert.equal(facts.currentFingerprint, fingerprintOf(f))
+  assert.equal(facts.archive.ok, false)
+  assert.ok(facts.archive.blockers.some(item => item.includes('Slice 01') && item.includes('过期')), JSON.stringify(facts.archive.blockers))
+  const archive = f.run('archive', f.changeRoot).json()
+  delete archive.command
+  delete archive.change
+  assert.deepEqual(facts.archive, archive)
+  assert.deepEqual(snapshot(f.changeRoot), before)
+})
+
+test('facts：tier 读取 overview.md 的分级行，没有 overview.md 时为 null', t => {
+  const f = fixture(t)
+  assert.equal(factsOf(f).tier, null)
+  f.write('openspec/changes/demo/overview.md', '> 分级：L2 标准 ｜ 判定人：tigger ｜ 日期：2026-10-30 ｜ 依据：新增业务流程\n')
+  assert.equal(factsOf(f).tier, 'L2')
+})
+
+test('facts：变更目录不存在、缺少变更目录或参数不支持时退出码 2 并写出原因', t => {
+  const f = fixture(t)
+  const missing = join(f.repo, 'openspec/changes/missing')
+  const result = f.run('facts', missing)
+  assert.equal(result.code, 2)
+  assert.ok(result.err.includes('变更目录不存在') && result.err.includes(missing), result.err)
+  assert.equal(f.run('facts').code, 2)
+  const unsupported = f.run('facts', f.changeRoot, '--rev', 'HEAD')
+  assert.equal(unsupported.code, 2)
+  assert.ok(unsupported.err.includes('--rev'), unsupported.err)
+})
+
+test('facts：Gate-Verdict: BLOCKED 时 gateVerdict 为 BLOCKED', t => {
+  const f = fixture(t)
+  writeSummary(f, 'Gate-Level: L2', '- Gate-Verdict: `BLOCKED`', 'Technical Review Approved: tigger 2026-10-30')
+  assert.deepEqual(factsOf(f).technicalReview, { exists: true, gateVerdict: 'BLOCKED', approval: 'signed' })
+})
+
+test('facts：裁决值取最后一个 Gate-Verdict: 之后第一个由 ASCII 字母与下划线组成的词，没有这样的词时为 null', t => {
+  const f = fixture(t)
+  // 期望值来自 spec 场景与修复后 hook（提交 75eb718）的规则：全角空格、全角括号与加粗都不影响取到的词。
+  for (const [line, expected] of [
+    ['Gate-Verdict: BLOCKED　（未闭环）', 'BLOCKED'],
+    ['Gate-Verdict: BLOCKED（未闭环）', 'BLOCKED'],
+    ['Gate-Verdict:　BLOCKED', 'BLOCKED'],
+    ['Gate-Verdict: **BLOCKED**（未闭环）', 'BLOCKED'],
+    ['Gate-Verdict: READY_FOR_HUMAN_APPROVAL　（说明）', 'READY_FOR_HUMAN_APPROVAL'],
+    ['Gate-Verdict: 待定', null],
+  ]) {
+    writeSummary(f, line, SIGNATURE_LINES.signed[0])
+    assert.equal(factsOf(f).technicalReview.gateVerdict, expected, line)
+  }
+})
+
+test('facts：签字行是下划线占位后补说明时 approval 为 blank', t => {
+  const f = fixture(t)
+  writeSummary(f, 'Gate-Verdict: READY_FOR_HUMAN_APPROVAL', 'Technical Review Approved: __________ （签字 / 日期）')
+  assert.deepEqual(factsOf(f).technicalReview, { exists: true, gateVerdict: 'READY_FOR_HUMAN_APPROVAL', approval: 'blank' })
+})
+
+test('facts：签字行写了批准人时 approval 为 signed', t => {
+  const f = fixture(t)
+  writeSummary(f, 'Gate-Verdict: READY_FOR_HUMAN_APPROVAL', 'Technical Review Approved: tigger 2026-10-30')
+  assert.equal(factsOf(f).technicalReview.approval, 'signed')
+})
+
+test('facts：没有 Gate-Verdict 行的旧版汇总 gateVerdict 为 null；没有汇总时 exists 为 false、approval 为 missing', t => {
+  const f = fixture(t)
+  assert.deepEqual(factsOf(f).technicalReview, { exists: false, gateVerdict: null, approval: 'missing' })
+  writeSummary(f, '## 4. 门禁裁决', '', '- 裁决：READY_FOR_HUMAN_APPROVAL', '', 'Technical Review Approved: tigger 2026-10-30')
+  assert.deepEqual(factsOf(f).technicalReview, { exists: true, gateVerdict: null, approval: 'signed' })
+})
+
+test('facts：verify 报告的指纹等于当前指纹时 current 为 true', t => {
+  const f = fixture(t)
+  const current = fingerprintOf(f)
+  writeVerification(f, current)
+  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: current, current: true, expectedFingerprint: current })
+})
+
+test('facts：verify 报告之后源文件有修改时 current 为 false；没有报告或报告没有指纹时 current 为 null', t => {
+  const f = fixture(t)
+  const reported = fingerprintOf(f)
+  writeVerification(f, reported)
+  f.write('src/order.js', 'export const create = () => 43\n')
+  const changed = fingerprintOf(f)
+  assert.notEqual(changed, reported)
+  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: reported, current: false, expectedFingerprint: changed })
+  writeVerification(f, null)
+  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: null, current: null, expectedFingerprint: changed })
+  rmSync(join(f.changeRoot, 'verification.md'))
+  assert.deepEqual(factsOf(f).verification, { exists: false, fingerprint: null, current: null, expectedFingerprint: changed })
+})
+
+test('facts：verify 报告的 Fingerprint 字段用加粗、全角冒号或反引号时也能读出；指纹后接说明文字时为 null', t => {
+  const f = fixture(t)
+  const current = fingerprintOf(f)
+  const writeReport = line => f.write('openspec/changes/demo/verification.md', ['# Verify 报告（demo）', '', line, ''].join('\n'))
+  for (const line of [`- **Fingerprint**: ${current}`, `- Fingerprint：${current}`, `- Fingerprint: \`${current}\``]) {
+    writeReport(line)
+    assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: current, current: true, expectedFingerprint: current }, line)
+  }
+  // 说明文字让值不再是合法指纹：与其他指纹字段的校验相同，不截取前面的哈希部分。
+  writeReport(`- Fingerprint: ${current} （终点指纹）`)
+  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: null, current: null, expectedFingerprint: current })
+})
+
+test('facts：声明了变更终点时与终点指纹比较，终点之后其他提交修改源文件不影响 current', t => {
+  const f = fixture(t)
+  f.write('src/order.js', 'export const create = () => 30\n')
+  const c = commitAll(f, 'C')
+  writeChangeHead(f, c)
+  f.write('src/x.js', 'export const x = 1\n')
+  commitAll(f, 'D')
+  const head = revFingerprint(f, c)
+  writeVerification(f, head)
+  const facts = factsOf(f)
+  assert.equal(facts.verification.expectedFingerprint, head)
+  assert.notEqual(facts.verification.expectedFingerprint, facts.currentFingerprint)
+  assert.equal(facts.verification.current, true)
+})
+
+test('facts：变更终点无效时退出码 2 并写出原因', t => {
+  const f = fixture(t)
+  writeChangeHead(f, 'not-a-full-sha')
+  const result = f.run('facts', f.changeRoot)
+  assert.equal(result.code, 2)
+  assert.ok(result.err.includes('变更终点'), result.err)
+})
+
+test('facts：Open Questions 用 ### 标题列出问题，标题下有选项列表与「建议」、没有「结论」时都算待决定', t => {
+  const f = fixture(t)
+  writeDesign(f, ['1', '2', '3', '4'].flatMap(n =>
+    [`### Q${n}：入口放在哪里`, '', '- 选项 A：两步说明', '- 选项 B：依次调用', '', '建议：选项 A', '']))
+  assert.deepEqual(factsOf(f).openQuestions, { pending: 4, total: 4 })
+})
+
+test('facts：Open Questions 的顶层列表项写了「结论」时算已决，子列表与代码块中的行不算条目，标题不区分大小写', t => {
+  const f = fixture(t)
+  const items = decided => ['1', '2', '3'].flatMap(n =>
+    [`- Q${n} 是否拆分？${decided.includes(n) ? '**结论（2026-10-07）**：不拆。' : '待讨论。'}`, '  - 依据：两个变更修改同一批文件'])
+  const codeBlock = ['', '```text', '- 代码块中的行不是条目', '### 也不是条目', '```']
+  writeDesign(f, [...items(['1', '2', '3']), ...codeBlock], '## Open questions')
+  assert.deepEqual(factsOf(f).openQuestions, { pending: 0, total: 3 })
+  writeDesign(f, [...items(['1', '3']), ...codeBlock], '## Open questions')
+  assert.deepEqual(factsOf(f).openQuestions, { pending: 1, total: 3 })
+})
+
+test('facts：Open Questions 只写「无。」、没有该节或没有 design.md 时条数为 0', t => {
+  const f = fixture(t)
+  assert.deepEqual(factsOf(f).openQuestions, { pending: 0, total: 0 })
+  writeDesign(f, ['无。'])
+  assert.deepEqual(factsOf(f).openQuestions, { pending: 0, total: 0 })
+  writeDesign(f, ['- 不是 Open Questions 一节的条目'], '## Decisions')
+  assert.deepEqual(factsOf(f).openQuestions, { pending: 0, total: 0 })
+})
+
+const approvalHook = fileURLToPath(new URL('../skills/openspec-technical-review/hooks/check-review-approval.sh', import.meta.url))
+
+/**
+ * 签字行样本：前 9 个是 hook 测试也使用的共享样本（scripts/lib/review-approval-samples.mjs，含全角写法），null 表示没有签字行，
+ * 其余覆盖 hook 的其他判定分支：空值、单个下划线、模板占位符、「签署人」之后的内容不算签字值、行首有列表与加粗标记。
+ */
+const SIGNATURE_SAMPLES = [
+  ...SIGNATURE_LINES.placeholder,
+  ...SIGNATURE_LINES.placeholderWithNote,
+  ...SIGNATURE_LINES.signed,
+  ...FULL_WIDTH_LINES.blankSignature,
+  ...FULL_WIDTH_LINES.signedSignature,
+  null,
+  'Technical Review Approved:',
+  'Technical Review Approved: _',
+  'Technical Review Approved: <签名> 2026-10-30',
+  'Technical Review Approved: ＜签名＞',
+  'Technical Review Approved: __________ 签署人：张三',
+  'Technical Review Approved: 签署人：张三',
+  '- **Technical Review Approved:** 张三 2026-10-30',
+]
+
+/** 用 apply 前的签字 hook 判定 demo 变更（hook 以项目根为 cwd）：返回 true 表示放行。 */
+function hookAllows(f) {
+  const result = spawnSync('/bin/bash', [approvalHook], {
+    cwd: f.repo,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: f.repo },
+    input: JSON.stringify({ tool_input: { command: 'openspec apply demo' } }),
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr)
+  return result.stdout.trim() === ''
+}
+
+test('facts：签字行判定与 apply 前的签字 hook 一致，hook 放行的样本为 signed，拦截的样本为 blank 或 missing', t => {
+  const f = fixture(t)
+  const outcomes = SIGNATURE_SAMPLES.map(sample => {
+    writeSummary(f, ...(sample === null ? [] : [sample]))
+    const approval = factsOf(f).technicalReview.approval
+    const allowed = hookAllows(f)
+    if (allowed) assert.equal(approval, 'signed', String(sample))
+    else assert.ok(['blank', 'missing'].includes(approval), `${sample}：hook 拦截，facts 为 ${approval}`)
+    return { sample, allowed, approval }
+  })
+  // 两种结果都要出现，避免 hook 或 facts 对全部样本给出同一结果时测试仍通过。
+  assert.deepEqual([...new Set(outcomes.map(item => item.allowed))].sort(), [false, true])
+  assert.equal(outcomes.find(item => item.sample === null).approval, 'missing')
+})
+
+test('facts：裁决行判定与 apply 前的签字 hook 一致，hook 因 BLOCKED 拦截当且仅当 gateVerdict 为 BLOCKED', t => {
+  const f = fixture(t)
+  const samples = [...VERDICT_LINES.blocked.map(line => [line, true]), ...VERDICT_LINES.notBlocked.map(line => [line, false])]
+  for (const [line, blocked] of samples) {
+    // 签字行已签：hook 拦截只能来自裁决行。期望结论取自样本分组，不由任何一份实现推算。
+    writeSummary(f, line, SIGNATURE_LINES.signed[0])
+    assert.equal(hookAllows(f), !blocked, `hook：${JSON.stringify(line)}`)
+    assert.equal(factsOf(f).technicalReview.gateVerdict === 'BLOCKED', blocked, `facts：${JSON.stringify(line)}`)
+  }
 })

@@ -175,6 +175,7 @@
 | `/opsx:archive <change>` | `openspec-archive-change` | 变更归档 |
 | `/opsx:recap [change]` | `openspec-change-recap` | 完成清单：带变更名时为已归档变更补生成或重新生成 `recap.md`；不带参数时按主题打印跨变更总表（archive 归档后自动生成） |
 | `/opsx:explain <change>` | `openspec-finding-explain` | Finding 详细解析（按需生成） |
+| `/opsx:progress` | `openspec-change-progress` | 进度视图：当前项目每个活跃变更的阶段、卡点与下一步命令（旁路，只读，`--json` 供 agent 读取） |
 | `/opsx:video <change> [focus]` | `openspec-explainer-video` | 讲解视频（按需生成，不进默认流程） |
 
 STE 检查（`openspec-ste`）没有独立命令，由四个卡点调用。
@@ -680,6 +681,7 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 旁路（不进默认流程，不参与任何卡点）：
   /opsx:explain → review/finding-details/<ID>.md（解析单个 finding）
   /opsx:video   → video/storyboard.md（人工签署）→ 渲染讲解视频（需要变更模型）
+  /opsx:progress → 终端表格或 --json（活跃变更的阶段、卡点与下一步命令；只读，不写产物）
 ```
 
 ---
