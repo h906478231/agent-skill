@@ -102,6 +102,8 @@ finding 字段、五条硬规则与维度结论**完全沿用** `../openspec-tec
 
 ## 本轴特有内容                            ← Standards：重复率专项；Spec Fidelity：规格覆盖矩阵
 
+## 建议                                    ← 仅第 2 轮起：增量轮新发现的 Minor，写成列表，不编 finding ID（见「修复与重跑」）
+
 ## 结论
 
 Standards Review 结论：有条件通过          ← Spec Fidelity 轴写 Spec Fidelity Review 结论：…
@@ -190,6 +192,7 @@ Code Review Verdict: BLOCKED
 
 - 原始报告缺失、基线不一致、finding 无法定位或前缀与轴不符，说明**评审本身不完整**，不得给出 `PASSED`，补齐后重跑。
 - 「有条件通过」的每个条件必须对应 `tasks.md` 的一个勾选项，或者（只需修改规划产物时）对应该产物的 `<文件>:<行号>`；两者都没有时视同 Blocker（沿用 `../openspec-technical-review/shared/gate-policy.md`）。
+- **条件的来源**：条件只能来自 Major，或来自只需修改规划产物的 Minor（经 `/opsx:update` 修改，不改变实现指纹，不触发新一轮）。要改代码才能修复的 Minor 不列为条件，只有这类 Minor 时结论写「通过」。这类 Minor 保持 `open`，不阻断归档，由完成清单的「没做与遗留」列出；用户决定修复时，按「修复与重跑」新增任务再做。
 - 误报与 risk accepted 按 `gate-policy.md` 第 4 节在**对应轴的原始报告**里具名留痕，并把该 finding 的闭环状态改为 `false-positive` / `risk-accepted`（保留该行）。
 - **任一轴未闭环 Blocker 未清零时不得 `/opsx:archive`**。
 
@@ -231,6 +234,11 @@ node <GATE> review <changeRoot>
 
   输出在基线区块中追加 `Delta Since: git-tree:<上一轮指纹>` 与 `Delta Files` 列表。`Delta Since` 计入基线身份，三份报告必须一致。
 - 增量轮的审查范围 = `Delta Files` 中的文件 + 本轴台账中 `open` 项的闭环验证。不再审查 delta 之外的文件，也不在 verify 前额外安排一次全量评审：各轮 delta 加上台账已覆盖完整 diff。
+- **第 2 轮起只报告 Blocker 与 Major**：增量轮在 `Delta Files` 中新发现的 Minor 不编 finding ID，不进 Findings 表与台账，写进报告的 `## 建议` 小节，不要求落地。
+  - 每条写成一个列表项：`R<轮次> 文件:行号 问题 → 建议`。小节跨轮次累计：保留上一轮的条目，只追加本轮的条目。
+  - 原因：增量轮审查的正是上一轮的修复代码。修 Minor 要改代码，改代码又要开新一轮，新一轮又在修复代码里找到 Minor，轮次不收敛。
+  - 上一轮台账中 `open` 的 Minor 照常做闭环验证。回退为全量基线（见下文）时仍按第 2 轮起处理：按轮次判断，不按基线类型判断。
+  - `## 建议` 写成带 finding ID 的表格时，`review` 校验把这些行当作 finding，要求登记到台账。
 - Spec Fidelity 的规格覆盖矩阵沿用上一轮，只更新 delta 涉及的行；未涉及的行保持不变。
 - 上一轮的 tree 对象已被 git gc 回收时，命令输出 warning 并回退为全量基线（不带 `Delta Since`），本轮按第 1 轮审查完整 diff。
 - 两轴并行，墙钟接近较慢的一轴。重跑时对上轮 Blocker 逐条核实，要指到具体行确认已落地，只看提交说明不算闭环（规则同 `closed-loop-verification.md`）。

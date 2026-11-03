@@ -1076,6 +1076,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - Blocker 只能按判据 B1–B5 判定（写错数据 / 越权 / 假勾选 / 正常输入下已有功能失败 / 吞异常记成功），触发场景以 `[Bn]` 开头；只在依赖故障或边界输入下出现的问题为 Major
 - 修复走 `tasks.md` 勾选；门禁外提交等实现后修改按档位（`非行为` / `等价` / `行为`）登记到 `tasks.md` 的 `## 实现后修改登记`，每行写登记指纹，同一文件再次修改时新增一行；`行为` 档位同时新增任务（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`）
 - 重跑前运行 `classify --from <上一轮指纹>`：只有注释差异时不开新一轮；否则用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
+- 第 2 轮起只报告 Blocker 与 Major：增量轮新发现的 Minor 写进报告的 `## 建议` 小节，不进台账、不要求落地；「有条件通过」的条件只能来自 Major 或只需修改规划产物的 Minor，要改代码的 Minor 保持 `open`、不阻断归档，由完成清单列出
 - 晚归档（实现提交之后又有其他变更的提交）：由用户在 `tasks.md` 写 `## 变更终点`。评审范围为 `Base Commit..变更终点`，基线带 `Change Head` 行；`classify` 比到终点指纹，终点之后的修改不要求登记；登记指纹与 verify 的 `Fingerprint` 写 `fingerprint --rev <变更终点>` 的输出；切片证据仍与当前实现比较（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`「变更终点」，决策见 ADR-0008）
 - 等价增量轮（未登记为空、登记全部为 `等价`）只跑 Standards，Spec Fidelity 沿用上一轮报告，汇总写 `- Carried Axis: spec-fidelity`；`review` 校验沿用基线以来的变化文件只有注释差异或登记为 `等价`
 - 报告原地覆盖，禁止 `-roundN` 副本；闭环历史记在每轴报告的 `## Finding 台账`
