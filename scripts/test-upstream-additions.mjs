@@ -74,6 +74,7 @@ const ANCHORS = {
     '**完整套件存在失败时（本仓自加）**',
     '**实现后修改登记（本仓自加',
     '**实现全部完成后进入质量评审与验证，不得直接归档**',
+    '在新会话中先运行 `/opsx:progress`',
   ],
   'claude/commands/opsx/apply.md': [
     '**技术评审门禁校验（BLOCKING',
@@ -86,6 +87,7 @@ const ANCHORS = {
     '**完整套件存在失败时（本仓自加）**',
     '**实现后修改登记（本仓自加',
     '**实现全部完成后进入质量评审与验证，不得直接归档**',
+    '在新会话中先运行 `/opsx:progress`',
   ],
   'skills/openspec-update-change/SKILL.md': [
     'keep the repository-mandated blocks intact',

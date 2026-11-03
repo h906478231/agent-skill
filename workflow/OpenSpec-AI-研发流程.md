@@ -707,7 +707,7 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video` | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕 | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
 
-> 各阶段读取哪些文件、能否在新会话中开始，见 `skills/openspec-technical-review/shared/phases.md`「各阶段的输入与新会话」。上一阶段的结论写入文件后，换会话不丢信息，并且上下文更小。
+> 各阶段读取哪些文件、能否在新会话中开始，见 `skills/openspec-technical-review/shared/phases.md`「各阶段的输入与新会话」。上一阶段的结论写入文件后，换会话不丢信息，并且上下文更小。apply 完成后，推荐在新会话中运行 `/opsx:quality` 与 `/opsx:verify`，新会话中先运行 `/opsx:progress` 确认阶段；不强制。
 
 > 表中标「按需」的环节（Grill 访谈、讨论回流、变更总览、讲解视频）只在触发条件命中时运行，**不进入每次变更的默认路径**。默认路径是：explore → propose → 分级判定 → （纳入范围时）review + 人工签字 → apply → quality → verify → archive。
 
