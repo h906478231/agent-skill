@@ -28,7 +28,7 @@
 
 ## 各阶段的输入与新会话
 
-各阶段从文件读取输入时，可以在新会话中开始，不必在上一阶段的会话中继续。新会话不带上一阶段读过的文件与工具输出，上下文更小。下表的「能」只表示换会话不丢信息，在同一会话中连续执行也可以。
+各阶段从文件读取输入时，可以在新会话中开始，不必在上一阶段的会话中继续。新会话不带上一阶段读过的文件与工具输出，上下文更小。下表的「能」只表示换会话不丢信息，在同一会话中连续执行也可以。「推荐」表示 apply 完成后在新会话中开始：apply 的会话带着实现过程读过的代码与工具输出，quality 与 verify 只需要文件中的结果，新会话上下文更小，也不带实现过程中形成的判断。新会话中先运行 `/opsx:progress`，确认变更名与当前阶段。推荐不是强制，在同一会话中继续也可以。
 
 | 阶段 | 读取的输入 | 产出 | 能否在新会话中开始 |
 |------|-----------|------|-------------------|
@@ -38,8 +38,8 @@
 | update | 修改依据与全部产物。修改依据大多来自刚才的讨论 | `proposal.md`、`design.md`、`specs/`、`tasks.md` | 通常不能，在讨论的会话中执行。修改依据已完整写在指令中时能（如「design 改为用 X」） |
 | review | `proposal.md`、`design.md` | `review-summary.md`、`review/` | 能 |
 | apply | `proposal.md`、`specs/`、`design.md`、`tasks.md`、`review-summary.md`（启用技术评审时） | 代码、`evidence/`、`tasks.md` | 能。新会话中写明变更名 |
-| quality | 固定基线 diff、产物、`evidence/` | `review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md`、`review/sonar.md`（配置 Sonar 时） | 能 |
-| verify | 产物、门禁脚本输出、`review-summary.md`（启用技术评审时）、`verification.md`（重跑时） | `verification.md` | 能 |
+| quality | 固定基线 diff、产物、`evidence/` | `review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md`、`review/sonar.md`（配置 Sonar 时） | 推荐（apply 完成后）。写明变更名 |
+| verify | 产物、门禁脚本输出、`review-summary.md`（启用技术评审时）、`verification.md`（重跑时） | `verification.md` | 推荐（apply 完成后）。写明变更名。verify 在会话中直接执行，不交给子 agent：豁免判定要问用户 |
 | archive | `verification.md`、门禁脚本输出、`review-summary.md`（启用技术评审时） | `openspec/specs/`、`openspec/changes/archive/`、`recap.md`（归档后生成） | 能。没有 `verification.md` 时拒绝归档 |
 | overview | 全部产物（由子 agent 读取，主会话只接收结论） | `overview.md`、`overview.html`（有变更模型时） | 能 |
 | recap | 归档目录中的全部产物（由子 agent 读取，主会话只接收结论）；不带参数时只读取各完成清单的头部 | `recap.md`（带变更名时） | 能。写明变更名 |
