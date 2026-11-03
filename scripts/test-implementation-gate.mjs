@@ -645,6 +645,27 @@ test('Rules Version 2：台账中已闭环的 Blocker 不计入裁决，台账�
   assert.equal(result.json().verdict, 'PASSED')
 })
 
+test('Rules Version 2：「## 建议」列表不计入 finding；写成带 ID 的表格时按 finding 要求登记台账', t => {
+  // 第 2 轮起增量轮新发现的 Minor 写进「## 建议」列表，不编 ID、不进台账（dual-axis-review.md「修复与重跑」）。
+  const withAdvice = (f, lines) => {
+    const file = join(f.repo, 'openspec/changes/demo/review/standards.md')
+    writeFileSync(file, readFileSync(file, 'utf8').replace('## 结论', ['## 建议', '', ...lines, '', '## 结论'].join('\n')))
+  }
+  const listed = fixture(t)
+  writeReview(listed, listed.run('baseline', listed.changeRoot).out)
+  withAdvice(listed, ['- R2 src/order.js:1 常量名不表意 → 改为 MAX_RETRY'])
+  const passed = listed.run('review', listed.changeRoot)
+  assert.equal(passed.code, 0, passed.out)
+  assert.deepEqual(passed.json().issues, [])
+
+  const tabled = fixture(t)
+  writeReview(tabled, tabled.run('baseline', tabled.changeRoot).out)
+  withAdvice(tabled, [FINDING_HEADER, finding('STD-09', 'Minor')])
+  const result = tabled.run('review', tabled.changeRoot)
+  assert.equal(result.code, 1, result.out)
+  assert.ok(result.json().issues.some(issue => issue.includes('STD-09') && issue.includes('台账')), JSON.stringify(result.json().issues))
+})
+
 test('没有 Rules Version 的旧报告不要求判据前缀与台账', t => {
   const f = fixture(t)
   writeReview(f, legacyBaseline(f.run('baseline', f.changeRoot).out), {

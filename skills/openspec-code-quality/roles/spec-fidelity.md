@@ -25,6 +25,8 @@
 - **本轴闭环判据**：声称「已补实现」要能指出实现行与覆盖它的测试；声称「已回记 design」要能指出 `design.md` 的具体小节。
 - **Blocker 只能按 `<SKILL_DIR>/shared/dual-axis-review.md`「Blocker 判据（B1–B5）」判定**：触发场景以判据编号开头（如 `[B3]`），建议修复写出证明修复的测试或 Seam；不符合任一判据、或只在依赖故障 / 边界输入下出现的问题定为 Major。
 - 报告带 `## Finding 台账`，重跑时原地覆盖并累计台账（格式见同一文件「原地覆盖与 Finding 台账」）。
+- **第 2 轮起只报告 Blocker 与 Major**：`Delta Files` 中新发现的 Minor 写进 `## 建议` 小节（列表项，不编 ID，不进台账），规则见同一文件「修复与重跑」。
+- **「有条件通过」的条件**只能来自 Major，或来自只需修改规划产物的 Minor；只有要改代码才能修复的 Minor 时，结论写「通过」（同一文件「裁决规则」）。
 
 ## 审查清单
 
@@ -54,6 +56,6 @@ diff 中出现 proposal / specs 都没有要求的行为变化（顺手加的功
 
 ## 输出
 
-写入 `review/spec-fidelity.md`，结构按 `<SKILL_DIR>/shared/dual-axis-review.md` 的「原始报告骨架」：基线区块原样粘贴 → 上轮闭环验证（仅重跑） → Findings 表 → Finding 台账 → **规格覆盖矩阵**（`Requirement / Scenario | 实现位置 | 验证证据（测试或 evidence 文件） | 状态`） → **设计偏离清单**（`偏离项 | design 中有无 | 建议：回记 design / 撤销实现`） → 结论。
+写入 `review/spec-fidelity.md`，结构按 `<SKILL_DIR>/shared/dual-axis-review.md` 的「原始报告骨架」：基线区块原样粘贴 → 上轮闭环验证（仅重跑） → Findings 表 → Finding 台账 → **规格覆盖矩阵**（`Requirement / Scenario | 实现位置 | 验证证据（测试或 evidence 文件） | 状态`） → **设计偏离清单**（`偏离项 | design 中有无 | 建议：回记 design / 撤销实现`） → **建议**（仅第 2 轮起） → 结论。
 
 末尾结论行单独成行：`Spec Fidelity Review 结论：通过` / `有条件通过` / `打回`（三选一）。

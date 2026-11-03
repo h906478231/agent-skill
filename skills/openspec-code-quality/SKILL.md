@@ -86,7 +86,7 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>] --since <上一
 2. 对应角色文件全文（其中已声明必读的共用规则，子 agent 自行读取）；
 3. Step 1 的基线区块，并要求「报告开头原样粘贴」。评审范围：第 1 轮以 `Base Commit` 到工作区为准，基线带 `Change Head` 时以 `git diff <Base Commit> <Change Head>` 为准；基线带 `Delta Since` 时只审查 `Delta Files` 列出的文件；
 4. `changeRoot` 与 artifacts 路径；
-5. **重跑时**：本轴上一轮报告路径，要求先对台账中 `open` 的项做上轮闭环验证，原地覆盖报告并累计台账；Spec Fidelity 的规格覆盖矩阵沿用上一轮，只更新 delta 涉及的行；
+5. **重跑时**：本轴上一轮报告路径，要求先对台账中 `open` 的项做上轮闭环验证，原地覆盖报告并累计台账；只报告 Blocker 与 Major，`Delta Files` 中新发现的 Minor 写进 `## 建议` 小节（`shared/dual-axis-review.md`「修复与重跑」）；Spec Fidelity 的规格覆盖矩阵沿用上一轮，只更新 delta 涉及的行；
 6. 明确禁止读取另一轴的原始报告与 `review/code-review-summary.md`；
 7. 只给 Standards 子 agent：前置第 5 步的 Sonar 状态。`已配置` 时，项目的质量配置关闭了 `shared/sonar-scan.md`「Standards 跳过的检查项」中的规则时，写明这些项不跳过。
 
@@ -121,7 +121,7 @@ node <GATE> review <changeRoot>
 ## 裁决与闭环
 
 - 裁决规则见 `shared/dual-axis-review.md`「裁决规则」：**任一轴存在未闭环 Blocker 即 `BLOCKED`，不得 `/opsx:archive`**。
-- 「有条件通过」的每个条件必须对应 `tasks.md` 的一个勾选项，或者（只需修改规划产物时）对应该产物的 `<文件>:<行号>`；**两者都没有时视同 Blocker**。
+- 「有条件通过」的每个条件必须对应 `tasks.md` 的一个勾选项，或者（只需修改规划产物时）对应该产物的 `<文件>:<行号>`；**两者都没有时视同 Blocker**。条件只能来自 Major，或来自只需修改规划产物的 Minor；要改代码才能修复的 Minor 不列为条件，保持 `open`、不阻断归档，修不修由用户决定。
 - Blocker 只能按 `shared/dual-axis-review.md`「Blocker 判据（B1–B5）」判定；只在依赖故障或边界输入下出现的问题定为 Major。
 - 修复即改代码：修复后用 `--since` **重新生成增量基线、两轴都重跑**（只审查 delta；等价增量轮只跑 Standards，见 Step 2），对上轮 Blocker 逐条核实 —— 要指到具体行确认已落地，只看提交说明不算闭环。
 - 已闭环项写入本轴 `## Finding 台账`（`closed` + 闭环轮次 + `文件:行号` 或测试名），不再放进 Findings 表；报告原地覆盖，**禁止**生成 `-roundN` 副本（规则见 `../openspec-technical-review/shared/closed-loop-verification.md`「实现后双轴评审的差异」）。
