@@ -12,8 +12,8 @@
  * 用法：node progress.mjs [--json] [--gate <path>]（在项目目录中运行）
  *   --gate 缺省为相对本脚本的 ../../openspec-technical-review/scripts/implementation-gate.mjs。
  *
- * 输出：默认 Markdown 表格，每个活跃变更一行，表格下方列出告警，最后一行写已归档变更数与最近一个；
- *   --json 输出 { root, active, archived }。
+ * 输出：默认 Markdown 表格，每个活跃变更一行，表格下方列出告警，两个以上变更已开始实现时输出提示，最后一行写已归档变更数与最近一个；
+ *   --json 输出 { root, active, implementing, archived }。
  * 退出码：0 已输出视图（单个变更读取失败也是 0，原因写入该条目的 error）；2 参数错误、openspec CLI 无法运行、
  *   找不到项目的 openspec/、找不到门禁脚本，或门禁脚本不支持 facts。
  * 只读：不写变更目录，不运行写入 git 引用、索引与工作区的命令。facts 计算实现指纹时向 git 对象库写入不可达对象，
@@ -54,6 +54,22 @@ const HISTORICAL_NOTE = '没有分级行，按历史变更处理：不要求编�
  * R2 跳过这类变更、notes 写入 HISTORICAL_NOTE，两处共用这一个判据，阶段与说明才不会互相矛盾。
  */
 const isHistorical = (tier, tasks) => tier === null && tasks.done > 0
+
+/**
+ * 实现阶段：apply 到 archive 之间（phases.md「同一检出只实现一个变更」）。实现指纹按整个工作区计算、只排除规划目录，
+ * 两个变更同时改代码时，各自的切片证据过期，双轴评审与 verify 的 diff 也含对方的代码。
+ */
+const IMPLEMENTATION_STAGES = new Set(['apply', 'quality', 'verify', 'archive'])
+
+/** 同一检出中同一时间允许已开始实现的变更数，超过时视图输出提示，不阻断任何命令。 */
+const MAX_IMPLEMENTING = 1
+
+/**
+ * 是否已开始实现：阶段在实现阶段中，并且已有勾选任务或阶段在 apply 之后。
+ * 阶段为 apply、没有勾选任务的变更不计入：L0 与 MVP 变更 propose 后直接进入 apply 阶段，计入后 propose 就不能并行。
+ * 代价是已开始改代码、还没勾选任务的变更看不出来。读取失败的条目阶段为 null，不计入。
+ */
+const isImplementing = entry => IMPLEMENTATION_STAGES.has(entry.stage) && (entry.tasks.done > 0 || entry.stage !== 'apply')
 
 const USAGE = '用法：node progress.mjs [--json] [--gate <path>]'
 
@@ -302,7 +318,7 @@ function blockerCell(item) {
 
 /**
  * 渲染 Markdown 表格（design D5）：列为变更、分级、阶段、任务、待决定、卡点、下一步；表格下方列出告警，
- * 最后一行写已归档变更数与最近一个。
+ * 已开始实现的变更超过 MAX_IMPLEMENTING 时输出提示，最后一行写已归档变更数与最近一个。
  */
 function renderTable(view) {
   const lines = []
@@ -318,6 +334,11 @@ function renderTable(view) {
   }
   const warnings = view.active.flatMap(item => item.warnings.map(text => `- ${item.change}：${cell(text)}`))
   if (warnings.length) lines.push('', '告警：', ...warnings)
+  if (view.implementing.length > MAX_IMPLEMENTING) {
+    lines.push('', `提示：${view.implementing.length} 个变更已开始实现（${view.implementing.join('、')}）。同一检出同一时间只实现一个变更：`
+      + '另一个变更修改代码会让本变更的切片证据过期，评审的 diff 也含对方的代码。先把一个变更做到归档，再继续另一个'
+      + '（phases.md「同一检出只实现一个变更」）。')
+  }
   const latest = view.archived.filter(item => item.date).reduce((last, item) => (!last || item.date >= last.date ? item : last), null)
   lines.push('', `已归档 ${view.archived.length} 个${latest ? `（最近：${latest.date} ${latest.name}）` : ''}`)
   return `${lines.join('\n')}\n`
@@ -340,7 +361,8 @@ function main(argv) {
     return result.entry
   })
   // 归档目录取 openspec status 的 planningHome.changesDir，与 openspec-archive-change 相同；没有活跃变更时退回项目根下的默认位置（评审 ARCH-03）。
-  const view = { root, active, archived: listArchived(changesDir || path.join(root, 'openspec', 'changes')) }
+  const view = { root, active, implementing: active.filter(isImplementing).map(item => item.change),
+    archived: listArchived(changesDir || path.join(root, 'openspec', 'changes')) }
   return options.json ? `${JSON.stringify(view, null, 2)}\n` : renderTable(view)
 }
 

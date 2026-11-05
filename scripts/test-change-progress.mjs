@@ -266,6 +266,11 @@ test('Open Questions 的待决定条数只展示，不改变阶段、规则与�
   assert.deepEqual(template(two), template(none))
 })
 
+test('implementing 列出已开始实现的变更：有勾选任务的 apply 阶段与 apply 之后的阶段；apply 之前的阶段不计入', () => {
+  assert.deepEqual([...view.implementing].sort(), ['oq-none', 'oq-two', 'r11-archive', 'r6-historical', 'r6-l0',
+    'r7-stale', 'r8-quality', 'r9-note', 'r9-verify'])
+})
+
 test('已归档变更只列名称与日期，不运行门禁：证据过期也不写卡点；目录名不是日期格式时日期为 null', () => {
   assert.deepEqual(view.archived, [{ name: 'old-change', date: '2026-10-28' }, { name: 'legacy-dir', date: null }])
   assert.ok(!view.active.some(item => item.change.includes('old-change')))
@@ -285,6 +290,29 @@ test('两个活跃变更与一个已归档变更时 active 有两个条目', t =
   const result = viewOf(p)
   assert.deepEqual(result.active.map(item => item.change).sort(), ['alpha', 'beta'])
   assert.deepEqual(result.archived, [{ name: 'gamma', date: '2026-10-27' }])
+  // alpha 是 L0 变更，阶段为 apply 但没有勾选任务，还没开始实现：propose 之后的 L0、MVP 变更可以同时存在。
+  assert.deepEqual(result.implementing, ['beta'])
+})
+
+test('两个变更已开始实现时，表格在已归档行之前输出提示，写出两个变更名；只有一个时不提示', t => {
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'alpha', { tier: 'L0', tasks: [true, false] })
+  change(p, 'beta', { tier: 'L0', tasks: [true, false] })
+  const json = viewOf(p)
+  assert.deepEqual(Object.keys(json).sort(), ['active', 'archived', 'implementing', 'root'])
+  assert.deepEqual([...json.implementing].sort(), ['alpha', 'beta'])
+  const result = p.run()
+  assert.equal(result.code, 0, result.err)
+  const lines = result.out.trimEnd().split('\n')
+  const hint = lines.find(line => line.startsWith('提示：'))
+  assert.ok(hint && hint.includes('alpha') && hint.includes('beta'), result.out)
+  assert.ok(lines.indexOf(hint) < lines.length - 1 && lines[lines.length - 1].startsWith('已归档 '), result.out)
+
+  p.write('openspec/changes/beta/tasks.md', '# 实施任务\n\n- [ ] 1.1 任务 1\n- [ ] 1.2 任务 2\n')
+  const single = p.run()
+  assert.equal(single.code, 0, single.err)
+  assert.ok(!single.out.includes('提示：'), single.out)
 })
 
 test('不带 --json 时输出表格：变更名、阶段与下一步在同一行，最后一行写已归档变更数与最近一个', t => {

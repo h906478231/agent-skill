@@ -44,6 +44,15 @@
 | overview | 全部产物（由子 agent 读取，主会话只接收结论） | `overview.md`、`overview.html`（有变更模型时） | 能 |
 | recap | 归档目录中的全部产物（由子 agent 读取，主会话只接收结论）；不带参数时只读取各完成清单的头部 | `recap.md`（带变更名时） | 能。写明变更名 |
 
+## 同一检出只实现一个变更
+
+同一个检出（仓库目录）中，同一时间只有一个变更处于 apply 到 archive 之间：先把一个变更做到归档，再开始另一个变更的 apply。
+
+- **原因**：实现指纹按整个工作区计算，只排除规划目录。另一个变更修改代码时，本变更的切片证据过期，双轴评审与 verify 的 diff 也含另一个变更的代码。
+- **可以并行的阶段**：grill、explore、propose、update、review 只写 `openspec/`，不改变实现指纹，几个变更可以同时进行。
+- **检测**：`/opsx:progress` 发现两个以上变更已开始实现时输出提示，不阻断任何命令。已开始实现指阶段为 quality、verify、archive，或阶段为 apply 并且已有勾选任务。阶段为 apply、没有勾选任务的变更不计入（L0 与 MVP 变更 propose 后直接进入 apply 阶段），所以已开始改代码、还没勾选任务的变更检测不到。apply 不做这项检查。
+- **要并行实现时**（还没有在真实变更上试过）：用 `git worktree` 给第二个变更单独的检出，只在 worktree 的 `openspec/changes/` 下链接该变更的目录（`ln -s <主检出>/openspec/changes/<变更名>`），合并回主检出后在主检出中运行 `/opsx:archive`。不把整个 `openspec/` 换成链接：worktree 中的 `openspec/specs/` 是 git 跟踪的文件，换成链接后 git 把它们看成删除。不用 openspec 的 store 模式。
+
 ## 全景流程图
 
 ```
