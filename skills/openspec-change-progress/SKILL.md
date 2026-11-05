@@ -1,6 +1,6 @@
 ---
 name: openspec-change-progress
-description: OpenSpec 进度视图：只读当前项目的 openspec/，为每个活跃变更输出一行分级、阶段、任务勾选数、待决定条数、卡点与下一步命令，已归档变更只列名称与日期。阶段按 progress.mjs 的 RULES 常量顺序推导，分级、签字、证据、双轴评审与 verify 报告指纹读取门禁脚本 implementation-gate.mjs facts 的输出。用于会话开始、切换会话后接续变更前，回答「每个变更走到哪、卡在哪、下一步跑哪个命令」。输出终端表格，--json 供 agent 读取。不写变更目录，不判断 verify 是否通过，不改变任何门禁。
+description: OpenSpec 进度视图：只读当前项目的 openspec/，为每个活跃变更输出一行分级、阶段、任务勾选数、待决定条数、卡点与下一步命令，已归档变更只列名称与日期；两个以上变更已开始实现时提示同一检出只实现一个变更。阶段按 progress.mjs 的 RULES 常量顺序推导，分级、签字、证据、双轴评审与 verify 报告指纹读取门禁脚本 implementation-gate.mjs facts 的输出。用于会话开始、切换会话后接续变更前，回答「每个变更走到哪、卡在哪、下一步跑哪个命令」。输出终端表格，--json 供 agent 读取。不写变更目录，不判断 verify 是否通过，不改变任何门禁。
 ---
 
 # OpenSpec 进度视图（Progress View）
@@ -43,9 +43,9 @@ node <PROGRESS> [--json] [--gate <path>]   # 在项目目录中运行
 
 ## 如何阅读输出
 
-默认输出 Markdown 表格，列为变更、分级、阶段、任务、待决定、卡点、下一步。卡点只写第一条，多于一条时附「（共 N 条）」。表格下方列出各变更的告警，最后一行写已归档变更数与最近一个。原样显示给用户，不改写。
+默认输出 Markdown 表格，列为变更、分级、阶段、任务、待决定、卡点、下一步。卡点只写第一条，多于一条时附「（共 N 条）」。表格下方列出各变更的告警；两个以上变更已开始实现时输出一行「提示：」；最后一行写已归档变更数与最近一个。原样显示给用户，不改写。
 
-`--json` 输出 `{ root, active, archived }`，`active` 中每个条目的字段：
+`--json` 输出 `{ root, active, implementing, archived }`。`implementing` 是已开始实现的变更名（阶段为 quality、verify、archive，或阶段为 apply 并且已有勾选任务），有两个以上时告诉用户：同一检出同一时间只实现一个变更，规则见 `../openspec-technical-review/shared/phases.md`「同一检出只实现一个变更」。这只是提示，不改变阶段与下一步，不阻断任何命令。`active` 中每个条目的字段：
 
 | 字段 | 读法 |
 |---|---|

@@ -709,6 +709,8 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 
 > 各阶段读取哪些文件、能否在新会话中开始，见 `skills/openspec-technical-review/shared/phases.md`「各阶段的输入与新会话」。上一阶段的结论写入文件后，换会话不丢信息，并且上下文更小。apply 完成后，推荐在新会话中运行 `/opsx:quality` 与 `/opsx:verify`，新会话中先运行 `/opsx:progress` 确认阶段；不强制。
 
+> 同一检出同一时间只实现一个变更（apply 到 archive 之间），grill、explore、propose、update、review 可以几个变更同时进行。`/opsx:progress` 发现两个以上变更已开始实现时输出提示，不阻断。原因与要并行实现时的做法见 `phases.md`「同一检出只实现一个变更」。
+
 > 表中标「按需」的环节（Grill 访谈、讨论回流、变更总览、讲解视频）只在触发条件命中时运行，**不进入每次变更的默认路径**。默认路径是：explore → propose → 分级判定 → （纳入范围时）review + 人工签字 → apply → quality → verify → archive。
 
 ---
