@@ -116,9 +116,11 @@ OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/
       │  ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL
       ▼
 OpenSpec Archive → 归档前置阻断（`implementation-gate.mjs archive`）→ specs 沉淀能力；评审、证据与讨论产物随变更进 changes/archive/
+      │  ※ 归档后生成 recap.md（完成清单，失败不回退归档）
 
 旁路（不进默认流程，不参与任何卡点）：
   /opsx:explain → review/finding-details/<ID>.md（解析单个 finding）
+  /opsx:recap   → recap.md（为已归档变更补生成或重新生成）；不带参数时只打印跨变更总表
   /opsx:video   → video/storyboard.md（人工签署）→ 渲染讲解视频（需要变更模型）
   /opsx:progress → 终端表格或 --json（活跃变更的阶段、卡点与下一步命令；只读，不写产物）
 ```
