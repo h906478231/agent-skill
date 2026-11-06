@@ -676,9 +676,11 @@ OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/
       │  ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL
       ▼
 OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据与讨论产物随变更进 changes/archive/
+      │  ※ 归档后生成 recap.md（完成清单，失败不回退归档）
 
 旁路（不进默认流程，不参与任何卡点）：
   /opsx:explain → review/finding-details/<ID>.md（解析单个 finding）
+  /opsx:recap   → recap.md（为已归档变更补生成或重新生成）；不带参数时只打印跨变更总表
   /opsx:video   → video/storyboard.md（人工签署）→ 渲染讲解视频（需要变更模型）
 ```
 
@@ -702,12 +704,13 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | Phase 5 代码实现 | `/opsx:apply` | 开始前通过签字校验、STE 检查、变更模型检查；按已评审通过的设计实现，不重新设计；**按切片实施 + TDD 纪律**；**证据先于勾选** | 代码 + `evidence/slice-<id>.md` + `tasks.md` 勾选 | 是 |
 | Phase 5.5 双轴独立评审 | `/opsx:quality` | 同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；项目配置了 Sonar 时，最后用 SonarScanner 扫描，只处理本次修改行上的问题；L2/L3 必跑，L0/L1 推荐 | `review/standards.md` + `review/spec-fidelity.md` + `review/code-review-summary.md`（+ `review/sonar.md`，配置 Sonar 时） | 否（只报告） |
 | Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + 切片证据与双轴裁决核对 + STE / 变更模型检查；**实现与设计交叉核对** | `verification.md`（校验报告） | 修复项 |
-| 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务 | `openspec/specs/**` + `changes/archive/<name>/` | 否 |
+| 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务 | `openspec/specs/**` + `changes/archive/<name>/` + `changes/archive/<name>/recap.md`（完成清单，归档后生成，失败不回退归档） | 否 |
+| 完成清单（按需） | `/opsx:recap` | 为已归档变更补生成或重新生成完成清单，按新增、修改、删除、修复、没做与遗留列出事项，以实际结果为准；由一个子 agent 生成，主会话只接收结论；不带参数时由脚本按主题打印跨变更总表，不写文件（规则见 `skills/openspec-change-recap/SKILL.md`） | `changes/archive/<name>/recap.md`（派生视图）；跨变更总表只打印 | 否 |
 | 讲解视频（按需，不进默认流程） | `/opsx:video` | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕 | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
 
 > 各阶段读取哪些文件、能否在新会话中开始，见 `skills/openspec-technical-review/shared/phases.md`「各阶段的输入与新会话」。上一阶段的结论写入文件后，换会话不丢信息，并且上下文更小。
 
-> 表中标「按需」的环节（Grill 访谈、讨论回流、变更总览、讲解视频）只在触发条件命中时运行，**不进入每次变更的默认路径**。默认路径是：explore → propose → 分级判定 → （纳入范围时）review + 人工签字 → apply → quality → verify → archive。
+> 表中标「按需」的环节（Grill 访谈、讨论回流、变更总览、完成清单、讲解视频）只在触发条件命中时运行，**不进入每次变更的默认路径**。默认路径是：explore → propose → 分级判定 → （纳入范围时）review + 人工签字 → apply → quality → verify → archive。
 
 ---
 
