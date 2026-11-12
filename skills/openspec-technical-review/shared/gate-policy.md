@@ -99,3 +99,5 @@ AI 评审会误报，**被误报卡死不是流程的本意**。两条逃生通�
 ```
 
 两者的区别不能混用：**问题不成立叫误报，问题成立但不修叫 risk accepted。** 把真问题写成「误报」会让后续复查失去线索。
+
+`/opsx:quality` 写的记录（双轴原始报告）另加一行来源：驳回人、接受人由 agent 按用户对该 finding ID 的 `AskUserQuestion` 回复写入，规则见 `../../openspec-code-quality/shared/dual-axis-review.md`「裁决规则」。技术评审 `review/<role>.md` 的记录不适用这一条。

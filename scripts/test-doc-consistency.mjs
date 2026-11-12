@@ -648,3 +648,50 @@ test('agent 规则文件：AGENTS.md 为唯一事实源，CLAUDE.md 首行导入
   }
   assert.deepEqual(stale, [], `以下文件仍引用不存在的 AGENT.md：${stale.join('、')}`)
 })
+
+/**
+ * quality 询问未闭环问题的处理方式（ADR-0009，add-autopilot-loop Slice 09 的交互部分）。
+ * 询问步骤写在 SKILL.md Step 6；双轴事实源、sonar-scan.md、命令镜像与流程文档只引用或概述，口径必须一致。
+ */
+const QUALITY_SKILL = 'skills/openspec-code-quality/SKILL.md'
+const QUALITY_ASK_REFERRERS = [
+  'skills/openspec-code-quality/shared/dual-axis-review.md',
+  'skills/openspec-code-quality/shared/sonar-scan.md',
+  'claude/commands/opsx/quality.md',
+  PROCESS_DOC,
+]
+
+test('quality 询问处理方式：SKILL.md Step 6 写出询问对象、跳过、分批、选项、按回复写入与留痕字段', async () => {
+  const body = sectionBody(await read(QUALITY_SKILL), '执行步骤').split('\n### Step 6')[1]
+  assert.ok(body, `${QUALITY_SKILL} 缺少 Step 6`)
+  for (const [label, pattern] of [
+    ['询问对象含 PASSED 时的 Major', /裁决为 `PASSED` 时也询问/],
+    ['Minor 不询问', /Minor 不询问/],
+    ['已有未勾选修复任务时跳过', /未勾选的任务写有该 finding ID/],
+    ['每批最多 4 题', /最多 4 题/],
+    ['问题文本不超过 300 字', /不超过 300 字/],
+    ['两轴选项', /`修复`、`risk accepted`、`误报`/],
+    ['Sonar 选项', /`修复`、`误报`、`接受`/],
+    ['回会话处理', /`回会话处理`/],
+    ['来源行', /> 来源：AskUserQuestion，交互会话/],
+    ['用户名来源', /git config user\.name/],
+    ['签署字段不按回复写入', /签署字段不按回复写入/],
+  ]) assert.match(body, pattern, `Step 6 缺少：${label}`)
+})
+
+test('quality 询问处理方式：引用处口径一致，「无需新一轮」不再停止，Sonar 决策人不再只能由用户填写', async () => {
+  const missing = []
+  const stale = []
+  for (const file of [QUALITY_SKILL, ...QUALITY_ASK_REFERRERS]) {
+    const text = await read(file)
+    if (file !== QUALITY_SKILL && !/AskUserQuestion/.test(text)) missing.push(file)
+    text.split('\n').forEach((line, i) => {
+      if (/无需新一轮[^\n]*并停止/.test(line)) stale.push(`${file}:${i + 1}`)
+    })
+  }
+  assert.deepEqual(missing, [], '以下文件没有写出 quality 用 AskUserQuestion 询问处理方式')
+  assert.deepEqual(stale, [], `以下位置「无需新一轮」后仍写「并停止」：\n${stale.join('\n')}`)
+  const sonar = await read('skills/openspec-code-quality/shared/sonar-scan.md')
+  assert.ok(!sonar.includes('不得代填'), 'sonar-scan.md 仍写「决策人」不得由 agent 写入')
+  assert.ok(!/用户在 SonarQube 中标记误报/.test(sonar), 'sonar-scan.md 仍要求误报在 SonarQube 中标记')
+})

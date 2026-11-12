@@ -56,14 +56,14 @@ Sonar 状态为 `已配置` 时，Standards（`roles/standards.md`）不评下�
 
 | 处理 | 做法 | 谁决定 |
 |---|---|---|
-| 修复 | 主 agent 在 `tasks.md` 新增修复任务，写出规则与位置（同一文件的问题可以合并为一项），按 apply 规则修改、写证据、勾选，再重跑 `/opsx:quality` | agent |
-| 误报 | 用户在 SonarQube 中标记误报，在「说明」写理由 | 用户 |
-| 接受 | 用户确认不修改，在「说明」写理由 | 用户 |
+| 修复 | 主 agent 在 `tasks.md` 新增修复任务，写出规则与位置（同一文件的问题可以合并为一项），按 apply 规则修改、写证据、勾选，再重跑 `/opsx:quality` | 用户（quality 询问） |
+| 误报 | 「说明」写理由。不要求在 SonarQube 中标记，verify 只读本记录 | 用户（quality 询问） |
+| 接受 | 「说明」写不修改的理由 | 用户（quality 询问） |
 
-- 「决策人」只能由用户填写，agent 不得代填，规则与签字行相同。处理为「修复」的行不写决策人。
+- 处理方式由 `/opsx:quality` 用 `AskUserQuestion` 逐行询问（`../SKILL.md`「Step 6」）。「决策人」是留痕字段：agent 只按用户对该行的回复写入 `<用户名>（AskUserQuestion，交互会话）`，用户名取项目的 `git config user.name`；没有回复的行不写。处理为「修复」的行不写决策人。
 - 不得为了通过扫描增加 `NOSONAR` 注释或抑制注解。确实需要时，按 `../../openspec-apply-change/shared/post-implementation-changes.md` 登记为 `等价` 修改，并经用户确认。
 - 修复后重跑 `/opsx:quality`：增量评审与重新扫描在同一轮完成。修复后的问题不再出现在新的扫描结果中。
-- agent 不调用 SonarQube 的写入接口（标记误报、修改问题状态），这些由用户操作。
+- agent 不调用 SonarQube 的写入接口（标记误报、修改问题状态）。用户愿意时可以自己在 SonarQube 中标记，不影响本记录。
 
 ## 记录：`review/sonar.md`
 

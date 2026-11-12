@@ -191,9 +191,10 @@ Code Review Verdict: BLOCKED
 | 两份原始报告齐全、基线一致、finding 均可定位，且两轴都没有未闭环 Blocker | `PASSED` |
 
 - 原始报告缺失、基线不一致、finding 无法定位或前缀与轴不符，说明**评审本身不完整**，不得给出 `PASSED`，补齐后重跑。
-- 「有条件通过」的每个条件必须对应 `tasks.md` 的一个勾选项，或者（只需修改规划产物时）对应该产物的 `<文件>:<行号>`；两者都没有时视同 Blocker（沿用 `../openspec-technical-review/shared/gate-policy.md`）。
-- **条件的来源**：条件只能来自 Major，或来自只需修改规划产物的 Minor（经 `/opsx:update` 修改，不改变实现指纹，不触发新一轮）。要改代码才能修复的 Minor 不列为条件，只有这类 Minor 时结论写「通过」。这类 Minor 保持 `open`，不阻断归档，由完成清单的「没做与遗留」列出；用户决定修复时，按「修复与重跑」新增任务再做。
-- 误报与 risk accepted 按 `gate-policy.md` 第 4 节在**对应轴的原始报告**里具名留痕，并把该 finding 的闭环状态改为 `false-positive` / `risk-accepted`（保留该行）。
+- **未闭环的 Blocker 与 Major 由用户决定处理方式**：quality 收尾时用 `AskUserQuestion` 逐条询问 `修复` / `risk accepted` / `误报`，裁决为 `PASSED` 时也询问；Minor 不询问（步骤见 `../SKILL.md`「Step 6」）。选 `修复` 才新增任务或修改规划产物，选另外两项时按下文留痕，不改代码，不开新一轮。
+- 「有条件通过」的每个条件必须对应 `tasks.md` 的一个勾选项，或者（只需修改规划产物时）对应该产物的 `<文件>:<行号>`，或者已记为 risk accepted、误报；都没有时视同 Blocker（沿用 `../openspec-technical-review/shared/gate-policy.md`）。
+- **条件的来源**：条件只能来自 Major，或来自只需修改规划产物的 Minor（经 `/opsx:update` 修改，或用户在 quality 的询问中选 `修复` 后由 quality 按问题中的文字修改一处；都不改变实现指纹，不触发新一轮）。要改代码才能修复的 Minor 不列为条件，只有这类 Minor 时结论写「通过」。这类 Minor 保持 `open`，不阻断归档，由完成清单的「没做与遗留」列出；用户决定修复时，按「修复与重跑」新增任务再做。
+- 误报与 risk accepted 按 `gate-policy.md` 第 4 节在**对应轴的原始报告**里具名留痕，并把该 finding 的闭环状态改为 `false-positive` / `risk-accepted`（保留该行）。驳回人、接受人由 agent 按用户对该 finding ID 的回复写入，记录末尾加一行 `> 来源：AskUserQuestion，交互会话`；用户名取项目的 `git config user.name`。
 - **任一轴未闭环 Blocker 未清零时不得 `/opsx:archive`**。
 
 ## 命令级校验
@@ -221,8 +222,8 @@ node <GATE> review <changeRoot>
 ## 修复与重跑
 
 - 修复动作回 `tasks.md` 新增勾选项再做。不在未勾选任务内进行的修改（门禁外提交、评审后的补日志或重构）按档位登记到 `tasks.md` 的 `## 实现后修改登记`，`行为` 档位同时新增任务（规则见 `../openspec-apply-change/shared/post-implementation-changes.md`；门禁外提交的闭环要求见 `closed-loop-verification.md`「实现后双轴评审的差异」）。
-- **只有注释差异时不开新一轮**：`node <GATE> classify <changeRoot> --from <上一轮 Fingerprint>` 的 `other` 为空时，输出「无需新一轮」并停止，不生成新基线，三份报告保持不变。
-- **只改测试时不开新一轮**：同一命令的 `unregistered` 为空、`registered` 全部为 `仅测试` 时，同样输出「无需新一轮」并停止。测试不改变生产代码的行为，Spec Fidelity 的结论不变；断言的修改与删除由 `/opsx:verify` 对照登记行核对。
+- **只有注释差异时不开新一轮**：`node <GATE> classify <changeRoot> --from <上一轮 Fingerprint>` 的 `other` 为空时，输出「无需新一轮」，不生成新基线，三份报告保持不变；仍询问未闭环问题的处理方式（`../SKILL.md`「Step 6」）。
+- **只改测试时不开新一轮**：同一命令的 `unregistered` 为空、`registered` 全部为 `仅测试` 时，同样输出「无需新一轮」，不生成新基线，仍询问未闭环问题的处理方式。测试不改变生产代码的行为，Spec Fidelity 的结论不变；断言的修改与删除由 `/opsx:verify` 对照登记行核对。
 - **等价增量轮只跑 Standards**：同一命令的 `unregistered` 为空、`registered` 全部为 `等价` 或 `仅测试`、且至少有一个 `等价` 时，本轮只重跑 Standards，Spec Fidelity 沿用：
   - `review/spec-fidelity.md` 不修改，保留上一轮的基线区块；
   - Standards 报告与汇总使用新的增量基线，汇总写 `- Carried Axis: spec-fidelity`（格式见「汇总报告」）；
