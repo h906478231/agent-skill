@@ -221,14 +221,14 @@ test('实现后修改登记：事实源的档位与登记表标题、列和门�
   const gate = await read('skills/openspec-technical-review/scripts/implementation-gate.mjs')
   const tiers = [...gate.match(/const CHANGE_TIERS = \[([^\]]*)\]/)[1].matchAll(/'([^']+)'/g)].map(m => m[1])
   const title = gate.match(/const CHANGE_LEDGER_TITLE = '([^']+)'/)[1]
-  assert.deepEqual(tiers, ['非行为', '等价', '行为'])
+  assert.deepEqual(tiers, ['非行为', '仅测试', '等价', '行为'])
   assert.ok(rules.includes(`## ${title}\n`), `事实源缺少登记表标题 ## ${title}`)
   assert.ok(rules.includes('| 编号 | 文件 | 提交 | 登记指纹 | 档位 | 判定依据 | 验证 | 判定人 | 日期 |'), '事实源缺少登记表表头')
   // 门禁脚本按登记指纹核对登记之后是否又有修改，旧规则「同一文件再次修改时不新增一行」不再成立。
   assert.ok(!rules.includes('不新增一行'), '事实源仍写「同一文件再次修改时不新增一行」')
   for (const tier of tiers) {
     const rows = rules.split('\n').filter(line => line.startsWith(`| \`${tier}\` |`))
-    assert.equal(rows.length, 2, `事实源「三档判定」与「各档最少动作」应各有一行 ${tier}`)
+    assert.equal(rows.length, 2, `事实源「四档判定」与「各档最少动作」应各有一行 ${tier}`)
   }
   const missing = []
   for (const file of LEDGER_FINGERPRINT_REFERRERS) {

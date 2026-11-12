@@ -1152,6 +1152,28 @@ test('classify：登记后同一文件只有注释差异时仍在 registered', t
   assert.deepEqual(result.json().issues, [])
 })
 
+test('classify：仅测试行只能证明测试路径下的文件已登记，生产代码列入 unregistered 并写出原因', t => {
+  const tests = {
+    'src/test/java/demo/OrderIT.java': JAVA_ORDER,
+    'web/order.spec.ts': 'export const a = 1\n',
+    'scripts/test-gate.mjs': 'export const a = 1\n',
+    'pkg/order_test.go': 'package pkg\n',
+  }
+  const production = { 'src/main/java/demo/SpeedTest.java': JAVA_ORDER, 'web/order.ts': 'export const a = 1\n' }
+  const { f, from } = classifyCase(t, {}, { ...tests, ...production })
+  writeChangeLedger(f, [['M1', Object.keys({ ...tests, ...production }).join('、'), '仅测试']])
+  const result = f.run('classify', f.changeRoot, '--from', from)
+  assert.equal(result.code, 1)
+  const report = result.json()
+  assert.deepEqual(report.registered.map(item => item.file).sort(), Object.keys(tests).sort())
+  assert.ok(report.registered.every(item => item.tier === '仅测试' && item.id === 'M1'))
+  assert.deepEqual(report.unregistered.sort(), Object.keys(production).sort())
+  for (const file of Object.keys(production)) {
+    assert.ok(report.issues.some(item => item.includes(file) && item.includes('仅测试') && item.includes('测试路径')),
+      JSON.stringify(report.issues))
+  }
+})
+
 test('classify：登记指纹为空、格式不合法或 tree 对象不存在时该行不算登记，issues 写出原因', t => {
   const missing = `git-tree:${'0'.repeat(40)}`
   const files = ['src/A.java', 'src/B.java', 'src/C.java']
@@ -1213,6 +1235,30 @@ test('review：沿用基线之后有未登记或登记为行为的文件时报�
   for (const file of ['src/order.js', 'src/pay.js']) {
     assert.ok(report.issues.some(issue => issue.includes('Carried Axis') && issue.includes(file)), JSON.stringify(report.issues))
   }
+})
+
+test('review：沿用轮的增量文件登记为仅测试时沿用成立', t => {
+  const { result } = carriedRound(t,
+    { 'src/order.js': 'export const create = () => 1 // log\n', 'test/order.test.js': 'export const ok = true\n' },
+    [['M1', 'src/order.js', '等价'], ['M2', 'test/order.test.js', '仅测试']])
+  assert.equal(result.code, 0, result.out)
+  assert.deepEqual(result.json().issues, [])
+  assert.deepEqual(result.json().carried.files, ['src/order.js', 'test/order.test.js'])
+})
+
+test('review：评审后注释差异之外的文件全部登记为仅测试时不输出基线陈旧 warning，有等价行时照常输出', t => {
+  const f = fixture(t)
+  f.write('src/Order.java', JAVA_ORDER)
+  writeReview(f, f.run('baseline', f.changeRoot).out)
+  f.write('src/Order.java', javaCommentEdit(JAVA_ORDER))
+  f.write('src/test/java/demo/OrderTest.java', JAVA_ORDER)
+  writeChangeLedger(f, [['M1', 'src/test/java/demo/OrderTest.java', '仅测试']])
+  const quiet = f.run('review', f.changeRoot)
+  assert.equal(quiet.code, 0, quiet.out)
+  assert.deepEqual(quiet.json().warnings, [])
+  f.write('src/order.js', 'export const create = () => 1 // log\n')
+  writeChangeLedger(f, [['M1', 'src/test/java/demo/OrderTest.java', '仅测试'], ['M2', 'src/order.js', '等价']])
+  assert.ok(f.run('review', f.changeRoot).json().warnings.some(item => item.includes('Fingerprint')))
 })
 
 test('review：沿用的 Spec Fidelity 报告中的 open Blocker 仍计入裁决', t => {

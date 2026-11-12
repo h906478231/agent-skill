@@ -80,15 +80,36 @@ const LEDGER_TITLE = 'Finding 台账'
 const CHANGE_LEDGER_TITLE = '实现后修改登记'
 
 /** 修改档位，按风险从低到高排列：同一文件登记多行时取最高档位。 */
-const CHANGE_TIERS = ['非行为', '等价', '行为']
+const CHANGE_TIERS = ['非行为', '仅测试', '等价', '行为']
 
 /**
- * 三个档位的具名常量，与 CHANGE_TIERS 的顺序一一对应。CHANGE_TIERS 的字面量写法不变：文档一致性测试按字面量读取档位。
+ * 四个档位的具名常量，与 CHANGE_TIERS 的顺序一一对应。CHANGE_TIERS 的字面量写法不变：文档一致性测试按字面量读取档位。
  *   - NON_BEHAVIOR_TIER：只有注释差异；classify 判为 other 的文件登记为该档位属于错登。
- *   - EQUIVALENT_TIER：行为不变的修改；唯一可以沿用 Spec Fidelity 的档位。
+ *   - TEST_ONLY_TIER：只改测试路径下的文件（isTestPath）；不开新一轮评审，列出非测试文件的登记属于错登。
+ *   - EQUIVALENT_TIER：行为不变的修改；与仅测试一起是可以沿用 Spec Fidelity 的档位。
  *   - BEHAVIOR_TIER：行为修改；两轴都要重跑。
  */
-const [NON_BEHAVIOR_TIER, EQUIVALENT_TIER, BEHAVIOR_TIER] = CHANGE_TIERS
+const [NON_BEHAVIOR_TIER, TEST_ONLY_TIER, EQUIVALENT_TIER, BEHAVIOR_TIER] = CHANGE_TIERS
+
+/** 测试路径约定的目录段：路径中任一目录段命中即为测试文件（如 Maven/Gradle 的 src/test/）。 */
+const TEST_DIR_SEGMENTS = new Set(['test', 'tests', '__tests__'])
+
+/**
+ * 测试路径约定的文件名：`test_x.py`、`test-x.mjs`、`x_test.go`、`x.test.ts`、`x.spec.js`。
+ * 不按 `*Test.java` 判定：生产代码也可能有以 Test 结尾的类名，Java/Kotlin 测试按 src/test/ 目录识别。
+ */
+const TEST_FILE_NAME = /^test[-_]|(?:_test|\.test|\.spec)\.[^.]+$/
+
+/**
+ * 文件是否在测试路径下（仅测试档位的判定，规则见 post-implementation-changes.md「四档判定」）。
+ * @param {string} file 相对仓库根的路径。
+ * @returns {boolean} 目录段或文件名命中测试路径约定时为 true。
+ */
+function isTestPath(file) {
+  const segments = file.split('/')
+  const name = segments.pop()
+  return segments.some(segment => TEST_DIR_SEGMENTS.has(segment)) || TEST_FILE_NAME.test(name)
+}
 
 /** 没有任何有效登记行列出该文件时的原因：只列入 unregistered，不另写 issues。 */
 const NOT_REGISTERED = '未登记'
@@ -696,6 +717,7 @@ function readChangeLedger(changeRoot) {
 /**
  * 把不只有注释差异的文件（classify 的 other）与登记表匹配，按 design D2 第 6 步判定。classify 与沿用核对共用这一口径。
  * 文件 F 算登记：至少一行档位不是非行为的有效行列出 F，并且「该行登记指纹 → to」之间 F 只有注释差异或没有差异。
+ * 档位为仅测试的行只能证明测试路径下的文件已登记。
  * F 的档位取列出它的全部有效行中的最高档位。登记后又有修改的旧行也计入：只会多跑，不会漏跑。
  * @param {string} repo 仓库根目录，用于比较登记指纹与 to。
  * @param {string} changeRoot 变更目录。
@@ -717,6 +739,11 @@ function matchLedger(repo, changeRoot, files, to) {
       // 非行为档位的前提是 classify 判定只有注释差异；other 中的文件登记为非行为属于错登，该行不能证明已登记。
       if (row.tier === NON_BEHAVIOR_TIER) {
         reasons.push(`登记 ${row.id} 为非行为，但 classify 判定它不只有注释差异，应改为等价或行为`)
+        continue
+      }
+      // 仅测试档位不开新一轮评审，前提是文件在测试路径下；生产代码登记为仅测试属于错登，该行不能证明已登记。
+      if (row.tier === TEST_ONLY_TIER && !isTestPath(file)) {
+        reasons.push(`登记 ${row.id} 为仅测试，但它不在测试路径下，应改为等价或行为`)
         continue
       }
       const since = classifyChanges(repo, row.fingerprint, to)
@@ -1002,7 +1029,7 @@ function reviewRequired(changeRoot, tasks) {
 // ============================================================================
 
 /**
- * 核对沿用条件（design D3）：沿用基线指纹到汇总基线指纹之间的每个变化文件，只有注释差异，或登记为等价。
+ * 核对沿用条件（design D3）：沿用基线指纹到汇总基线指纹之间的每个变化文件，只有注释差异，或登记为等价或仅测试。
  * 登记判定与 classify 相同：未登记、档位为行为、只登记为非行为的其他差异文件都让沿用不成立。
  * @param {string} from 沿用报告的基线指纹。
  * @param {string} to 汇总报告的基线指纹。
@@ -1025,8 +1052,8 @@ function checkCarried(repo, changeRoot, from, to) {
   for (const { file, reason } of ledger.unregistered) {
     issues.push(`${label} 不成立：${file} 自沿用基线以来不只有注释差异（${reason}），按档位登记或重跑 Spec Fidelity`)
   }
-  // 只有等价档位可以沿用：registered 中已排除非行为，剩下的行为档位要两轴都重跑。
-  for (const item of ledger.registered.filter(entry => entry.tier !== EQUIVALENT_TIER)) {
+  // 等价与仅测试档位可以沿用：两者都不改生产代码的行为。registered 中已排除非行为，剩下的行为档位要两轴都重跑。
+  for (const item of ledger.registered.filter(entry => entry.tier !== EQUIVALENT_TIER && entry.tier !== TEST_ONLY_TIER)) {
     issues.push(`${label} 不成立：${item.file} 登记 ${item.id} 的档位为${item.tier}，行为修改要两轴都重跑`)
   }
   return { view, issues }
@@ -1137,12 +1164,15 @@ function checkReview(changeRoot, { required = false, currentFingerprint = null, 
   // 声明了变更终点时与终点指纹比较：终点之后其他变更的提交不属于本变更，不应提示评审陈旧。
   const target = changeHead ? changeHead.fingerprint : currentFingerprint
   const targetLabel = changeHead ? `变更终点 ${changeHead.commit.slice(0, 12)} 的指纹` : '当前实现'
-  // 基线以来只有注释差异时不开新一轮评审，也就不提示陈旧。
-  const commentOnlySince = () => {
+  // 基线以来只有注释差异，或注释差异之外的文件全部登记为仅测试时，不开新一轮评审，也就不提示陈旧。
+  const noNewRoundSince = () => {
     const diff = repo && classifyChanges(repo, baseline.Fingerprint, target)
-    return Boolean(diff) && !diff.other.length
+    if (!diff) return false
+    if (!diff.other.length) return true
+    const ledger = matchLedger(repo, changeRoot, diff.other, target)
+    return !ledger.unregistered.length && ledger.registered.every(entry => entry.tier === TEST_ONLY_TIER)
   }
-  if (target && baseline && baseline.Fingerprint && baseline.Fingerprint !== target && !commentOnlySince()) {
+  if (target && baseline && baseline.Fingerprint && baseline.Fingerprint !== target && !noNewRoundSince()) {
     warnings.push(`评审基线 Fingerprint ${baseline.Fingerprint} 与${targetLabel} ${target} 不一致：评审后实现有变化。`
       + `运行 classify --from ${baseline.Fingerprint}，把 unregistered 中的文件（含门禁外提交）按档位登记到 tasks.md 的「## ${CHANGE_LEDGER_TITLE}」，`
       + '再按档位决定是否生成新基线重跑（规则见 post-implementation-changes.md）')

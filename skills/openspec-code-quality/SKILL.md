@@ -51,6 +51,7 @@ description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec 
 3. 在 `changeRoot` 下创建 `review/` 目录。
 4. **重跑时按档位登记实现后修改**：运行 `node <GATE> classify <changeRoot> --from <上一轮报告基线的 Fingerprint>`，按 `<SKILL_DIR>/../openspec-apply-change/shared/post-implementation-changes.md` 处理结果：
    - `other` 为空（全部文件只有注释差异）：输出「无需新一轮：自上一轮基线以来只有注释差异」并停止，不生成新基线，报告保持不变。
+   - `unregistered` 为空、`registered` 全部为 `仅测试`（注释差异之外只改了测试路径下的文件）：输出「无需新一轮：自上一轮基线以来只改了测试」并停止，不生成新基线，报告保持不变；断言修改由 `/opsx:verify` 核对。测试文件尚未登记时，先按事实源登记 `仅测试`，再次运行 `classify` 后按本条判定。
    - 只在新增并已勾选的任务内修改的文件（按 apply 规则勾选，切片证据新鲜）：`classify` 仍把它们列入 `unregistered`，但它们不是实现后修改（事实源「定义」），不登记；勾选之后又有修改时照常登记，修改与任务对应不上或拿不准时照常登记，判断方法见事实源登记步骤 6。上一轮之后的修改全部属于这类时，进入 Step 1，两轴按增量执行。
    - 其他情况下 `unregistered` 或 `issues` 不为空（含门禁外提交）：先按档位登记到 `tasks.md` 的 `## 实现后修改登记`，再进入 Step 1。不属于上述文件的条目照常登记。`行为` 档位同时新增任务，写明提交 SHA 或文件；`等价` 档位先经用户确认。
    - 退出码 `2`（上一轮 tree 对象已被回收）：无法核对登记，自上一轮以来修改的文件按 `行为` 登记，本轮按第 1 轮审查完整 diff。
@@ -92,7 +93,7 @@ node <GATE> baseline <changeRoot> [--base <变更起点 commit>] --since <上一
 
 环境不支持子 agent 时，按「Standards → Spec Fidelity」顺序执行，并在汇总「执行方式」列标注 `顺序执行（独立性降级）`（规则见 `shared/dual-axis-review.md`「独立性」）。
 
-**等价增量轮**：前置第 4 步 `classify` 的 `unregistered` 为空、`registered` 全部为 `等价` 时，只启动 Standards 子 agent；`review/spec-fidelity.md` 不修改，保留上一轮基线区块；Step 3 汇总写 `- Carried Axis: spec-fidelity`（规则见 `shared/dual-axis-review.md`「修复与重跑」）。`registered` 中有 `行为` 档位时两轴都启动。
+**等价增量轮**：前置第 4 步 `classify` 的 `unregistered` 为空、`registered` 全部为 `等价` 或 `仅测试`、且至少有一个 `等价` 时，只启动 Standards 子 agent；`review/spec-fidelity.md` 不修改，保留上一轮基线区块；Step 3 汇总写 `- Carried Axis: spec-fidelity`（规则见 `shared/dual-axis-review.md`「修复与重跑」）。`registered` 中有 `行为` 档位时两轴都启动。
 
 ### Step 3 — 汇总与裁决
 

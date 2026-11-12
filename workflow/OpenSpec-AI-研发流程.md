@@ -321,6 +321,7 @@ Skill(skill: "openspec-explore", args: "user-nickname-field")
 # ── Phase 6：验证 ──────────────────────────────────
 /opsx:verify <change-name>
 #   → 上一份 verification.md 无 CRITICAL、classify 无未登记文件且无「行为」档位时增量复核：只重跑脚本检查，三维结论沿用
+#   → 核对「仅测试」登记行：diff 中被修改或删除的断言要在判定依据写出原因，对不上记 WARNING
 #   → 三维校验（Completeness / Correctness / Coherence）
 #      ※ Coherence 维度：实现与设计交叉核对
 #   → 直接核对 review-summary.md 的条件清单（不运行 /opsx:overview），结果写进 verification.md「评审条件」，archive 读取该小节
@@ -1079,11 +1080,11 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - 适用范围按分级：**MVP 与 L2/L3 必须跑**，任务清单是平铺清单时也一样；**L0/L1 推荐跑**，未生成不阻断归档（等级取变更目录 `overview.md` 的分级行；读不到等级时按 L2/L3 处理）。一旦创建了任一双轴产物，就必须按规则完整产出三份报告
 - 任一轴存在未闭环 Blocker 即 `BLOCKED`，不得归档
 - Blocker 只能按判据 B1–B5 判定（写错数据 / 越权 / 假勾选 / 正常输入下已有功能失败 / 吞异常记成功），触发场景以 `[Bn]` 开头；只在依赖故障或边界输入下出现的问题为 Major
-- 修复走 `tasks.md` 勾选；门禁外提交等实现后修改按档位（`非行为` / `等价` / `行为`）登记到 `tasks.md` 的 `## 实现后修改登记`，每行写登记指纹，同一文件再次修改时新增一行；`行为` 档位同时新增任务（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`）
-- 重跑前运行 `classify --from <上一轮指纹>`：只有注释差异时不开新一轮；否则用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
+- 修复走 `tasks.md` 勾选；门禁外提交等实现后修改按档位（`非行为` / `仅测试` / `等价` / `行为`）登记到 `tasks.md` 的 `## 实现后修改登记`，每行写登记指纹，同一文件再次修改时新增一行；`行为` 档位同时新增任务（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`）
+- 重跑前运行 `classify --from <上一轮指纹>`：只有注释差异，或注释差异之外全部登记为 `仅测试`（只改测试路径下的文件）时不开新一轮，断言修改由 verify 核对；否则用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
 - 第 2 轮起只报告 Blocker 与 Major：增量轮新发现的 Minor 写进报告的 `## 建议` 小节，不进台账、不要求落地；「有条件通过」的条件只能来自 Major 或只需修改规划产物的 Minor，要改代码的 Minor 保持 `open`、不阻断归档，由完成清单列出
 - 晚归档（实现提交之后又有其他变更的提交）：由用户在 `tasks.md` 写 `## 变更终点`。评审范围为 `Base Commit..变更终点`，基线带 `Change Head` 行；`classify` 比到终点指纹，终点之后的修改不要求登记；登记指纹与 verify 的 `Fingerprint` 写 `fingerprint --rev <变更终点>` 的输出；切片证据仍与当前实现比较（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`「变更终点」，决策见 ADR-0008）
-- 等价增量轮（未登记为空、登记全部为 `等价`）只跑 Standards，Spec Fidelity 沿用上一轮报告，汇总写 `- Carried Axis: spec-fidelity`；`review` 校验沿用基线以来的变化文件只有注释差异或登记为 `等价`
+- 等价增量轮（未登记为空、登记全部为 `等价` 或 `仅测试`、且至少有一个 `等价`）只跑 Standards，Spec Fidelity 沿用上一轮报告，汇总写 `- Carried Axis: spec-fidelity`；`review` 校验沿用基线以来的变化文件只有注释差异或登记为 `等价`、`仅测试`
 - 报告原地覆盖，禁止 `-roundN` 副本；闭环历史记在每轴报告的 `## Finding 台账`
 - Sonar（项目配置了 `sonar-project.properties` 或 `sonar.projectKey`，并且 `SONAR_HOST_URL`、`SONAR_TOKEN` 可用时）：两轴之后用 SonarScanner 扫描，必须带分支或 PR 参数；只处理评审基线以来修改的行上的问题，修复走 `tasks.md`，误报与接受由用户决定；Standards 不评 Sonar 已覆盖的重复代码、认知复杂度、未使用代码与空 catch；verify 对未处理的问题记 CRITICAL（规则：`skills/openspec-code-quality/shared/sonar-scan.md`）
 - 规则唯一事实源：`skills/openspec-code-quality/shared/dual-axis-review.md`
