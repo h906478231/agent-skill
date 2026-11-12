@@ -222,10 +222,11 @@ node <GATE> review <changeRoot>
 
 - 修复动作回 `tasks.md` 新增勾选项再做。不在未勾选任务内进行的修改（门禁外提交、评审后的补日志或重构）按档位登记到 `tasks.md` 的 `## 实现后修改登记`，`行为` 档位同时新增任务（规则见 `../openspec-apply-change/shared/post-implementation-changes.md`；门禁外提交的闭环要求见 `closed-loop-verification.md`「实现后双轴评审的差异」）。
 - **只有注释差异时不开新一轮**：`node <GATE> classify <changeRoot> --from <上一轮 Fingerprint>` 的 `other` 为空时，输出「无需新一轮」并停止，不生成新基线，三份报告保持不变。
-- **等价增量轮只跑 Standards**：同一命令的 `unregistered` 为空、`registered` 全部为 `等价` 时，本轮只重跑 Standards，Spec Fidelity 沿用：
+- **只改测试时不开新一轮**：同一命令的 `unregistered` 为空、`registered` 全部为 `仅测试` 时，同样输出「无需新一轮」并停止。测试不改变生产代码的行为，Spec Fidelity 的结论不变；断言的修改与删除由 `/opsx:verify` 对照登记行核对。
+- **等价增量轮只跑 Standards**：同一命令的 `unregistered` 为空、`registered` 全部为 `等价` 或 `仅测试`、且至少有一个 `等价` 时，本轮只重跑 Standards，Spec Fidelity 沿用：
   - `review/spec-fidelity.md` 不修改，保留上一轮的基线区块；
   - Standards 报告与汇总使用新的增量基线，汇总写 `- Carried Axis: spec-fidelity`（格式见「汇总报告」）；
-  - `registered` 中有 `行为` 档位时两轴都重跑。只有 Spec Fidelity 可以沿用：等价修改正是 Standards 要审查的内容。
+  - `registered` 中有 `行为` 档位时两轴都重跑。只有 Spec Fidelity 可以沿用：等价修改正是 Standards 要审查的内容。`仅测试` 文件留在增量中，Standards 照常审查。
 - **第 1 轮审查完整 diff。第 2 轮起只审查增量**：用上一轮基线的 `Fingerprint` 生成新基线，两轴仍落在同一新基线上：
 
   ```bash

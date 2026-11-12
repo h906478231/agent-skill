@@ -64,6 +64,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
      3. `registered` 中没有档位为 `行为` 的行。
    - `增量` 时只重跑第 5 步的「切片证据与双轴评审闭环」（`evidence`、`review`、`hygiene`）、Sonar 扫描核对、STE 检查与变更模型检查。三维结论、「评审条件」与第 9 步的人工核对沿用上一份报告，报告写明沿用依据（上一份的 `Fingerprint` 与 `classify` 结论）。脚本检查出现新的 CRITICAL 时照常阻断。
    - 其他情况为 `全量`，运行全部步骤：没有上一份报告、`classify` 退出码为 1 或 2、`registered` 中有 `行为` 档位。
+   - **核对 `仅测试` 登记行**（`增量` 与 `全量` 都执行）：对 `classify` 的 `registered` 中每个档位为 `仅测试` 的文件，用 `git diff <修改前指纹的 sha> <登记指纹的 sha> -- <文件>` 列出修改，找出被修改或删除的已有断言（断言语句、预期值、`@Test` 方法、被跳过或禁用的用例）。`判定依据` 写「只新增用例」但 diff 中有这类修改，或写出的断言与原因对不上 diff 时，记 WARNING，写出登记编号与位置。上一份报告中因缺测试记的 WARNING，对应用例落在这些文件中时，重新核对该场景并更新结论。
    - 登记与档位规则见 `../openspec-apply-change/shared/post-implementation-changes.md`。
 
    **复用 Spec Fidelity 结论（本仓自加，非上游原文）** —— `全量` 时先判定本次的 `Spec Fidelity Reuse`。双轴评审已经逐条核对需求、场景与设计偏离，verify 不再逐条搜代码（边界见 `../openspec-code-quality/shared/dual-axis-review.md`「与既有阶段的职责去重」）：
