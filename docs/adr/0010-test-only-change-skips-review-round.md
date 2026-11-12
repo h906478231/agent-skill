@@ -22,7 +22,7 @@ Wechat_ServiceV2 的 `add-es-message-export-api` 在 2026-11-11 跑了 5 轮 qua
 
 **2. 不开新一轮评审**
 
-- `classify` 的 `unregistered` 为空、`registered` 全部为 `仅测试` 时，quality 输出「无需新一轮」并停止；`review` 不输出评审基线陈旧提醒。
+- `classify` 的 `unregistered` 为空、`registered` 全部为 `仅测试` 时，quality 输出「无需新一轮」，不生成新基线；`review` 不输出评审基线陈旧提醒。
 - 同一轮还有 `等价` 文件时按等价增量轮处理：只跑 Standards，`仅测试` 文件留在增量中照常审查，Spec Fidelity 可以沿用。
 - 切片证据照常过期，要用测试套件刷新。
 

@@ -95,3 +95,11 @@ _Avoid_: 进度看板、状态面板、进度报告
 **Forbidden Alias（禁用别名）**:
 CONTEXT.md 中某术语 `_Avoid_` 列出的其他叫法，是 STE 规则「一词一义」的项目侧落点；在产物与对话回复中出现即被 lint 阻断，显式豁免除外（见 ADR-0003）。
 _Avoid_: 禁词、敏感词、黑名单词
+
+**Trace Field（留痕字段）**:
+`/opsx:quality` 写的处理记录中写决策人的三个字段：双轴原始报告中驳回记录的「驳回人」、risk accepted 记录的「接受人」，以及 `review/sonar.md` 的「决策人」。agent 可以按用户对该 finding ID 或该 Sonar 行的 AskUserQuestion 回复写入，并写明回复来源（见 ADR-0009）。与签署字段无关。
+_Avoid_: 代填字段、决策字段
+
+**Sign-off Field（签署字段）**:
+只能由用户写的字段：签字行 `Technical Review Approved:`、`tasks.md` 的变更终点区块（含「判定人」）、待环境补测登记的「确认人」与分镜签署行 `Storyboard Approved:`。agent 不写入、不修改，AskUserQuestion 的回复不能代替用户写入（见 ADR-0009）。与留痕字段无关。
+_Avoid_: 签名字段、手写字段
