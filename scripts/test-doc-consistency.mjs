@@ -40,6 +40,9 @@ const GIT_GUARD_FILES = [
   'skills/openspec-change-recap/SKILL.md',
   // archive 第 7 步生成完成清单：git 边界句写在本仓自加的第 7 步内，不修改上游原文。
   'skills/openspec-archive-change/SKILL.md',
+  // 事实预调研写入变更目录的 discussion-log.md（add-fact-research D7）。
+  'skills/openspec-fact-research/SKILL.md',
+  'claude/commands/opsx/research.md',
   // 面向人的流程文档保留「门禁产物提交 git」的策略，同时写明 agent 不执行提交、以项目 .gitignore 为准。
   PROCESS_DOC,
   'workflow/quickstart-guide.md',
@@ -228,6 +231,35 @@ test('git 边界说明：完成清单的规则文本写明不修改 .gitignore�
   }
   assert.deepEqual(missing, [], `以下文件缺少「${GITIGNORE_GUARD}」：${missing.join('、')}`)
   assert.deepEqual(GITIGNORE_GUARD_FILES.filter(file => !GIT_GUARD_FILES.includes(file)), [], 'GITIGNORE_GUARD_FILES 中的文件必须同时在 GIT_GUARD_FILES 中')
+})
+
+/**
+ * 事实预调研命令的文件头（add-fact-research D6，评审 SEC-01）。
+ * 任务描述是外部系统中他人写的内容；allowed-tools 只预先批准读取任务的命令，其他 flows-cli 命令
+ * （发评论、改任务状态）运行前仍有权限提示。disable-model-invocation 限定只由用户运行，两项不能互相代替。
+ */
+const RESEARCH_COMMAND = 'claude/commands/opsx/research.md'
+const RESEARCH_FLOWS_CLI_ENTRIES = ['Bash(flows-cli --json task get:*)']
+
+/** 取命令文件开头 `---` 之间的文件头，返回键到值的映射。 */
+function frontMatter(markdown, file) {
+  const match = markdown.match(/^---\n([\s\S]*?)\n---\n/)
+  assert.ok(match, `${file} 缺少文件头`)
+  return Object.fromEntries(match[1].split('\n').map(line => {
+    const index = line.indexOf(':')
+    return index < 0 ? [line.trim(), ''] : [line.slice(0, index).trim(), line.slice(index + 1).trim()]
+  }))
+}
+
+test('事实预调研命令：文件头只由用户运行，flows-cli 只预先批准读取任务', async () => {
+  const header = frontMatter(await read(RESEARCH_COMMAND), RESEARCH_COMMAND)
+  assert.equal(header['disable-model-invocation'], 'true', `${RESEARCH_COMMAND} 的文件头应有 disable-model-invocation: true`)
+  const tools = header['allowed-tools']?.match(/[A-Za-z]+(?:\([^)]*\))?/g) ?? []
+  assert.deepEqual(
+    tools.filter(tool => tool.includes('flows-cli')),
+    RESEARCH_FLOWS_CLI_ENTRIES,
+    `${RESEARCH_COMMAND} 的 allowed-tools 中 flows-cli 只能是 ${RESEARCH_FLOWS_CLI_ENTRIES.join('、')}`,
+  )
 })
 
 test('git 边界说明：命令与 skill 不再要求提交变更目录产物', async () => {

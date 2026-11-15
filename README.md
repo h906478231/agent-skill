@@ -5,7 +5,7 @@
 ## 目录结构
 
 ```
-skills/          跨 agent 通用能力（45 个），SKILL.md 标准格式
+skills/          跨 agent 通用能力（46 个），SKILL.md 标准格式
 claude/          Claude Code 专用资产（command / subagent），其他 agent 不支持
 workflow/        云舟编排脚本（`.workflow.js`）与研发流程文档
 mcp-servers/     云舟平台 MCP 集成服务器
@@ -28,7 +28,7 @@ docs/            接入与使用文档
 
 ### 一键安装（推荐）
 
-安装所有 45 个 skills 到支持的 AI 编码工具：
+安装所有 46 个 skills 到支持的 AI 编码工具：
 
 ```bash
 npx skills add h906478231/agent-skill -g -a '*'
@@ -105,12 +105,13 @@ npx skills remove --skill ddd-aggregate
 `openspec-verify-change` `openspec-propose` `openspec-apply-change`
 `openspec-update-change` `openspec-archive-change` `openspec-explore` `openspec-sync-specs`
 
-### OpenSpec 流程增强（11 个）
+### OpenSpec 流程增强（12 个）
 
 | skill                      | 作用 | 命令 |
 |---|---|---|
 | `openspec-grill`               | Phase 1 决策树分轮访谈：消除隐含假设，沉淀 CONTEXT.md 领域术语与 ADR（项目级资产） | `/opsx:grill` |
 | `openspec-grill-policy`        | **可选**的项目级 Grill 门禁（给需要访谈留痕与放行签字的团队）：判定表、模板、`grill-check.js` / `create-grill.js`，脚本与操作手册在仓库 `scripts/grill/` 与 `docs/` 下。默认流程用 `/opsx:grill`，不要求装它 | 由主 agent 加载 |
+| `openspec-fact-research` | 事实预调研：explore 之前由一个只读子 agent 针对一个主题或云舟任务取证，带编号的事实写入变更目录的 `discussion-log.md`；只写事实，不推荐方案，不写云舟 | `/opsx:research` |
 | `openspec-technical-review`    | 编码前多维度技术评审门禁（含 `shared/` 规则事实源、roles、hook、workflow） | `/opsx:review` |
 | `openspec-change-overview` | 变更总览：文档地图 / 端到端流程 / 字段变更台账 / 规则条件可追溯矩阵；由一个子 agent 生成，主会话只接收结论 | `/opsx:overview` |
 | `openspec-code-quality`    | 实现后双轴独立评审：同一固定基线并行跑 Standards Review 与 Spec Fidelity Review，汇总按任一轴未闭环 Blocker 阻断；项目配置了 Sonar 时最后扫描本次修改的行 | `/opsx:quality` |
@@ -149,7 +150,7 @@ npx skills remove --skill ddd-aggregate
 
 | 资产 | 说明 | 手动安装位置 |
 |---|---|---|
-| `commands/opsx/` | opsx 命令组（16 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
+| `commands/opsx/` | opsx 命令组（17 个），调用形式 `/opsx:propose` 等 | `~/.claude/commands/opsx/` |
 | `agents/ddd-modeler.md` | DDD 建模 subagent | `~/.claude/agents/` |
 | `agents/ddd-architect-claude.md` | DDD 主控 subagent（含子 agent 结论回流规则） | `~/.claude/agents/` |
 | `agents/ddd-architect.md` | 同上能力的 opencode 形态（`mode: primary` + permission 白名单） | 按目标 agent 的 agents 目录放置 |
@@ -164,7 +165,7 @@ npx skills remove --skill ddd-aggregate
 
 **升级 OpenSpec 时**：重新生成会整文件覆盖上述增强。`scripts/test-upstream-additions.mjs`（已接入 `npm test`）为每个增强主题登记了一句锚点原文，覆盖后测试会失败并列出丢失的增强。按列表用 git diff 找回内容，与新版上游合并后再提交。
 
-本仓自建资产（11 个 `openspec-*` 流程增强 skill 与 `grill`/`review`/`overview`/`quality`/`explain`/`video`/`recap`/`progress` 八个命令）则严格遵守单一事实源，命令文件均为薄壳。
+本仓自建资产（12 个 `openspec-*` 流程增强 skill 与 `grill`/`research`/`review`/`overview`/`quality`/`explain`/`video`/`recap`/`progress` 九个命令）则严格遵守单一事实源，命令文件均为薄壳。
 
 ## 编写规范
 

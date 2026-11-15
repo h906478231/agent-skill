@@ -107,3 +107,7 @@ _Avoid_: 代填字段、决策字段
 **Sign-off Field（签署字段）**:
 只能由用户写的字段：签字行 `Technical Review Approved:`、`tasks.md` 的变更终点区块（含「判定人」）、待环境补测登记的「确认人」与分镜签署行 `Storyboard Approved:`。agent 不写入、不修改，AskUserQuestion 的回复不能代替用户写入（见 ADR-0009）。与留痕字段无关。
 _Avoid_: 签名字段、手写字段
+
+**Fact Research（事实预调研）**:
+explore 之前，由一个只读子 agent 针对一个主题查明代码现状、既有约定与外部事实的步骤，结果按五段契约写入变更目录的 `discussion-log.md`，只写事实与出处，不写推荐方案。与 explore 不同，它不与用户讨论（见 ADR-0012）。
+_Avoid_: 预调研、先行调研
