@@ -104,6 +104,8 @@ const ANCHORS = {
   'skills/openspec-archive-change/SKILL.md': [
     'Implementation gate result',
     '**归档前置校验（本仓自加，非上游原文）**',
+    '`verify 报告：` 开头的阻断项',
+    '旧格式，没有结论字段',
     '没有该文件时拒绝归档，提示先运行 `/opsx:verify`',
     '**门禁类问题必须阻断，不得只告警**',
     '**归档后：完成清单（本仓自加',
@@ -112,6 +114,8 @@ const ANCHORS = {
   'claude/commands/opsx/archive.md': [
     'Implementation gate result',
     '**归档前置校验（本仓自加，非上游原文）**',
+    '`verify 报告：` 开头的阻断项',
+    '旧格式，没有结论字段',
     '没有该文件时拒绝归档，提示先运行 `/opsx:verify`',
     '**门禁类问题必须阻断，不得只告警**',
     '**归档后：完成清单（本仓自加',
@@ -119,6 +123,8 @@ const ANCHORS = {
   ],
   'skills/openspec-verify-change/SKILL.md': [
     '**核心机制：交叉验证 III',
+    '- Verify-Verdict: PASS / FAIL',
+    '`Verify-Verdict` 与 `Critical-Count` 是门禁读取的结论字段',
     '**切片证据与双轴评审闭环（本仓自加',
     '<changeRoot>/verification.md',
     'archive 与下一次 verify 的增量复核只读这个文件',
@@ -133,6 +139,8 @@ const ANCHORS = {
   ],
   'claude/commands/opsx/verify.md': [
     '**核心机制：交叉验证 III',
+    '- Verify-Verdict: PASS / FAIL',
+    '`Verify-Verdict` 与 `Critical-Count` 是门禁读取的结论字段',
     '**切片证据与双轴评审闭环（本仓自加',
     '<changeRoot>/verification.md',
     'archive 与下一次 verify 的增量复核只读这个文件',

@@ -5,7 +5,7 @@
  * 所属：skill openspec-change-progress。调用方：/opsx:progress，以及会话开始、接续变更前的 agent。
  * 数据来源（add-change-progress-view design D1、D2）：
  *   - openspec list / status --json：活跃变更、任务勾选数、规划产物是否齐全、changeRoot 与归档目录；
- *   - 门禁脚本 implementation-gate.mjs facts：分级、技术评审裁决与签字、切片证据、双轴评审、verify 报告指纹、
+ *   - 门禁脚本 implementation-gate.mjs facts：分级、技术评审裁决与签字、切片证据、双轴评审、verify 报告的指纹与结论字段、
  *     Open Questions 条数。这些读取规则只在门禁脚本中实现，本脚本不解析变更目录的文件。
  * 推导规则见下方 RULES 常量，它是推导规则的唯一事实源，SKILL.md 只说明如何运行与阅读输出。
  *
@@ -79,7 +79,7 @@ class ViewError extends Error {}
 /**
  * 阶段推导规则（design D3）：按顺序判断，命中第一条就停。
  * ctx：name 变更名；tasks 为 { done, total }；complete 为规划产物是否齐全；missing 为状态不是 done 的产物 id；
- *   facts 为门禁脚本 facts 的输出。
+ *   facts 为门禁脚本 facts 的输出。next 的参数为 (name, ctx)。
  * archive.warnings 不参与推导，原样写入条目；Open Questions 条数只展示，不参与推导（用户 2026-10-30 决定）。
  */
 const RULES = Object.freeze([
@@ -156,19 +156,22 @@ const RULES = Object.freeze([
     next: name => `/opsx:verify ${name}`,
   },
   {
-    // 依据：archive 子命令的阻断项会让 /opsx:archive 拒绝归档。目前阻断项只来自切片证据与双轴评审（R7、R8 已处理），
-    // 这条规则兜底门禁脚本以后新增的阻断项。
+    // 依据：archive 子命令的阻断项会让 /opsx:archive 拒绝归档。切片证据与双轴评审的阻断项由 R7、R8 先处理，
+    // 到这里的阻断项来自 verify 结论（`verify 报告：` 开头，add-verify-verdict design D6），以及门禁脚本以后新增的阻断项。
     id: 'R10', stage: 'verify',
     when: ({ facts }) => !facts.archive.ok,
     blockers: ({ facts }) => facts.archive.blockers,
     next: name => `处理卡点后 /opsx:verify ${name}`,
   },
   {
-    // 依据：verification.md 没有固定的结论行，本脚本不判断 verify 是否通过；有 CRITICAL 时 /opsx:archive 本身会拒绝归档。
+    // 依据：报告有结论字段时（facts.verification.legacy 为 false），到这里说明结论为 PASS 且没有 CRITICAL，可以直接归档
+    // （add-verify-verdict design D6）。没有结论字段的旧报告仍要先确认没有 CRITICAL；旧门禁脚本的 facts 没有 legacy 字段，
+    // 值为 undefined，同样按旧报告处理，不会误放行（design 风险 R3）。有 CRITICAL 时 /opsx:archive 本身会拒绝归档。
     id: 'R11', stage: 'archive',
     when: () => true,
     blockers: () => [],
-    next: name => `先确认 verification.md 没有 CRITICAL，再 /opsx:archive ${name}`,
+    next: (name, { facts }) => (facts.verification.legacy === false ? `/opsx:archive ${name}`
+      : `先确认 verification.md 没有 CRITICAL，再 /opsx:archive ${name}`),
   },
 ])
 
@@ -286,7 +289,7 @@ function inspect(name, tasks, gate) {
   return {
     entry: { ...entry, tier: facts.value.tier, stage: rule.stage, openQuestions: facts.value.openQuestions, rule: rule.id,
       blockers: rule.blockers(ctx), warnings: facts.value.archive.warnings, notes: [...historical, ...facts.value.archive.notes],
-      next: rule.next(name) },
+      next: rule.next(name, ctx) },
     changesDir,
   }
 }

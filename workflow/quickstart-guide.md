@@ -253,7 +253,9 @@ MVP 与 L2/L3 必跑，缺少双轴评审产物不能归档；L0/L1 推荐跑（
 
 **同时检查**：切片证据是否过期、双轴评审是否 BLOCKED、STE / 变更模型检查是否有阻断项，以上都记为 CRITICAL
 
-**有 CRITICAL 问题？** → 修复后重跑 `/opsx:verify`
+**报告结论**：`verification.md` 头部写 `Verify-Verdict`（`PASS` / `FAIL`）与 `Critical-Count`（CRITICAL 的条数），有 CRITICAL 或未闭环的条件时为 `FAIL`，`/opsx:archive` 拒绝归档
+
+**有 CRITICAL 问题或结论为 `FAIL`？** → 修复后重跑 `/opsx:verify`
 
 ---
 

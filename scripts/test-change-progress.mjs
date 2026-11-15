@@ -93,8 +93,8 @@ function change(p, name, { tasks = [false], tier = null, slice = false, openQues
 const summary = (...lines) => ['# 技术评审汇总', '', ...lines, ''].join('\n')
 
 // ---------------------------------------------------------------------------
-// R1–R11 推导：一个项目中每条规则一个变更，只运行一次视图。R10 是兜底规则，真实门禁目前构造不出，
-// 由后面「R10：…」用例用假门禁单独覆盖。
+// R1–R11 推导：一个项目中每条规则一个变更，只运行一次视图。R10 用 verify 报告的结论字段构造（add-verify-verdict）；
+// 门禁以后新增的其他阻断项，由后面「R10：…」用例用假门禁单独覆盖。
 // ---------------------------------------------------------------------------
 
 let rules
@@ -130,6 +130,13 @@ before(() => {
     files: { 'evidence/slice-01.md': evidence(current), 'verification.md': `# Verify 报告\n\n- Fingerprint: ${current} （终点指纹）\n` } })
   change(p, 'r11-archive', { tier: 'L0', slice: true, tasks: all(2),
     files: { 'evidence/slice-01.md': evidence(current), 'verification.md': `# Verify 报告\n\n- Fingerprint: ${current}\n` } })
+  // verify 报告写有结论字段（add-verify-verdict design D6）：FAIL 时门禁 archive 有阻断项，R10 命中；PASS 时 R11 直接归档。
+  const verdictReport = (verdict, count) =>
+    `# Verify 报告\n\n- Fingerprint: ${current}\n- Verify-Verdict: ${verdict}\n- Critical-Count: ${count}\n`
+  change(p, 'r10-verdict', { tier: 'L0', slice: true, tasks: all(2),
+    files: { 'evidence/slice-01.md': evidence(current), 'verification.md': verdictReport('FAIL', 2) } })
+  change(p, 'r11-verdict', { tier: 'L0', slice: true, tasks: all(2),
+    files: { 'evidence/slice-01.md': evidence(current), 'verification.md': verdictReport('PASS', 0) } })
   // 已归档变更的证据已过期：视图只列名称与日期，不运行门禁。
   p.write('openspec/changes/archive/2026-10-28-old-change/tasks.md', '## Slice 01: 行为 01\nEvidence: evidence/slice-01.md\n\n- [x] 1.1 任务 1\n')
   p.write('openspec/changes/archive/2026-10-28-old-change/evidence/slice-01.md', evidence(stale))
@@ -149,7 +156,7 @@ const entry = name => {
 
 test('视图为每个活跃变更输出一个条目，字段齐全，不写变更目录，不改 git 的提交、索引与工作区', () => {
   assert.equal(view.root, rules.repo)
-  assert.equal(view.active.length, 15)
+  assert.equal(view.active.length, 17)
   for (const item of view.active) {
     assert.deepEqual(Object.keys(item).sort(),
       ['blockers', 'change', 'error', 'next', 'notes', 'openQuestions', 'rule', 'stage', 'tasks', 'tier', 'warnings'], item.change)
@@ -249,7 +256,24 @@ test('R9：verify 报告有 Fingerprint 行但值不是合法指纹时，卡点�
   assert.deepEqual(item.blockers, ['verify 报告没有合法的 Fingerprint（没有该行，或值不是 git-tree 指纹）'])
 })
 
-test('R11：verify 报告指纹为当前指纹、archive 检查通过时阶段为 archive，下一步要求先确认没有 CRITICAL', () => {
+test('R10：verify 报告的结论为 FAIL 时阶段为 verify，卡点为「verify 报告：」开头的阻断项', () => {
+  const item = entry('r10-verdict')
+  assert.equal(item.stage, 'verify')
+  assert.equal(item.rule, 'R10')
+  // 卡点文字取自 add-verify-verdict design D3 的阻断项表。
+  assert.deepEqual(item.blockers, ['verify 报告：Verify-Verdict 为 FAIL', 'verify 报告：Critical-Count 为 2'])
+  assert.equal(item.next, '处理卡点后 /opsx:verify r10-verdict')
+})
+
+test('R11：verify 报告的结论为 PASS、Critical-Count 为 0 时下一步为 /opsx:archive <name>', () => {
+  const item = entry('r11-verdict')
+  assert.equal(item.stage, 'archive')
+  assert.equal(item.rule, 'R11')
+  assert.equal(item.next, '/opsx:archive r11-verdict')
+  assert.deepEqual(item.blockers, [])
+})
+
+test('R11：没有结论字段的旧 verify 报告、archive 检查通过时阶段为 archive，下一步要求先确认没有 CRITICAL', () => {
   const item = entry('r11-archive')
   assert.equal(item.stage, 'archive')
   assert.equal(item.rule, 'R11')
@@ -267,8 +291,8 @@ test('Open Questions 的待决定条数只展示，不改变阶段、规则与�
 })
 
 test('implementing 列出已开始实现的变更：有勾选任务的 apply 阶段与 apply 之后的阶段；apply 之前的阶段不计入', () => {
-  assert.deepEqual([...view.implementing].sort(), ['oq-none', 'oq-two', 'r11-archive', 'r6-historical', 'r6-l0',
-    'r7-stale', 'r8-quality', 'r9-note', 'r9-verify'])
+  assert.deepEqual([...view.implementing].sort(), ['oq-none', 'oq-two', 'r10-verdict', 'r11-archive', 'r11-verdict',
+    'r6-historical', 'r6-l0', 'r7-stale', 'r8-quality', 'r9-note', 'r9-verify'])
 })
 
 test('已归档变更只列名称与日期，不运行门禁：证据过期也不写卡点；目录名不是日期格式时日期为 null', () => {
@@ -367,12 +391,12 @@ test('门禁脚本的用法文本中没有 facts 时退出码 2，不输出任�
   assert.ok(result.err.includes(oldGate) && result.err.includes('openspec-technical-review'), result.err)
 })
 
-test('R10：门禁 archive 有其他阻断项、前面的规则都不命中时阶段为 verify，卡点原样输出 archive.blockers', t => {
-  // 真实门禁的阻断项目前只来自切片证据与双轴评审（R7、R8 先命中），用假门禁输出固定的 facts，
-  // 让 R1–R9 都不命中、只有 archive.ok 为 false：改动 RULES 的顺序或 R10 的取值时这里会失败。
-  const p = project()
-  t.after(p.cleanup)
-  change(p, 'r10-fallback', { tier: 'L0', tasks: [true] })
+/**
+ * 写一个只支持 facts 的假门禁：facts 输出固定的 facts，让 R1–R9 都不命中，archive 取 { ok, blockers }。
+ * verification 没有 verdict、criticalCount、legacy，与 add-verify-verdict 之前的门禁脚本输出相同。
+ * @returns {string} 假门禁的路径。
+ */
+function fakeGate(p, { ok, blockers }) {
   const fingerprint = `git-tree:${'0'.repeat(40)}`
   const facts = {
     tier: 'L0',
@@ -380,23 +404,45 @@ test('R10：门禁 archive 有其他阻断项、前面的规则都不命中时�
     verification: { exists: true, fingerprint, current: true, expectedFingerprint: fingerprint },
     openQuestions: { pending: 0, total: 0 },
     currentFingerprint: fingerprint,
-    archive: { ok: false, blockers: ['未来阻断项'], warnings: [], notes: [],
+    archive: { ok, blockers, warnings: [], notes: [],
       review: { applicable: false, verdict: null, issues: [] }, evidence: { issues: [] } },
   }
-  const fakeGate = join(p.repo, 'fake-gate.mjs')
-  writeFileSync(fakeGate, [
+  const file = join(p.repo, 'fake-gate.mjs')
+  writeFileSync(file, [
     "if (process.argv[2] !== 'facts') {",
     "  process.stderr.write('用法：node implementation-gate.mjs <fingerprint|facts> <changeRoot>\\n')",
     '  process.exitCode = 2',
     `} else process.stdout.write(${JSON.stringify(JSON.stringify(facts))})`,
     '',
   ].join('\n'))
-  const item = viewOf(p, ['--gate', fakeGate]).active.find(found => found.change === 'r10-fallback')
+  return file
+}
+
+test('R10：门禁 archive 有其他阻断项、前面的规则都不命中时阶段为 verify，卡点原样输出 archive.blockers', t => {
+  // R10 兜底门禁以后新增的阻断项：用假门禁输出固定的 facts，让 R1–R9 都不命中、只有 archive.ok 为 false，
+  // 改动 RULES 的顺序或 R10 的取值时这里会失败。
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'r10-fallback', { tier: 'L0', tasks: [true] })
+  const item = viewOf(p, ['--gate', fakeGate(p, { ok: false, blockers: ['未来阻断项'] })]).active
+    .find(found => found.change === 'r10-fallback')
   assert.ok(item, 'active 中没有 r10-fallback')
   assert.equal(item.rule, 'R10')
   assert.equal(item.stage, 'verify')
   assert.deepEqual(item.blockers, ['未来阻断项'])
   assert.ok(item.next.includes('/opsx:verify r10-fallback'), item.next)
+})
+
+test('R11：门禁脚本的 facts 没有 legacy 字段时按旧报告处理，下一步仍要求先确认没有 CRITICAL', t => {
+  // add-verify-verdict design 风险 R3：已安装副本只同步了进度视图时，旧门禁脚本的 facts 没有 legacy，不能误放行。
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'r11-old-gate', { tier: 'L0', tasks: [true] })
+  const item = viewOf(p, ['--gate', fakeGate(p, { ok: true, blockers: [] })]).active
+    .find(found => found.change === 'r11-old-gate')
+  assert.ok(item, 'active 中没有 r11-old-gate')
+  assert.equal(item.rule, 'R11')
+  assert.ok(item.next.includes('CRITICAL') && item.next.indexOf('CRITICAL') < item.next.indexOf('/opsx:archive r11-old-gate'), item.next)
 })
 
 test('找不到项目的 openspec/ 目录时退出码 2', t => {

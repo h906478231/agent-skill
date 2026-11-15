@@ -88,8 +88,12 @@ _Avoid_: 发布说明、上线文档
 已归档变更的归档目录中的 `recap.md`：按新增、修改、删除、修复、没做与遗留 5 类列出事项并写出落点，以已勾选任务、delta specs、切片证据与评审结论为准，proposal 只作参考。archive 归档后由一个子 agent 生成，是派生视图，可以用 `/opsx:recap <变更名>` 重新生成；跨变更总表只读取它的 4 个头部字段，由脚本打印。agent 不提交它，也不修改 `.gitignore`。
 _Avoid_: 交付清单、变更回顾、完成报告
 
+**Verify Verdict（verify 结论）**:
+`/opsx:verify` 在 `verification.md` 头部 `Fingerprint` 行之后写的两个字段：`Verify-Verdict`（`PASS` / `FAIL`）与 `Critical-Count`（报告中 CRITICAL 的条数）。有 CRITICAL、「评审条件」有未闭环的条件，或第 9 步人工核对有不通过的项时为 `FAIL`。门禁 `archive` 子命令与 `facts` 读取它：`FAIL`、条数大于 0 或字段无法识别时阻断归档，进度视图给出 R10；两个字段都没有的旧报告不阻断。与技术评审的 `Gate-Verdict`（编码前评审的裁决）无关。
+_Avoid_: verify 裁决、验收结论
+
 **Progress View（进度视图）**:
-当前项目活跃变更的阶段、卡点与下一步命令的只读输出：`/opsx:progress` 运行 `progress.mjs`，为每个活跃变更输出一行分级、阶段、任务勾选数、待决定条数、卡点与下一步，`--json` 供 agent 读取；已归档变更只列名称与日期。阶段按 `progress.mjs` 的 `RULES` 常量推导，分级、签字、证据与 verify 报告指纹读取门禁脚本 `facts` 的输出。不写变更目录，不判断 verify 是否通过。
+当前项目活跃变更的阶段、卡点与下一步命令的只读输出：`/opsx:progress` 运行 `progress.mjs`，为每个活跃变更输出一行分级、阶段、任务勾选数、待决定条数、卡点与下一步，`--json` 供 agent 读取；已归档变更只列名称与日期。阶段按 `progress.mjs` 的 `RULES` 常量推导，分级、签字、证据与 verify 报告的指纹和结论字段读取门禁脚本 `facts` 的输出。不写变更目录；verify 结论由门禁脚本读取，进度视图不解析报告。
 _Avoid_: 进度看板、状态面板、进度报告
 
 **Forbidden Alias（禁用别名）**:

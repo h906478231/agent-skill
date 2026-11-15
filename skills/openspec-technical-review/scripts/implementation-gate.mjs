@@ -28,7 +28,7 @@
  * other 中未在 tasks.md「## 实现后修改登记」表登记的文件（unregistered）不为空时退出码 1；tree 对象不存在时退出码 2。
  * regress 比较实际失败清单与已知基线失败清单，只有本次引入的失败（introduced）影响退出码。
  * hygiene 列出变更目录中允许清单外的产物，只给 warning，退出码恒为 0（参数错误除外）。
- * facts 输出一个变更的事实（分级、技术评审裁决与签字、verify 报告指纹、Open Questions 条数、archive 的检查结果），
+ * facts 输出一个变更的事实（分级、技术评审裁决与签字、verify 报告的指纹与结论字段、Open Questions 条数、archive 的检查结果），
  * 只报告不判定：存在阻断项时退出码仍为 0（参数或环境错误除外）。
  * 退出码：0 通过；1 存在阻断项；2 参数或环境错误（非 git 仓库、变更目录不存在等）。
  *
@@ -793,17 +793,20 @@ const CHANGE_HEAD_HEADING = /^##\s+变更终点\s*$/
 const FULL_COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 
 /**
- * 逐行读取 `- Key：value` 字段，返回首个匹配行的值。
+ * 逐行读取 `- Key：value` 字段，返回首个匹配行的值；没有匹配行时返回 null，有该行但值为空时返回空串。
  * 不用 readField：它的冒号后 `\s*` 会跨行，值为空时读到下一行，空的判定人会被当成「- 日期：…」。
  */
-function lineField(lines, key) {
+function findLineField(lines, key) {
   const pattern = new RegExp(`^\\s*(?:[-*]\\s+)?\\**${escapeRegExp(key)}\\**[ \\t]*[:：][ \\t]*(.*)$`)
   for (const line of lines) {
     const match = pattern.exec(line)
     if (match) return clean(match[1])
   }
-  return ''
+  return null
 }
+
+/** 同 findLineField，但没有匹配行时也返回空串：用于不区分「没有该行」与「值为空」的字段。 */
+const lineField = (lines, key) => findLineField(lines, key) ?? ''
 
 /**
  * 读取并校验 tasks.md 的变更终点：提交是全量 SHA、存在、是 HEAD 或 HEAD 的祖先，判定人不为空。
@@ -1567,9 +1570,11 @@ function findTaskIssues(tasks) {
 // ============================================================================
 
 /**
- * 合并双轴评审与切片证据的阻断项；不适用的部分以理由写入 notes，不静默当作通过。
+ * 合并双轴评审、切片证据与 verify 结论的阻断项；不适用的部分以理由写入 notes，不静默当作通过。
  * 待环境补测（pending-environment）的切片不阻断，切片、负责人与补测计划写入 notes，供归档摘要列出。
- * Verify 的其他 CRITICAL（未完成任务、需求未实现等）不在本脚本判定范围，由 archive 流程另行确认。
+ * verify 结论（add-verify-verdict design D3、D4）：报告有结论字段时，结论为 FAIL、Critical-Count 大于 0 或字段无法识别时
+ * 各加一条 `verify 报告：` 开头的阻断项；两个字段都没有的旧报告不阻断，notes 写出说明，CRITICAL 由 archive 流程读取报告确认。
+ * 不解析报告的 CRITICAL 清单，也不比较报告指纹与当前指纹（进度视图的 R9 处理指纹）。
  * 声明了变更终点时（add-change-head design D6）：评审陈旧提醒与终点指纹比较，证据仍与当前指纹比较；
  * notes 写出终点、判定人与终点之后变化的文件数，有未提交的文件时输出 warning，不阻断归档。
  * @param {{ commit: string, fingerprint: string, decider: string }|null} [head] 变更终点（readChangeHead）。
@@ -1596,6 +1601,10 @@ function checkArchive(repo, changeRoot, currentFingerprint, head = null) {
   } else {
     notes.push(evidence.reason)
   }
+  // 与 facts.verification 调用同一个读取函数（design D3），没有 verification.md 时不加阻断项，也不写说明（design D4）。
+  const verify = readVerifyVerdict(readText(changeRoot, 'verification.md'))
+  blockers.push(...verify.blockers)
+  if (verify.legacy) notes.push(LEGACY_VERIFY_NOTE)
   const warnings = [...review.warnings, ...evidence.warnings]
   if (!head) return { ok: blockers.length === 0, blockers, notes, warnings, review, evidence }
   const changeHead = describeChangeHead(repo, changeRoot, head, currentFingerprint)
@@ -1771,12 +1780,67 @@ function readTechnicalReview(changeRoot) {
     approval: signLine === undefined ? 'missing' : approvalOf(signLine) }
 }
 
+/** verify 报告头部的结论字段名（add-verify-verdict design D1）：写在 Fingerprint 行之后，读取规则与 Fingerprint 相同。 */
+const VERIFY_VERDICT_KEY = 'Verify-Verdict'
+const CRITICAL_COUNT_KEY = 'Critical-Count'
+
+/** 门禁只接受这两个结论取值（design D3）：大小写不同、中文写法都按无法识别处理并阻断，漏读一个 FAIL 的代价高于让用户改写一行。 */
+const VERIFY_VERDICTS = Object.freeze({ PASS: 'PASS', FAIL: 'FAIL' })
+
+/** verify 结论阻断项的前缀，写法与「双轴评审：」「切片证据：」相同，archive skill 与进度视图按前缀区分来源（design D3）。 */
+const VERIFY_BLOCKER_PREFIX = 'verify 报告：'
+
+/** 两个结论字段都没有的旧报告写入 archive.notes 的说明（design D4）。 */
+const LEGACY_VERIFY_NOTE = 'verify 报告没有结论字段（旧格式）：CRITICAL 由 /opsx:archive 读取报告确认'
+
+/** 阻断项中写出读到的字段值：区分没有该行与值为空，用户按阻断项改写一行即可（design 风险 R4）。 */
+const describeFieldValue = value => (value === null ? '没有该行' : value || '空')
+
 /**
- * 读取 verify 报告的指纹，并与 verify 写指纹时的取值比较（add-change-progress-view design D2，评审 ARCH-01）。
- * 只比较指纹，不判断报告有没有 CRITICAL：verification.md 没有固定的结论行。
+ * 读取 verify 报告的结论字段（add-verify-verdict design D3–D5）。facts.verification 与 checkArchive 都调用本函数，两者的结果不会不同。
+ * 只读取两个字段行，不解析报告的 CRITICAL 清单：清单是自由格式，漏读一条时会误放行（design 方案 C）。
+ * @param {string|null} report verification.md 的内容，没有报告时为 null。
+ * @returns {{ verdict: string|null, criticalCount: number|null, legacy: boolean|null, blockers: string[] }}
+ *   verdict 为 PASS、FAIL，没有该行或无法识别时为 null；criticalCount 在没有该行或值不以整数开头时为 null；
+ *   legacy 在报告两个字段都没有时为 true，有任一字段时为 false，没有报告时为 null。
+ *   blockers 只由 checkArchive 写入 archive.blockers，facts.verification 不重复列出（design D5）。
+ */
+function readVerifyVerdict(report) {
+  if (report === null) return { verdict: null, criticalCount: null, legacy: null, blockers: [] }
+  const lines = report.split(/\r?\n/)
+  const verdictValue = findLineField(lines, VERIFY_VERDICT_KEY)
+  const countValue = findLineField(lines, CRITICAL_COUNT_KEY)
+  // 两个字段都没有的是本变更之前写的旧报告：不阻断，CRITICAL 仍由 /opsx:archive 读取报告确认（design D4）。
+  if (verdictValue === null && countValue === null) return { verdict: null, criticalCount: null, legacy: true, blockers: [] }
+  // 结论取值中第一个由 ASCII 字母与下划线组成的词，规则与 verdictOf 相同：值后可以接全角括号说明。
+  const word = verdictValue === null ? null : verdictValue.match(/[A-Za-z_]+/)?.[0]
+  const verdict = Object.values(VERIFY_VERDICTS).includes(word) ? word : null
+  // 条数取开头的十进制整数，后面可以有说明文字。
+  const digits = countValue === null ? null : /^\d+/.exec(countValue)
+  const criticalCount = digits ? Number(digits[0]) : null
+  // 有一个结论字段就按新格式校验两个字段，删除一行不能绕过检查（design D4）；无法识别时阻断，不放行（design D3）。
+  const blockers = []
+  if (verdict === null) {
+    blockers.push(`${VERIFY_BLOCKER_PREFIX}${VERIFY_VERDICT_KEY} 缺失或无法识别（${describeFieldValue(verdictValue)}）`)
+  } else if (verdict === VERIFY_VERDICTS.FAIL) {
+    blockers.push(`${VERIFY_BLOCKER_PREFIX}${VERIFY_VERDICT_KEY} 为 ${VERIFY_VERDICTS.FAIL}`)
+  }
+  if (criticalCount === null) {
+    blockers.push(`${VERIFY_BLOCKER_PREFIX}${CRITICAL_COUNT_KEY} 缺失或无法识别（${describeFieldValue(countValue)}）`)
+  } else if (criticalCount > 0) {
+    blockers.push(`${VERIFY_BLOCKER_PREFIX}${CRITICAL_COUNT_KEY} 为 ${criticalCount}`)
+  }
+  return { verdict, criticalCount, legacy: false, blockers }
+}
+
+/**
+ * 读取 verify 报告的指纹与结论字段，指纹与 verify 写指纹时的取值比较（add-change-progress-view design D2，评审 ARCH-01）。
+ * 结论字段由 readVerifyVerdict 读取，不解析报告的 CRITICAL 清单。
  * @param {string} expectedFingerprint verify 应写的指纹：声明了变更终点时为终点指纹，否则为当前指纹。
- * @returns {{ exists: boolean, fingerprint: string|null, current: boolean|null, expectedFingerprint: string }}
+ * @returns {{ exists: boolean, fingerprint: string|null, current: boolean|null, expectedFingerprint: string,
+ *   verdict: string|null, criticalCount: number|null, legacy: boolean|null }}
  *   没有报告或报告没有合法指纹时 current 为 null：没有 Fingerprint 行，或值不是 git-tree 指纹（含指纹后接说明文字）。
+ *   verdict、criticalCount、legacy 见 readVerifyVerdict。
  */
 function readVerification(changeRoot, expectedFingerprint) {
   const report = readText(changeRoot, 'verification.md')
@@ -1784,8 +1848,9 @@ function readVerification(changeRoot, expectedFingerprint) {
   // 与变更终点、登记表的字段读取相同；值不是合法指纹时（含指纹后接说明文字）按没有指纹处理，与其他指纹字段的校验相同。
   const value = report === null ? '' : lineField(report.split(/\r?\n/), 'Fingerprint')
   const fingerprint = GIT_TREE_FINGERPRINT.test(value) ? value : null
+  const { verdict, criticalCount, legacy } = readVerifyVerdict(report)
   return { exists: report !== null, fingerprint, current: fingerprint === null ? null : fingerprint === expectedFingerprint,
-    expectedFingerprint }
+    expectedFingerprint, verdict, criticalCount, legacy }
 }
 
 /** design.md 中待决定事项所在的二级标题，不区分大小写。 */
@@ -1836,7 +1901,7 @@ function countOpenQuestions(changeRoot) {
 }
 
 /**
- * 一个变更的事实（facts 子命令，add-change-progress-view design D2）：分级、技术评审裁决与签字、verify 报告指纹、
+ * 一个变更的事实（facts 子命令，add-change-progress-view design D2）：分级、技术评审裁决与签字、verify 报告的指纹与结论字段、
  * Open Questions 条数，以及与 archive 子命令相同的检查结果。只报告事实，不做门禁判定：阻断项不改变退出码，
  * 阶段与下一步由进度视图（openspec-change-progress 的 progress.mjs）推导。
  * @param {{ commit: string, fingerprint: string, decider: string }|null} head 变更终点（readChangeHead）。

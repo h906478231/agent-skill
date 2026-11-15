@@ -695,3 +695,85 @@ test('quality 询问处理方式：引用处口径一致，「无需新一轮」
   assert.ok(!sonar.includes('不得代填'), 'sonar-scan.md 仍写「决策人」不得由 agent 写入')
   assert.ok(!/用户在 SonarQube 中标记误报/.test(sonar), 'sonar-scan.md 仍要求误报在 SonarQube 中标记')
 })
+
+// ---------------------------------------------------------------------------
+// add-verify-verdict：verify 报告的结论字段（design D1、D2、D7、D8）
+// verify 写字段、archive 核对正文、增量复核条件由 agent 按规则文本执行，这里检查字段名与规则在各处同时出现。
+// ---------------------------------------------------------------------------
+
+const GATE_SCRIPT = 'skills/openspec-technical-review/scripts/implementation-gate.mjs'
+/** 结论字段名，取自 design D1。 */
+const VERDICT_FIELDS = ['Verify-Verdict', 'Critical-Count']
+/** 写有结论字段的规则文本：verify 与 archive 的 skill 和命令副本、门禁口径、Phase 6 输出说明与流程文档。 */
+const VERDICT_FIELD_FILES = [
+  ...VERIFY_REPORT_FILES,
+  ...ARCHIVE_FILES,
+  'skills/openspec-technical-review/shared/implementation-gate-check.md',
+  'skills/openspec-technical-review/shared/phase6-verification.md',
+  PROCESS_DOC,
+]
+
+/** 门禁脚本中以单引号字面量定义的字符串常量。 */
+async function gateConstant(name) {
+  const match = new RegExp(`^const ${name} = '([^']+)'`, 'm').exec(await read(GATE_SCRIPT))
+  assert.ok(match, `门禁脚本缺少常量 ${name}`)
+  return match[1]
+}
+
+test('verify 结论字段：字段名与门禁脚本一致，并在 verify、archive、门禁口径、Phase 6 与流程文档中都出现', async () => {
+  assert.deepEqual([await gateConstant('VERIFY_VERDICT_KEY'), await gateConstant('CRITICAL_COUNT_KEY')], VERDICT_FIELDS)
+  const missing = []
+  for (const file of VERDICT_FIELD_FILES) {
+    const text = await read(file)
+    for (const field of VERDICT_FIELDS) if (!text.includes(field)) missing.push(`${file}：${field}`)
+  }
+  assert.deepEqual(missing, [], '以下文件缺少结论字段名')
+})
+
+test('verify 结论字段：报告模板在 Fingerprint 行之后写两个字段，报告字段写出取值规则，增量复核读取上一份报告的结论', async () => {
+  for (const file of VERIFY_REPORT_FILES) {
+    const lines = (await read(file)).split('\n').map(line => line.trim())
+    const at = lines.indexOf('- Fingerprint: git-tree:<sha>')
+    assert.ok(at >= 0, `${file} 缺少模板行「- Fingerprint: git-tree:<sha>」`)
+    assert.deepEqual(lines.slice(at + 1, at + 3), ['- Verify-Verdict: PASS / FAIL', '- Critical-Count: <N>'], file)
+    const text = lines.join('\n')
+    for (const expected of [
+      // design D2 的 3 个 FAIL 条件与填写时机。
+      '`Critical-Count` 大于 0',
+      '「评审条件」小节有未闭环的条件',
+      '第 9 步人工核对清单有项记为不通过',
+      'Final Assessment 与两个字段一致',
+      // design D8：增量复核的第 1 个条件，以及旧报告的条件。
+      '`Verify-Verdict` 为 `PASS`，`Critical-Count` 为 `0`',
+      '没有这两个字段的旧报告',
+    ]) assert.ok(text.includes(expected), `${file} 缺少「${expected}」`)
+  }
+})
+
+test('verify 结论字段：archive 写出门禁的阻断项前缀、字段与正文不一致时拒绝归档、归档摘要写出两个字段', async () => {
+  const prefix = await gateConstant('VERIFY_BLOCKER_PREFIX')
+  for (const file of ARCHIVE_FILES) {
+    const text = await read(file)
+    for (const expected of [`\`${prefix}\` 开头的阻断项`, '正文却列出 CRITICAL', '旧格式，没有结论字段']) {
+      assert.ok(text.includes(expected), `${file} 缺少「${expected}」`)
+    }
+  }
+})
+
+/** 进度视图的规则文本与两个脚本（add-verify-verdict design D6）：verify 结论由门禁脚本读取，进度视图不解析报告。 */
+const PROGRESS_SKILL = 'skills/openspec-change-progress/SKILL.md'
+const VERDICT_READERS = [PROGRESS_SKILL, 'CONTEXT.md', 'skills/openspec-change-progress/scripts/progress.mjs', GATE_SCRIPT]
+/** 结论字段引入前的旧口径。 */
+const STALE_VERDICT_PHRASES = ['没有固定的结论行', '不判断 verify 是否通过']
+
+test('verify 结论字段：进度视图的 skill、术语表与两个脚本不再写旧口径，skill 与术语表写明结论由门禁脚本读取', async () => {
+  const stale = []
+  for (const file of VERDICT_READERS) {
+    const text = await read(file)
+    for (const phrase of STALE_VERDICT_PHRASES) if (text.includes(phrase)) stale.push(`${file}：${phrase}`)
+  }
+  assert.deepEqual(stale, [], '以下文件仍写 verify 报告没有结论字段的旧口径')
+  for (const file of [PROGRESS_SKILL, 'CONTEXT.md']) {
+    assert.ok((await read(file)).includes('verify 结论由门禁脚本读取'), `${file} 应写明 verify 结论由门禁脚本读取`)
+  }
+})
