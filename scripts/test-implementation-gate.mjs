@@ -1896,9 +1896,16 @@ const factsOf = f => {
 const writeSummary = (f, ...lines) =>
   f.write('openspec/changes/demo/review-summary.md', ['# 技术评审汇总（demo）', '', ...lines, ''].join('\n'))
 
-/** 写 verification.md；fingerprint 为 null 时不写 Fingerprint 行。 */
-const writeVerification = (f, fingerprint) => f.write('openspec/changes/demo/verification.md',
-  ['# Verify 报告（demo）', '', ...(fingerprint ? [`- Fingerprint: ${fingerprint}`] : []), '- Verify Mode: 全量', ''].join('\n'))
+/** 写 verification.md；fingerprint 为 null 时不写 Fingerprint 行，verdictLines 为 Fingerprint 行之后的结论字段行。 */
+const writeVerification = (f, fingerprint, verdictLines = []) => f.write('openspec/changes/demo/verification.md',
+  ['# Verify 报告（demo）', '', ...(fingerprint ? [`- Fingerprint: ${fingerprint}`] : []), ...verdictLines, '- Verify Mode: 全量', '']
+    .join('\n'))
+
+/** 没有结论字段的旧报告在 facts.verification 中的结论字段（add-verify-verdict design D5）。 */
+const LEGACY_VERDICT = { verdict: null, criticalCount: null, legacy: true }
+
+/** 没有 verify 报告时 facts.verification 中的结论字段。 */
+const NO_REPORT_VERDICT = { verdict: null, criticalCount: null, legacy: null }
 
 /** 写 design.md：lines 为 Open Questions 一节的正文。前后各有一节带列表项，确认只统计该节。 */
 const writeDesign = (f, lines, heading = '## Open Questions') => f.write('openspec/changes/demo/design.md',
@@ -1990,7 +1997,8 @@ test('facts：verify 报告的指纹等于当前指纹时 current 为 true', t =
   const f = fixture(t)
   const current = fingerprintOf(f)
   writeVerification(f, current)
-  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: current, current: true, expectedFingerprint: current })
+  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: current, current: true, expectedFingerprint: current,
+    ...LEGACY_VERDICT })
 })
 
 test('facts：verify 报告之后源文件有修改时 current 为 false；没有报告或报告没有指纹时 current 为 null', t => {
@@ -2000,11 +2008,14 @@ test('facts：verify 报告之后源文件有修改时 current 为 false；没�
   f.write('src/order.js', 'export const create = () => 43\n')
   const changed = fingerprintOf(f)
   assert.notEqual(changed, reported)
-  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: reported, current: false, expectedFingerprint: changed })
+  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: reported, current: false, expectedFingerprint: changed,
+    ...LEGACY_VERDICT })
   writeVerification(f, null)
-  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: null, current: null, expectedFingerprint: changed })
+  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: null, current: null, expectedFingerprint: changed,
+    ...LEGACY_VERDICT })
   rmSync(join(f.changeRoot, 'verification.md'))
-  assert.deepEqual(factsOf(f).verification, { exists: false, fingerprint: null, current: null, expectedFingerprint: changed })
+  assert.deepEqual(factsOf(f).verification, { exists: false, fingerprint: null, current: null, expectedFingerprint: changed,
+    ...NO_REPORT_VERDICT })
 })
 
 test('facts：verify 报告的 Fingerprint 字段用加粗、全角冒号或反引号时也能读出；指纹后接说明文字时为 null', t => {
@@ -2013,11 +2024,13 @@ test('facts：verify 报告的 Fingerprint 字段用加粗、全角冒号或反�
   const writeReport = line => f.write('openspec/changes/demo/verification.md', ['# Verify 报告（demo）', '', line, ''].join('\n'))
   for (const line of [`- **Fingerprint**: ${current}`, `- Fingerprint：${current}`, `- Fingerprint: \`${current}\``]) {
     writeReport(line)
-    assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: current, current: true, expectedFingerprint: current }, line)
+    assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: current, current: true, expectedFingerprint: current,
+      ...LEGACY_VERDICT }, line)
   }
   // 说明文字让值不再是合法指纹：与其他指纹字段的校验相同，不截取前面的哈希部分。
   writeReport(`- Fingerprint: ${current} （终点指纹）`)
-  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: null, current: null, expectedFingerprint: current })
+  assert.deepEqual(factsOf(f).verification, { exists: true, fingerprint: null, current: null, expectedFingerprint: current,
+    ...LEGACY_VERDICT })
 })
 
 test('facts：声明了变更终点时与终点指纹比较，终点之后其他提交修改源文件不影响 current', t => {
@@ -2139,4 +2152,135 @@ test('facts：裁决行判定与 apply 前的签字 hook 一致，hook 因 BLOCK
     for (const locale of HOOK_LOCALES) assert.equal(hookAllows(f, locale), !blocked, `hook ${locale}：${JSON.stringify(line)}`)
     assert.equal(factsOf(f).technicalReview.gateVerdict === 'BLOCKED', blocked, `facts：${JSON.stringify(line)}`)
   }
+})
+
+// ---------------------------------------------------------------------------
+// add-verify-verdict Slice 01：门禁按 verify 结论阻断归档，旧报告不阻断（Seam：implementation-gate.mjs archive、facts）
+// ---------------------------------------------------------------------------
+
+/** verify 结论阻断项的前缀（add-verify-verdict design D3）。 */
+const VERDICT_PREFIX = 'verify 报告：'
+
+/** 旧报告写入 archive.notes 的说明（design D4）。 */
+const LEGACY_VERDICT_NOTE = 'verify 报告没有结论字段（旧格式）：CRITICAL 由 /opsx:archive 读取报告确认'
+
+/**
+ * 双轴评审 PASSED、切片证据新鲜的已完成变更，再写一份带 verdictLines 的 verify 报告。
+ * verdictLines 为 null 时不写报告。报告指纹默认为当前指纹，reportFingerprint 可改写。
+ */
+function verdictChange(t, verdictLines, reportFingerprint) {
+  const f = fixture(t)
+  const fingerprint = completedChange(f)
+  writeReview(f, f.run('baseline', f.changeRoot).out)
+  if (verdictLines !== null) writeVerification(f, reportFingerprint || fingerprint, verdictLines)
+  return f
+}
+
+const verdictBlockersOf = report => report.blockers.filter(item => item.startsWith(VERDICT_PREFIX))
+
+test('verify 结论：FAIL 与 Critical-Count 2 时 archive 退出码 1，两条阻断项以「verify 报告：」开头；facts 退出码 0、阻断项相同', t => {
+  const f = verdictChange(t, ['- Verify-Verdict: FAIL', '- Critical-Count: 2'])
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 1, result.out)
+  const archive = result.json()
+  // 期望值取自 design D3 的阻断项表；切片证据与双轴评审没有阻断项，blockers 只有这两条。
+  assert.deepEqual(archive.blockers, ['verify 报告：Verify-Verdict 为 FAIL', 'verify 报告：Critical-Count 为 2'])
+  assert.equal(archive.ok, false)
+  const facts = factsOf(f)
+  delete archive.command
+  delete archive.change
+  assert.deepEqual(facts.archive, archive)
+})
+
+test('verify 结论：PASS 与 Critical-Count 0 时没有「verify 报告：」阻断项，也没有旧报告说明', t => {
+  const f = verdictChange(t, ['- Verify-Verdict: PASS', '- Critical-Count: 0'])
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  assert.deepEqual(verdictBlockersOf(result.json()), [])
+  assert.ok(!result.json().notes.includes(LEGACY_VERDICT_NOTE), JSON.stringify(result.json().notes))
+})
+
+test('verify 结论：PASS 与 Critical-Count 1 时只有一条写出条数 1 的阻断项', t => {
+  const f = verdictChange(t, ['- Verify-Verdict: PASS', '- Critical-Count: 1'])
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 1, result.out)
+  assert.deepEqual(verdictBlockersOf(result.json()), ['verify 报告：Critical-Count 为 1'])
+})
+
+test('verify 结论：字段用加粗与全角冒号时也能读出', t => {
+  const f = verdictChange(t, ['- **Verify-Verdict**：FAIL', '- **Critical-Count**：0'])
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 1, result.out)
+  assert.deepEqual(verdictBlockersOf(result.json()), ['verify 报告：Verify-Verdict 为 FAIL'])
+})
+
+test('verify 结论：取值无法识别时阻断并写出读到的值；结论取第一个 ASCII 词，条数取开头的整数', t => {
+  // 期望值取自 spec「The archive command SHALL block on the verify verdict」与 design D3：只接受 PASS、FAIL，大小写不同也无法识别。
+  for (const [lines, expected] of [
+    [['- Verify-Verdict: 通过', '- Critical-Count: 0'], ['verify 报告：Verify-Verdict 缺失或无法识别（通过）']],
+    [['- Verify-Verdict: pass', '- Critical-Count: 0'], ['verify 报告：Verify-Verdict 缺失或无法识别（pass）']],
+    [['- Verify-Verdict:', '- Critical-Count: 0'], ['verify 报告：Verify-Verdict 缺失或无法识别（空）']],
+    [['- Verify-Verdict: PASS', '- Critical-Count: 无'], ['verify 报告：Critical-Count 缺失或无法识别（无）']],
+    [['- Verify-Verdict: `PASS`（全部检查通过）', '- Critical-Count: 0 条'], []],
+    [['- Verify-Verdict: FAIL（评审条件 C2 未闭环）', '- Critical-Count: `3`'],
+      ['verify 报告：Verify-Verdict 为 FAIL', 'verify 报告：Critical-Count 为 3']],
+  ]) {
+    const f = verdictChange(t, lines)
+    assert.deepEqual(verdictBlockersOf(f.run('archive', f.changeRoot).json()), expected, lines.join(' / '))
+  }
+})
+
+test('verify 结论：只有一个结论字段时按新格式校验，缺少的字段记一条阻断项', t => {
+  for (const [lines, expected] of [
+    [['- Verify-Verdict: PASS'], ['verify 报告：Critical-Count 缺失或无法识别（没有该行）']],
+    [['- Critical-Count: 0'], ['verify 报告：Verify-Verdict 缺失或无法识别（没有该行）']],
+  ]) {
+    const f = verdictChange(t, lines)
+    const result = f.run('archive', f.changeRoot)
+    assert.equal(result.code, 1, result.out)
+    assert.deepEqual(verdictBlockersOf(result.json()), expected, lines.join(' / '))
+    assert.ok(!result.json().notes.includes(LEGACY_VERDICT_NOTE), '有一个结论字段时不是旧报告')
+  }
+})
+
+test('verify 结论：门禁不比较报告指纹，旧代码上的 FAIL 仍阻断', t => {
+  const f = verdictChange(t, ['- Verify-Verdict: FAIL', '- Critical-Count: 1'], `git-tree:${'0'.repeat(40)}`)
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 1, result.out)
+  assert.deepEqual(verdictBlockersOf(result.json()), ['verify 报告：Verify-Verdict 为 FAIL', 'verify 报告：Critical-Count 为 1'])
+})
+
+test('verify 结论：没有结论字段的旧报告列出 CRITICAL 也不阻断，notes 写出旧报告说明', t => {
+  const f = verdictChange(t, ['', '## Issues', '', '### CRITICAL', '', '1. 任务 1.2 未完成'])
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  assert.deepEqual(verdictBlockersOf(result.json()), [])
+  assert.ok(result.json().notes.includes(LEGACY_VERDICT_NOTE), JSON.stringify(result.json().notes))
+})
+
+test('verify 结论：没有 verification.md 时没有「verify 报告：」阻断项，也没有旧报告说明', t => {
+  const f = verdictChange(t, null)
+  const result = f.run('archive', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  assert.deepEqual(verdictBlockersOf(result.json()), [])
+  assert.ok(!result.json().notes.includes(LEGACY_VERDICT_NOTE), JSON.stringify(result.json().notes))
+})
+
+test('facts：verification 输出 verify 报告的 verdict、criticalCount 与 legacy', t => {
+  const f = fixture(t)
+  const current = fingerprintOf(f)
+  const verdictOf = () => {
+    const { verdict, criticalCount, legacy } = factsOf(f).verification
+    return { verdict, criticalCount, legacy }
+  }
+  // 期望值取自 spec change-progress-facts「The facts command SHALL report the verdict fields of the verify report」的 3 个场景。
+  writeVerification(f, current, ['- Verify-Verdict: FAIL', '- Critical-Count: 2'])
+  assert.deepEqual(verdictOf(), { verdict: 'FAIL', criticalCount: 2, legacy: false })
+  writeVerification(f, current)
+  assert.deepEqual(verdictOf(), LEGACY_VERDICT)
+  rmSync(join(f.changeRoot, 'verification.md'))
+  assert.deepEqual(verdictOf(), NO_REPORT_VERDICT)
+  // 无法识别或缺少一行时为 null，legacy 仍为 false。
+  writeVerification(f, current, ['- Verify-Verdict: 通过'])
+  assert.deepEqual(verdictOf(), { verdict: null, criticalCount: null, legacy: false })
 })

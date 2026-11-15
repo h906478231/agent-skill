@@ -32,9 +32,9 @@ The view SHALL check the rules in this order and SHALL use the first rule that m
 | R8 | `archive.review.applicable` is `true` and `archive.review.verdict` is not `PASSED` | `quality` | `/opsx:quality <name>` |
 | R9 | `verification.exists` is `false` or `verification.current` is not `true` | `verify` | `/opsx:verify <name>` |
 | R10 | `archive.ok` is `false` | `verify` | fix the blocker, then `/opsx:verify <name>` |
-| R11 | all other cases | `archive` | confirm that `verification.md` has no CRITICAL, then `/opsx:archive <name>` |
+| R11 | all other cases | `archive` | `/opsx:archive <name>` when `verification.legacy` is `false`; in all other cases, confirm that `verification.md` has no CRITICAL, then `/opsx:archive <name>` |
 
-The entry SHALL contain the rule ID in `rule`. When `tier` is `null` and `tasks.done` is greater than 0, the entry SHALL contain a note that the change has no tier line and is handled as a historical change. `archive.warnings` SHALL be copied to `warnings` and SHALL NOT change the rule.
+The entry SHALL contain the rule ID in `rule`. For R10 the entry SHALL contain `archive.blockers` in `blockers`, including the blockers of the verify verdict. When `tier` is `null` and `tasks.done` is greater than 0, the entry SHALL contain a note that the change has no tier line and is handled as a historical change. `archive.warnings` SHALL be copied to `warnings` and SHALL NOT change the rule.
 
 #### Scenario: Planning artifacts are not complete
 - **WHEN** a change has `proposal.md` and no `tasks.md`
@@ -73,8 +73,17 @@ The entry SHALL contain the rule ID in `rule`. When `tier` is `null` and `tasks.
 - **WHEN** all earlier rules do not match and the fingerprint in `verification.md` is not the current fingerprint
 - **THEN** `stage` is `verify` and `rule` is `R9`
 
-#### Scenario: Ready to archive
-- **WHEN** all earlier rules do not match, `verification.current` is `true`, and `archive.ok` is `true`
+#### Scenario: Failed verify verdict
+- **WHEN** all tasks are checked, the slice evidence is current, `verification.current` is `true`, and `verification.md` contains `- Verify-Verdict: FAIL` and `- Critical-Count: 2`
+- **THEN** `stage` is `verify` and `rule` is `R10`
+- **AND** `blockers` contains the blockers that start with `verify 报告：`
+
+#### Scenario: Ready to archive with a verify verdict
+- **WHEN** all earlier rules do not match, `verification.current` is `true`, `verification.md` contains `- Verify-Verdict: PASS` and `- Critical-Count: 0`, and `archive.ok` is `true`
+- **THEN** `stage` is `archive`, `rule` is `R11`, and `next` is `/opsx:archive <name>`
+
+#### Scenario: Ready to archive with a legacy verify report
+- **WHEN** all earlier rules do not match, `verification.current` is `true`, `verification.md` has no verdict field, and `archive.ok` is `true`
 - **THEN** `stage` is `archive`, `rule` is `R11`, and `next` tells the user to confirm that there is no CRITICAL before `/opsx:archive`
 
 ### Requirement: The progress view SHALL list archived changes without running the gate

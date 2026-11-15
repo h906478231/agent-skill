@@ -1,6 +1,6 @@
 ---
 name: openspec-change-progress
-description: OpenSpec 进度视图：只读当前项目的 openspec/，为每个活跃变更输出一行分级、阶段、任务勾选数、待决定条数、卡点与下一步命令，已归档变更只列名称与日期；两个以上变更已开始实现时提示同一检出只实现一个变更。阶段按 progress.mjs 的 RULES 常量顺序推导，分级、签字、证据、双轴评审与 verify 报告指纹读取门禁脚本 implementation-gate.mjs facts 的输出。用于会话开始、切换会话后接续变更前，回答「每个变更走到哪、卡在哪、下一步跑哪个命令」。输出终端表格，--json 供 agent 读取。不写变更目录，不判断 verify 是否通过，不改变任何门禁。
+description: OpenSpec 进度视图：只读当前项目的 openspec/，为每个活跃变更输出一行分级、阶段、任务勾选数、待决定条数、卡点与下一步命令，已归档变更只列名称与日期；两个以上变更已开始实现时提示同一检出只实现一个变更。阶段按 progress.mjs 的 RULES 常量顺序推导，分级、签字、证据、双轴评审与 verify 报告的指纹和结论字段读取门禁脚本 implementation-gate.mjs facts 的输出。用于会话开始、切换会话后接续变更前，回答「每个变更走到哪、卡在哪、下一步跑哪个命令」。输出终端表格，--json 供 agent 读取。不写变更目录，不解析 verify 报告（verify 结论由门禁脚本读取），不改变任何门禁。
 ---
 
 # OpenSpec 进度视图（Progress View）
@@ -13,8 +13,8 @@ description: OpenSpec 进度视图：只读当前项目的 openspec/，为每个
 
 - **只读**。不写变更目录，不运行写入 git 引用、索引与工作区的命令。门禁脚本计算实现指纹时向 git 对象库写入不可达对象，与门禁脚本的其他子命令相同，由 `git gc` 回收。
 - **推导规则只有一份**：`scripts/progress.mjs` 的 `RULES` 常量，按顺序判断，命中第一条就停。本文件不复制规则表，要了解某条规则时读该常量与它的中文注释。
-- **判定规则不在本 skill 中**。分级行、`Gate-Verdict` 行、签字行、切片证据、双轴评审与 verify 报告指纹的读取规则只在门禁脚本 `implementation-gate.mjs` 中实现，本 skill 只读 `facts` 子命令的 JSON。
-- **不判断 verify 是否通过**。`verification.md` 没有固定的结论行，阶段为 `archive` 时下一步写「先确认 `verification.md` 没有 CRITICAL」，由用户或 agent 打开报告确认。
+- **判定规则不在本 skill 中**。分级行、`Gate-Verdict` 行、签字行、切片证据、双轴评审与 verify 报告的指纹和结论字段的读取规则只在门禁脚本 `implementation-gate.mjs` 中实现，本 skill 只读 `facts` 子命令的 JSON。
+- **verify 结论由门禁脚本读取，本 skill 不解析报告**。报告的 `Verify-Verdict` 为 `FAIL` 或 `Critical-Count` 大于 0 时，门禁 `archive` 有 `verify 报告：` 开头的阻断项，规则为 R10；报告有结论字段并且到了 R11 时，下一步为 `/opsx:archive <name>`。没有结论字段的旧报告，下一步仍写「先确认 `verification.md` 没有 CRITICAL」，由用户或 agent 打开报告确认。
 - **不放行任何门禁**。apply 前的签字校验仍按 `../openspec-technical-review/shared/apply-gate-check.md` 执行，归档前的阻断仍由 `/opsx:archive` 判断。
 
 ## 脚本
@@ -66,5 +66,5 @@ node <PROGRESS> [--json] [--gate <path>]   # 在项目目录中运行
 ## 不负责
 
 - HTML 页面、常驻服务、自动刷新、团队共享、推送云舟。
-- 判断 verify 是否通过、修改任何门禁的阻断规则。
+- 解析 verify 报告的正文或 CRITICAL 清单、修改任何门禁的阻断规则。
 - 其他项目的变更：只看 `openspec list --json` 给出的当前项目根。

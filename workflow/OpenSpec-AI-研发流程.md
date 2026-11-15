@@ -321,7 +321,7 @@ Skill(skill: "openspec-explore", args: "user-nickname-field")
 
 # ── Phase 6：验证 ──────────────────────────────────
 /opsx:verify <change-name>
-#   → 上一份 verification.md 无 CRITICAL、classify 无未登记文件且无「行为」档位时增量复核：只重跑脚本检查，三维结论沿用
+#   → 上一份 verification.md 为 Verify-Verdict: PASS、Critical-Count: 0（没有这两个字段的旧报告：无 CRITICAL）、classify 无未登记文件且无「行为」档位时增量复核：只重跑脚本检查，三维结论沿用
 #   → 核对「仅测试」登记行：diff 中被修改或删除的断言要在判定依据写出原因，对不上记 WARNING
 #   → 三维校验（Completeness / Correctness / Coherence）
 #      ※ Coherence 维度：实现与设计交叉核对
@@ -331,10 +331,12 @@ Skill(skill: "openspec-explore", args: "user-nickname-field")
 #   → ◆ 卡点④：STE / 变更模型检查的阻断项记为 CRITICAL
 #   → 补充人工核对清单（回溯第一性原理 / 方案选择一致性 / 可测试性 / 运维成本）
 #   → 存在 deployment.md 时核对每项的负责人与通过条件 / 达标条件，缺少记 WARNING；报告只写一行指向它
+#   → 报告头部写 Verify-Verdict（PASS / FAIL）与 Critical-Count：有 CRITICAL、未闭环的评审条件或不通过的人工核对项时为 FAIL
 
 # ── 收口 ─────────────────────────────────────────────
 /opsx:archive <change-name>
-#   归档前置阻断：MVP 与 L2/L3 的双轴评审 Blocker 或报告缺失、L0/L1 已生成但未闭环、缺失/过期切片证据时拒绝归档
+#   归档前置阻断：MVP 与 L2/L3 的双轴评审 Blocker 或报告缺失、L0/L1 已生成但未闭环、缺失/过期切片证据、
+#   verify 报告的 Verify-Verdict 为 FAIL 或 Critical-Count 大于 0 时拒绝归档（没有这两个字段的旧报告读取正文确认 CRITICAL）
 #   变更归档，能力沉淀进 specs
 #   评审/证据/讨论/总览产物随变更整体归档到 changes/archive/<name>/
 #   关联云舟任务时（变更名 yunzhou-<taskId>，或 proposal.md 有「云舟任务：<taskId>」），归档后经用户确认标记任务完成并回读
@@ -1116,7 +1118,9 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 **产出**：
 校验报告写入变更目录的 `verification.md`，按 CRITICAL / WARNING / SUGGESTION 分级；archive 读取该文件，不读对话。
 
-**存在 CRITICAL 时不得归档。**
+**结论字段**：报告头部在 `Fingerprint` 之后写 `Verify-Verdict`（`PASS` / `FAIL`）与 `Critical-Count`（CRITICAL 的条数）。有 CRITICAL、「评审条件」有未闭环的条件，或人工核对有不通过的项时写 `FAIL`。门禁 `archive` 子命令按两个字段阻断归档，进度视图对 `FAIL` 给出 R10；没有这两个字段的旧报告不阻断，由 archive 读取正文确认 CRITICAL（口径见 `skills/openspec-technical-review/shared/implementation-gate-check.md`「Archive」一节）。
+
+**存在 CRITICAL 或 `Verify-Verdict: FAIL` 时不得归档。**
 
 ---
 

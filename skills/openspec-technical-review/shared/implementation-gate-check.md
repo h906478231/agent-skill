@@ -1,6 +1,6 @@
 # 实现阶段门禁校验：Verify 与 Archive（唯一事实源）
 
-> `/opsx:verify` 与 `/opsx:archive` 对**双轴评审**与**切片新鲜证据**的核对方式。`skills/openspec-verify-change/SKILL.md`、`claude/commands/opsx/verify.md`、`skills/openspec-archive-change/SKILL.md`、`claude/commands/opsx/archive.md` 四处都引用本文件，不各写一份。
+> `/opsx:verify` 与 `/opsx:archive` 对**双轴评审**与**切片新鲜证据**的核对方式，以及 `/opsx:archive` 对 **verify 结论字段**的核对方式。`skills/openspec-verify-change/SKILL.md`、`claude/commands/opsx/verify.md`、`skills/openspec-archive-change/SKILL.md`、`claude/commands/opsx/archive.md` 四处都引用本文件，不各写一份。
 > 路径：`<SKILL_DIR>/shared/implementation-gate-check.md`；校验脚本 `<GATE>` = `<SKILL_DIR>/scripts/implementation-gate.mjs`（`<SKILL_DIR>` 为 skill `openspec-technical-review` 的安装目录，解析方式见其 SKILL.md「路径约定」；解析不到时 Glob 搜 `**/openspec-technical-review/scripts/implementation-gate.mjs`），运行需 Node.js ≥ 16。
 > 规则本身不在此重复：双轴评审见 `../../openspec-code-quality/shared/dual-axis-review.md`，切片证据见 `../../openspec-apply-change/shared/slice-evidence.md`。
 
@@ -54,11 +54,15 @@ node <GATE> archive <changeRoot>
 
 | 退出码 | 处理 |
 |--------|------|
-| `0` | 本项通过；把 `notes`（不适用理由、待环境补测切片的负责人与补测计划，以及声明了变更终点时的终点、判定人与终点之后变化的文件数）与 `warnings`（含变更终点之后未提交的文件）写进归档摘要，继续 archive 其余前置校验。`pending-environment` 的切片不阻断归档 |
-| `1` | **拒绝归档**，向用户列出 `blockers`（含切片编号或 finding ID），回到对应阶段处理：评审 Blocker → `/opsx:quality`；缺失 / 过期证据 → 重跑切片验证（`/opsx:apply` 的证据规则）后 `/opsx:verify` |
+| `0` | 本项通过；把 `notes`（不适用理由、待环境补测切片的负责人与补测计划、verify 旧报告的说明，以及声明了变更终点时的终点、判定人与终点之后变化的文件数）与 `warnings`（含变更终点之后未提交的文件）写进归档摘要，继续 archive 其余前置校验。`pending-environment` 的切片不阻断归档 |
+| `1` | **拒绝归档**，向用户列出 `blockers`（含切片编号、finding ID 或 verify 结论字段），回到对应阶段处理：评审 Blocker → `/opsx:quality`；缺失 / 过期证据 → 重跑切片验证（`/opsx:apply` 的证据规则）后 `/opsx:verify`；`verify 报告：` 开头的阻断项 → 修复报告列出的 CRITICAL 与未闭环项后重跑 `/opsx:verify` |
 | `2` | 参数或环境错误（非 git 仓库、缺 Node.js 等）：**不得视为通过**，修复环境后重跑；证据新鲜度无法核实即按过期处理 |
 
-本脚本只覆盖双轴评审与切片证据。Verify 的其他 CRITICAL（未完成任务、需求未实现等）不在脚本判定范围，仍按 archive 原有规则：读取 `verification.md`，CRITICAL 必须清零；没有该文件时拒绝归档。
+本脚本覆盖双轴评审、切片证据与 verify 结论字段（字段写法与取值规则见 `../../openspec-verify-change/SKILL.md`「报告字段」）：
+
+- **新报告**：`verification.md` 写有 `Verify-Verdict` 或 `Critical-Count` 时，按两个字段阻断。结论为 `FAIL`、`Critical-Count` 大于 0、任一字段缺失或无法识别时，各记一条 `verify 报告：` 开头的阻断项。新报告的 CRITICAL 由这两个字段覆盖。archive 仍读取报告：字段写 `PASS` 与 `0`、正文却列出 CRITICAL 时拒绝归档，提示重跑 `/opsx:verify`。
+- **旧报告**：两个字段都没有时不阻断，`notes` 写出「verify 报告没有结论字段（旧格式）」的说明。CRITICAL 仍按 archive 原有规则读取 `verification.md` 确认，必须清零。
+- 脚本不解析报告的 CRITICAL 清单，也不比较报告指纹与当前指纹。没有 `verification.md` 时脚本不加阻断项，archive 拒绝归档。
 
 ## 边界
 

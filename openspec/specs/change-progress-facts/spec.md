@@ -22,13 +22,13 @@
 
 ### Requirement: The facts command SHALL read the technical review verdict and the signature line with the rules of the approval hook
 
-`technicalReview.exists` SHALL be `true` only when `review-summary.md` exists. `technicalReview.gateVerdict` SHALL be the first word of ASCII letters and underscores after the last `Gate-Verdict:` or `Gate-Verdict：` (full-width colon) on the first line that matches `^[-*>\s]*Gate-Verdict[:：]`. It SHALL be `null` when the file, the line or such a word does not exist. `technicalReview.approval` SHALL be:
+`technicalReview.exists` SHALL be `true` only when `review-summary.md` exists. `technicalReview.gateVerdict` SHALL be the first word of ASCII letters and underscores after the last `Gate-Verdict:` or `Gate-Verdict：` (full-width colon) on the last line that matches `^[-*>\s]*Gate-Verdict[:：]`. It SHALL be `null` when the file, the line or such a word does not exist. The signature line SHALL be the last line that matches `^[-*>\s]*Technical Review Approved:`. A line that contains `Technical Review Approved:` only in the middle of the line, in backticks, in a table cell or after other text SHALL NOT be the signature line. `technicalReview.approval` SHALL be:
 
-- `missing` when the file does not exist or has no line with `Technical Review Approved:`;
-- `blank` when the value after `Technical Review Approved:` and before `签署人`, without white space, is empty, has only underscores (`_` or the full-width `＿`), starts with `__` or `＿＿`, or contains `<签名>` or `＜签名＞`;
+- `missing` when the file does not exist or has no signature line;
+- `blank` when the value after the last `Technical Review Approved:` of the signature line and before `签署人`, without white space, is empty, has only underscores (`_` or the full-width `＿`), starts with `__` or `＿＿`, or contains `<签名>` or `＜签名＞`;
 - `signed` in all other cases.
 
-White space in these rules SHALL be the white space of the JavaScript `\s` class: ASCII white space and the non-ASCII characters in `UNICODE_SPACES` of the shared samples `scripts/lib/review-approval-samples.mjs` (for example U+3000 and U+00A0). These rules SHALL give the same result as `skills/openspec-technical-review/hooks/check-review-approval.sh` for each verdict line and each signature line in the shared samples, when the hook runs in the C locale and in a UTF-8 locale.
+White space in these rules SHALL be the white space of the JavaScript `\s` class: ASCII white space and the non-ASCII characters in `UNICODE_SPACES` of the shared samples `scripts/lib/review-approval-samples.mjs` (for example U+3000 and U+00A0). These rules SHALL give the same result as `skills/openspec-technical-review/hooks/check-review-approval.sh` for each verdict line, each signature line and each summary sample in the shared samples, when the hook runs in the C locale and in a UTF-8 locale.
 
 #### Scenario: Blocked verdict
 - **WHEN** `review-summary.md` contains the line `Gate-Verdict: BLOCKED`
@@ -50,6 +50,11 @@ White space in these rules SHALL be the white space of the JavaScript `\s` class
 - **WHEN** `review-summary.md` contains the line `Gate-Verdict: 待定`
 - **THEN** `technicalReview.gateVerdict` is `null`
 
+#### Scenario: Verdict of the previous round before the verdict line
+- **WHEN** the body of `review-summary.md` contains the line `- Gate-Verdict: READY_FOR_HUMAN_APPROVAL（R3 的裁决）`
+- **AND** a later line is `Gate-Verdict: BLOCKED`
+- **THEN** `technicalReview.gateVerdict` is `BLOCKED`
+
 #### Scenario: Signature line with a placeholder and a note
 - **WHEN** the signature line is `Technical Review Approved: __________ （签字 / 日期）`
 - **THEN** `technicalReview.approval` is `blank`
@@ -62,13 +67,26 @@ White space in these rules SHALL be the white space of the JavaScript `\s` class
 - **WHEN** the signature line is `Technical Review Approved: tigger 2026-10-30`
 - **THEN** `technicalReview.approval` is `signed`
 
+#### Scenario: Signed signature mentioned in the body before a blank signature line
+- **WHEN** the body of `review-summary.md` contains ``R3 已签字（`Technical Review Approved: tigger`）``
+- **AND** the last line of the file is `Technical Review Approved: __________`
+- **THEN** `technicalReview.approval` is `blank`
+
+#### Scenario: Signed line after the placeholder
+- **WHEN** `review-summary.md` contains `Technical Review Approved: __________` and a later line `Technical Review Approved: 张三 2026-11-08`
+- **THEN** `technicalReview.approval` is `signed`
+
+#### Scenario: Signature only in the middle of a line
+- **WHEN** the only line that contains `Technical Review Approved:` is `签字：Technical Review Approved: 张三`
+- **THEN** `technicalReview.approval` is `missing`
+
 #### Scenario: Legacy summary without a verdict line
 - **WHEN** `review-summary.md` exists and has no `Gate-Verdict` line
 - **THEN** `technicalReview.exists` is `true` and `technicalReview.gateVerdict` is `null`
 
 ### Requirement: The facts command SHALL compare the fingerprint of the verify report with the fingerprint that verify writes
 
-`verification.exists` SHALL be `true` only when `verification.md` exists. `verification.fingerprint` SHALL be the value of the first `Fingerprint` field line when the value is `git-tree:` followed by 40 or 64 lowercase hexadecimal characters. A list marker, bold markers and a full-width colon SHALL be allowed in the field line, and backticks and asterisks around the value SHALL be removed. It SHALL be `null` in all other cases, including a value with text after the fingerprint. `verification.expectedFingerprint` SHALL be the change head fingerprint (the output of `fingerprint <changeRoot> --rev <change head>`) when `tasks.md` has a `## 变更终点` section, and `currentFingerprint` in all other cases. `verification.current` SHALL be `true` when the fingerprint equals `verification.expectedFingerprint`, `false` when it differs, and `null` when there is no fingerprint. When the `## 变更终点` section is not valid, the command SHALL exit with code `2` and write the reason, as the other commands do. The command SHALL NOT read whether the report has CRITICAL issues.
+`verification.exists` SHALL be `true` only when `verification.md` exists. `verification.fingerprint` SHALL be the value of the first `Fingerprint` field line when the value is `git-tree:` followed by 40 or 64 lowercase hexadecimal characters. A list marker, bold markers and a full-width colon SHALL be allowed in the field line, and backticks and asterisks around the value SHALL be removed. It SHALL be `null` in all other cases, including a value with text after the fingerprint. `verification.expectedFingerprint` SHALL be the change head fingerprint (the output of `fingerprint <changeRoot> --rev <change head>`) when `tasks.md` has a `## 变更终点` section, and `currentFingerprint` in all other cases. `verification.current` SHALL be `true` when the fingerprint equals `verification.expectedFingerprint`, `false` when it differs, and `null` when there is no fingerprint. When the `## 变更终点` section is not valid, the command SHALL exit with code `2` and write the reason, as the other commands do. The command SHALL NOT read the list of CRITICAL issues in the report.
 
 #### Scenario: Verify report for the current implementation
 - **WHEN** `verification.md` contains `- Fingerprint: <current fingerprint>`
@@ -82,6 +100,22 @@ White space in these rules SHALL be the white space of the JavaScript `\s` class
 - **WHEN** `tasks.md` has a valid `## 变更终点` section, a commit after the change head changes a source file, and `verification.md` contains the change head fingerprint
 - **THEN** `verification.expectedFingerprint` is the change head fingerprint and differs from `currentFingerprint`
 - **AND** `verification.current` is `true`
+
+### Requirement: The facts command SHALL report the verdict fields of the verify report
+
+`facts` SHALL read the `Verify-Verdict` and `Critical-Count` field lines with the rule of the capability `verify-verdict`, and SHALL use the same reading as the blockers of `archive`. `verification.verdict` SHALL be `PASS` or `FAIL` when the gate recognizes the verdict, and `null` in all other cases. `verification.criticalCount` SHALL be the count as a number, and `null` when the `Critical-Count` line does not exist or its value does not start with a decimal integer. `verification.legacy` SHALL be `true` when `verification.md` exists and has neither field line, `false` when it has at least one of them, and `null` when `verification.md` does not exist.
+
+#### Scenario: Report with verdict fields
+- **WHEN** `verification.md` contains `- Verify-Verdict: FAIL` and `- Critical-Count: 2`
+- **THEN** `verification.verdict` is `FAIL`, `verification.criticalCount` is `2` and `verification.legacy` is `false`
+
+#### Scenario: Legacy report without verdict fields
+- **WHEN** `verification.md` contains only a `Fingerprint` line and a `Verify Mode` line
+- **THEN** `verification.verdict` and `verification.criticalCount` are `null` and `verification.legacy` is `true`
+
+#### Scenario: No verify report
+- **WHEN** the change has no `verification.md`
+- **THEN** `verification.legacy` is `null`
 
 ### Requirement: The facts command SHALL count the open questions of design.md without new markers
 

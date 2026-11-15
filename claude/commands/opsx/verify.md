@@ -54,11 +54,11 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    **增量复核（本仓自加，非上游原文）** —— 上一份 `<changeRoot>/verification.md` 存在时，先判定本次的 `Verify Mode`（`<GATE>` = skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs`）：
    - 下列 3 项全部满足时为 `增量`：
-     1. 上一份 `verification.md` 写有 `Fingerprint`，并且没有 CRITICAL；
+     1. 上一份 `verification.md` 写有 `Fingerprint`，`Verify-Verdict` 为 `PASS`，`Critical-Count` 为 `0`；上一份是没有这两个字段的旧报告时，条件为写有 `Fingerprint` 并且没有 CRITICAL；
      2. `node <GATE> classify <changeRoot> --from <上一份的 Fingerprint>` 的 `unregistered` 为空（退出码 0）；
      3. `registered` 中没有档位为 `行为` 的行。
    - `增量` 时只重跑第 5 步的「切片证据与双轴评审闭环」（`evidence`、`review`、`hygiene`）、Sonar 扫描核对、STE 检查与变更模型检查。三维结论、「评审条件」与第 9 步的人工核对沿用上一份报告，报告写明沿用依据（上一份的 `Fingerprint` 与 `classify` 结论）。脚本检查出现新的 CRITICAL 时照常阻断。
-   - 其他情况为 `全量`，运行全部步骤：没有上一份报告、`classify` 退出码为 1 或 2、`registered` 中有 `行为` 档位。
+   - 其他情况为 `全量`，运行全部步骤：没有上一份报告、上一份 `Verify-Verdict` 为 `FAIL`（与 CRITICAL 条数无关：未闭环的条件也要重新核对）、`classify` 退出码为 1 或 2、`registered` 中有 `行为` 档位。
    - **核对 `仅测试` 登记行**（`增量` 与 `全量` 都执行）：对 `classify` 的 `registered` 中每个档位为 `仅测试` 的文件，用 `git diff <修改前指纹的 sha> <登记指纹的 sha> -- <文件>` 列出修改，找出被修改或删除的已有断言（断言语句、预期值、`@Test` 方法、被跳过或禁用的用例）。`判定依据` 写「只新增用例」但 diff 中有这类修改，或写出的断言与原因对不上 diff 时，记 WARNING，写出登记编号与位置。上一份报告中因缺测试记的 WARNING，对应用例落在这些文件中时，重新核对该场景并更新结论。
    - 登记与档位规则见 skill `openspec-apply-change` 的 `shared/post-implementation-changes.md`。
 
@@ -163,6 +163,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    ## Verification Report: <change-name>
 
    - Fingerprint: git-tree:<sha>
+   - Verify-Verdict: PASS / FAIL
+   - Critical-Count: <N>
    - Verify Mode: 全量 / 增量（沿用依据：上一份 Fingerprint、classify 结论）
    - Spec Fidelity Reuse: 复用（基线 git-tree:<sha>）/ 部分复用（自查文件：<文件>）/ 不复用（<原因>）/ 不适用（增量复核）
 
@@ -188,6 +190,11 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    报告字段（本仓自加，非上游原文）：
    - `Fingerprint` 取 `node <GATE> fingerprint <changeRoot>` 的输出，是下一次判定增量复核的起点。`tasks.md` 声明了 `## 变更终点` 时，改取 `node <GATE> fingerprint <changeRoot> --rev <变更终点>` 的输出（规则见 skill `openspec-apply-change` 的 `shared/post-implementation-changes.md`「变更终点」）：`classify` 比到终点指纹，取当前指纹会把终点之后的修改列为未登记。
+   - `Verify-Verdict` 与 `Critical-Count` 是门禁读取的结论字段（`archive` 子命令与 `facts`），在本次全部检查之后填写，含第 9 步的结果：
+     - `Critical-Count` 写本报告 CRITICAL 的条数，用十进制整数。`增量` 时只统计本次重跑的检查：沿用三维结论的上一份报告没有 CRITICAL。
+     - `Verify-Verdict` 在下列任一情况下写 `FAIL`：`Critical-Count` 大于 0；「评审条件」小节有未闭环的条件；第 9 步人工核对清单有项记为不通过。其他情况写 `PASS`。后两种情况视同 Blocker，不记为 CRITICAL。
+     - 取值只写大写的 `PASS` 或 `FAIL`，条数以整数开头。门禁读不出取值时阻断归档，口径见 skill `openspec-technical-review` 的 `shared/implementation-gate-check.md`「Archive」一节。
+     - Final Assessment 与两个字段一致。
    - `Spec Fidelity Reuse` 按第 4 步「复用 Spec Fidelity 结论」填写。
    - 「评审条件」按第 9 步「评审条件闭环」填写，archive 读取本小节。没有 `review-summary.md` 时写「不适用：该变更未经技术评审」。存在完整版 overview 时，在小节下写出它的「最近生成」日期与「依据轮次」，不要求刷新。
 
@@ -215,6 +222,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    **Final Assessment**:
    - If CRITICAL issues: "X critical issue(s) found. Fix before archiving."
+   - If `Verify-Verdict` is `FAIL` without CRITICAL issues (open review condition, or a manual check item not passed; 本仓自加): "Verify-Verdict: FAIL. <open conditions or failed check items>. Fix before archiving."
    - If only warnings: "No critical issues. Y warning(s) to consider. Ready for archive (with noted improvements)."
    - If all clear: "All checks passed. Ready for archive."
 

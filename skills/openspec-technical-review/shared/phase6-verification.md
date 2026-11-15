@@ -14,7 +14,7 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 
 存在 `review/spec-fidelity.md` 时，Completeness 与 Correctness 中的需求、场景核对，以及 Coherence 中的设计偏离，读取它的规格覆盖矩阵与设计偏离清单，不逐条搜代码；复用条件与严重级别见 `../../openspec-verify-change/SKILL.md`「复用 Spec Fidelity 结论」。
 
-输出写入变更目录的 `verification.md`：评分卡 + 按 CRITICAL / WARNING / SUGGESTION 分级的问题清单。archive 读取该文件，不读对话。**存在 CRITICAL 时不得归档。**
+输出写入变更目录的 `verification.md`：头部的结论字段 `Verify-Verdict`（`PASS` / `FAIL`）与 `Critical-Count`（CRITICAL 的条数）、评分卡 + 按 CRITICAL / WARNING / SUGGESTION 分级的问题清单。archive 读取该文件，不读对话；门禁 `archive` 子命令按两个结论字段阻断归档（取值规则见 `../../openspec-verify-change/SKILL.md`「报告字段」，阻断口径见 `implementation-gate-check.md`「Archive」一节）。**存在 CRITICAL 或 `Verify-Verdict: FAIL` 时不得归档。**
 
 ## 门禁特有的补充：条件核对
 
@@ -62,7 +62,7 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 - [ ] 监控/告警/对账工具是否就位
 ```
 
-**有任一未通过项不得归档。** 修复后重跑 Phase 6，若修复过程改了设计则需重走对应维度的 Phase 3 门禁。
+**有任一未通过项不得归档。** 报告把未通过项视同 Blocker，`Verify-Verdict` 写 `FAIL`，不记为 CRITICAL。修复后重跑 Phase 6，若修复过程改了设计则需重走对应维度的 Phase 3 门禁。
 
 ## 修复后要不要重走门禁？
 
