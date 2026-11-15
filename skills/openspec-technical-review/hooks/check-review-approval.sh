@@ -123,7 +123,8 @@ normalize_spaces() {
   LC_ALL=C sed -E "s/($UNICODE_SPACES)/ /g"
 }
 
-# 裁决行：Gate-Verdict: BLOCKED 时即使已签字也拦截（格式见 shared/gate-policy.md「机器可读裁决行」）。
+# 裁决行只认行首键名，取最后一行：前方历史引用不能覆盖本轮裁决。
+# Gate-Verdict: BLOCKED 时即使已签字也拦截（格式见 shared/gate-policy.md「机器可读裁决行」）。
 # 允许行首有列表 / 引用标记与空白。冒号接受半角「:」与全角「：」：中文输入法常把冒号写成全角，
 # 只认半角时这类 BLOCKED 裁决行不被当作裁决行，已签字时放行 apply。
 # 全角冒号写成 (:|：) 的字面串选择，不写进方括号字符类，原因同 UNICODE_SPACES。
@@ -132,20 +133,20 @@ normalize_spaces() {
 # 不按空白分词，是因为中文输入法常在值后直接接全角括号：曾把「BLOCKED（未闭环）」取成整串，不等于 BLOCKED 而放行 apply。
 # LC_ALL=C 让 sed 按字节匹配：全角字符的每个字节都不在 [A-Za-z_] 内。
 # 缺该行的旧版 summary 只校验签字行，兼容此前生成的产物。
-VERDICT="$(normalize_spaces < "$SUMMARY" | LC_ALL=C grep -m1 -E '^[-*>[:space:]]*Gate-Verdict(:|：)' \
+VERDICT="$(normalize_spaces < "$SUMMARY" | LC_ALL=C grep -E '^[-*>[:space:]]*Gate-Verdict(:|：)' | tail -n 1 \
   | LC_ALL=C sed -E 's/.*Gate-Verdict(:|：)//; s/^[^A-Za-z_]*//; s/[^A-Za-z_].*$//' || true)"
 if [ "$VERDICT" = "BLOCKED" ]; then
   deny "变更 [$CHANGE_NAME] 的技术评审裁决为 BLOCKED（review-summary.md 的 Gate-Verdict 行）：未闭环 Blocker 必须先回 design.md 闭环并重走门禁，签字不能替代闭环。禁止 apply。"
 fi
 
-# 取签字行：标记按字面匹配原文，不先替换非 ASCII 空白。
-# 先替换再找标记会把「Technical<U+00A0>Review Approved: 张三」这类行当作签字行，比修复前放得更宽；
-# facts 也按字面找标记（line.includes），两边选中同一行。
-SIGN_LINE="$(LC_ALL=C grep -m1 'Technical Review Approved:' "$SUMMARY" || true)"
+# 签字行只认行首键名，取最后一行：人工确认区在正文之后，历史引用不能覆盖本轮签字。
+# 标记按字面匹配原文，不先替换非 ASCII 空白，避免把「Technical<U+00A0>Review Approved:」误认作标记。
+# 前缀的非 ASCII 空白用完整 UTF-8 字节串匹配，与 facts 的 JS \s 相同，不受 locale 影响。
+SIGN_LINE="$(LC_ALL=C grep -E "^([-*>[:space:]]|$UNICODE_SPACES)*Technical Review Approved:" "$SUMMARY" | tail -n 1 || true)"
 
 # 无签字行 → 视为门禁产物不完整，拦截
 if [ -z "$SIGN_LINE" ]; then
-  deny "变更 [$CHANGE_NAME] 的 review-summary.md 缺少「Technical Review Approved:」签字行，技术评审门禁产物不完整，禁止 apply。"
+  deny "变更 [$CHANGE_NAME] 的 review-summary.md 缺少从行首写起的「Technical Review Approved:」签字行，行首只能有列表标记、引用标记与空白，禁止 apply。"
 fi
 
 # 取最后一个标记之后、首个「签署人」之前的内容作为签字值，再删除其中全部空白。

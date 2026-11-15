@@ -1724,8 +1724,11 @@ const GATE_VERDICT_MARKER = /Gate-Verdict[:：]/
  */
 const GATE_VERDICT_LINE = new RegExp(`^[-*>\\s]*${GATE_VERDICT_MARKER.source}`)
 
-/** 签字行的标记：与 hook 相同，按包含匹配，不要求在行首。 */
+/** 签字行的字面标记：不归一化词间空白，与 hook 在原文上匹配的规则相同。 */
 const APPROVAL_MARKER = 'Technical Review Approved:'
+
+/** 签字键名行：前缀与裁决行相同，只允许列表、引用标记与 JS \s 空白。 */
+const APPROVAL_LINE = new RegExp(`^[-*>\\s]*${APPROVAL_MARKER}`)
 
 /** 签字值在「签署人」处截断：hook 只把它之前的内容当作签字值。 */
 const SIGNER_MARKER = '签署人'
@@ -1734,7 +1737,7 @@ const SIGNER_MARKER = '签署人'
  * 签字值是否仍是空白占位，规则与 hook 相同：删除全部空白后为空、只有下划线、以两个下划线开头（占位符后补了说明），
  * 或含模板占位符时为 blank。真实签名不会以连续下划线开头。
  * 空白是 JS `\s`：hook 删除 ASCII 空白与 UNICODE_SPACES 中的非 ASCII 空白，是同一组字符。
- * @param {string} line 第一行含 APPROVAL_MARKER 的行。
+ * @param {string} line 最后一行匹配 APPROVAL_LINE 的键名行。
  * @returns {'signed'|'blank'}
  */
 function approvalOf(line) {
@@ -1749,7 +1752,7 @@ function approvalOf(line) {
 
 /**
  * 裁决行中的裁决值，规则与 hook 相同：最后一个标记（半角或全角冒号）之后第一个由 ASCII 字母与下划线组成的词。
- * @param {string} line 第一行匹配 GATE_VERDICT_LINE 的行。
+ * @param {string} line 最后一行匹配 GATE_VERDICT_LINE 的键名行。
  * @returns {string|null} 没有这样的词时为 null（例如「待定」），进度视图按 R4 交给人工核对。
  */
 function verdictOf(line) {
@@ -1761,8 +1764,8 @@ function verdictOf(line) {
 }
 
 /**
- * 读取技术评审的裁决行与签字状态。判定规则与 hooks/check-review-approval.sh 相同；两份实现的测试共用仓库
- * scripts/lib/review-approval-samples.mjs 中的签字行与裁决行样本（add-change-progress-view 风险 R2），
+ * 读取技术评审的裁决行与签字状态：两类键名行各取最后一行，与 hooks/check-review-approval.sh 相同。
+ * 两份实现的测试共用仓库 scripts/lib/review-approval-samples.mjs 中的单行与整份汇总样本（add-change-progress-view 风险 R2），
  * 新增写法时加入该文件，hook 与 facts 的测试一起覆盖。
  * 只报告事实，不放行 apply：放行仍由 hook 与 shared/apply-gate-check.md 判断。
  * @returns {{ exists: boolean, gateVerdict: string|null, approval: 'signed'|'blank'|'missing' }}
@@ -1774,8 +1777,9 @@ function readTechnicalReview(changeRoot) {
   if (summary === null) return { exists: false, gateVerdict: null, approval: 'missing' }
   // 按 \n 分行、保留 CR，与 hook 的 grep 相同；CR 在取裁决值与签字值时删除。
   const lines = summary.split('\n')
-  const verdictLine = lines.find(line => GATE_VERDICT_LINE.test(line))
-  const signLine = lines.find(line => line.includes(APPROVAL_MARKER))
+  const verdictLine = lines.filter(line => GATE_VERDICT_LINE.test(line)).pop()
+  // 人工确认区位于正文之后，末尾用户签字也可覆盖前面的空白占位；Node 16 不支持 findLast。
+  const signLine = lines.filter(line => APPROVAL_LINE.test(line)).pop()
   return { exists: true, gateVerdict: verdictLine === undefined ? null : verdictOf(verdictLine),
     approval: signLine === undefined ? 'missing' : approvalOf(signLine) }
 }

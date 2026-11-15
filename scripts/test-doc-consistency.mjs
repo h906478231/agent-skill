@@ -105,6 +105,52 @@ function fencedBlock(markdown, firstLine) {
   return match[1]
 }
 
+test('签字读取规则：gate-policy 与 apply 校验均写明行首键名、最后一行，命令列出全部匹配行', async () => {
+  for (const file of [
+    'skills/openspec-technical-review/shared/gate-policy.md',
+    'skills/openspec-technical-review/shared/apply-gate-check.md',
+  ]) {
+    const text = await read(file)
+    for (const word of ['行首', '最后一行']) assert.ok(text.includes(word), `${file} 缺少读取规则：${word}`)
+    if (file.endsWith('apply-gate-check.md')) {
+      const commands = text.match(/^grep[^\n]*/gm) || []
+      assert.equal(commands.length, 2, `${file} 应有两条列出匹配行的命令`)
+      for (const command of commands) assert.doesNotMatch(command, /grep\s+-m1\b/, `${file} 不能只列出第一行`)
+    }
+  }
+})
+
+test('签字写入规则：人工确认区在最后，正文不写行首引用，不生成独立签字示例', async () => {
+  for (const [file, item] of [
+    ['skills/openspec-technical-review/shared/gate-policy.md', '- 写入规则：'],
+    ['skills/openspec-technical-review/SKILL.md', '16. **人工确认区**'],
+    ['skills/openspec-technical-review/technical-review-gate.workflow.js', '16) 人工确认区'],
+  ]) {
+    const line = (await read(file)).split('\n').find(value => value.includes(item))
+    assert.ok(line, `${file} 缺少人工确认区写入规则`)
+    for (const rule of [
+      '人工确认区是最后一节',
+      '正文引用这几行时不从行首写起',
+      '不生成独立签字示例',
+      '代码块和 HTML 注释也不例外',
+      '签字说明使用普通文字',
+      '只在人工确认区保留待用户填写的签字行',
+    ]) {
+      assert.ok(line.includes(rule), `${file} 缺少写入规则：${rule}`)
+    }
+  }
+})
+
+test('签字操作说明：流程文档与集成指南均说明签字行从行首写起', async () => {
+  const processDoc = await read(PROCESS_DOC)
+  const format = processDoc.split('**签字格式**：')[1]?.split('\n---')[0]
+  assert.ok(format, `${PROCESS_DOC} 缺少签字格式`)
+  for (const word of ['行首', '最后一行']) assert.ok(format.includes(word), `${PROCESS_DOC} 的签字格式缺少：${word}`)
+  const guideFile = 'docs/devops-openspec-integration-guide.md'
+  const troubleshooting = (await read(guideFile)).split('### 问题：人工签字后重新运行仍提示未通过')[1]?.split('\n### ')[0]
+  assert.ok(troubleshooting?.includes('签字行没有从行首写起'), `${guideFile} 缺少签字行位置的排错原因`)
+})
+
 test('分级维度：gate-levels.md、workflow 脚本常量、流程文档三处一致', async () => {
   const [source, doc, workflow] = await Promise.all([
     read(GATE_LEVELS),

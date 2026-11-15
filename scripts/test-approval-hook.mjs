@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { FULL_WIDTH_LINES, SIGNATURE_LINES, UNICODE_SPACES, UNICODE_SPACE_LINES, VERDICT_LINES } from './lib/review-approval-samples.mjs'
+import { FULL_WIDTH_LINES, SIGNATURE_LINES, SUMMARY_SAMPLES, UNICODE_SPACES, UNICODE_SPACE_LINES, VERDICT_LINES } from './lib/review-approval-samples.mjs'
 
 /**
  * 人工签字门禁 hook 的判定测试。
@@ -63,8 +63,12 @@ test('review-summary.md 不存在（未启用门禁）→ 放行', (t) => {
   assert.equal(runHook(t, null, { withSummary: false }).denied, false)
 })
 
-test('review-summary.md 存在但缺签字行 → deny', (t) => {
-  assert.equal(runHook(t, null).denied, true)
+test('review-summary.md 存在但缺签字键名行 → deny，提示从行首写起', (t) => {
+  for (const line of [null, ...SIGNATURE_LINES.notKeyLine]) {
+    const result = runHook(t, line)
+    assert.equal(result.denied, true, line)
+    assert.match(JSON.parse(result.stdout).hookSpecificOutput.permissionDecisionReason, /行首/)
+  }
 })
 
 test('非 apply 命令一律放行', (t) => {
@@ -124,6 +128,15 @@ test('CRLF 换行的 summary 中 Gate-Verdict: BLOCKED 仍拦截', (t) => {
 // 全角空格（U+3000）在 C locale 下不算空白，在 UTF-8 locale 下算空白，hook 判定曾随 locale 变化，所以三种都跑。
 const LOCALES = ['C', 'zh_CN.UTF-8', 'en_US.UTF-8']
 const SIGNED = SIGNATURE_LINES.signed[0]
+
+test('整份汇总：按键名行取最后一行，结果与共用样本的期望一致', (t) => {
+  // 用多行汇总覆盖历史引用与真实人工确认区的先后顺序，单行样本无法暴露行选择错误。
+  for (const sample of SUMMARY_SAMPLES) {
+    for (const locale of LOCALES) {
+      assert.equal(!runHook(t, sample.lines.join('\n'), { locale }).denied, sample.allowed, `${sample.name} / ${locale}`)
+    }
+  }
+})
 
 test('Gate-Verdict 值的前后有全角空格或全角括号说明时仍按 BLOCKED 拦截', (t) => {
   // 中文输入法下常见的三种写法：awk 不按全角空格分词，值曾被取成「BLOCKED　（未闭环）」等，BLOCKED 的评审被放行。
@@ -199,7 +212,7 @@ test('READY 裁决行或签名中含非 ASCII 空白 → 放行', (t) => {
 })
 
 test('签字行标记的词之间是非 ASCII 空白 → 不算签字行，deny', (t) => {
-  // 签字行标记按字面匹配原文，与 facts 的 includes 相同；非 ASCII 空白在定位标记之后才替换。
+  // 签字行标记按字面匹配原文，与 facts 的 APPROVAL_LINE 相同；非 ASCII 空白在定位标记之后才替换。
   // 先替换再找标记时，这一行会被当作已签字的签字行，比修复前放得更宽，facts 也找不到它。
   for (const locale of LOCALES) {
     for (const signoffLine of UNICODE_SPACE_LINES.brokenMarker) {
