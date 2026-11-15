@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { snapshot } from './lib/fs-snapshot.mjs'
-import { FULL_WIDTH_LINES, SIGNATURE_LINES, UNICODE_SPACE_LINES, VERDICT_LINES } from './lib/review-approval-samples.mjs'
+import { FULL_WIDTH_LINES, SIGNATURE_LINES, SUMMARY_SAMPLES, UNICODE_SPACE_LINES, VERDICT_LINES } from './lib/review-approval-samples.mjs'
 
 // 通过 /opsx:quality、/opsx:apply、/opsx:verify、/opsx:archive 实际调用的确定性校验入口验证行为；
 // 每个用例在临时 git 仓库里构造真实变更目录，不连接远端、不改动本仓库。
@@ -2094,6 +2094,7 @@ const SIGNATURE_SAMPLES = [
   ...SIGNATURE_LINES.placeholder,
   ...SIGNATURE_LINES.placeholderWithNote,
   ...SIGNATURE_LINES.signed,
+  ...SIGNATURE_LINES.notKeyLine,
   ...FULL_WIDTH_LINES.blankSignature,
   ...FULL_WIDTH_LINES.signedSignature,
   ...UNICODE_SPACE_LINES.blankSignature,
@@ -2130,6 +2131,7 @@ test('facts：签字行判定与 apply 前的签字 hook 一致，hook 放行的
   const outcomes = SIGNATURE_SAMPLES.flatMap(sample => {
     writeSummary(f, ...(sample === null ? [] : [sample]))
     const approval = factsOf(f).technicalReview.approval
+    if (SIGNATURE_LINES.notKeyLine.includes(sample)) assert.equal(approval, 'missing', sample)
     return HOOK_LOCALES.map(locale => {
       const allowed = hookAllows(f, locale)
       const label = `${locale}: ${JSON.stringify(sample)}`
@@ -2141,6 +2143,22 @@ test('facts：签字行判定与 apply 前的签字 hook 一致，hook 放行的
   // 两种结果都要出现，避免 hook 或 facts 对全部样本给出同一结果时测试仍通过。
   assert.deepEqual([...new Set(outcomes.map(item => item.allowed))].sort(), [false, true])
   assert.equal(outcomes.find(item => item.sample === null).approval, 'missing')
+})
+
+test('facts：整份汇总的签字与裁决符合共用样本，hook 在两种 locale 下给出相同结论', t => {
+  const f = fixture(t)
+  // 期望同时来自完整汇总样本，避免 hook 与 facts 以相同方式误读却仍通过一致性检查。
+  for (const sample of SUMMARY_SAMPLES) {
+    writeSummary(f, ...sample.lines)
+    const actual = factsOf(f).technicalReview
+    assert.equal(actual.approval, sample.approval, `${sample.name} / approval`)
+    assert.equal(actual.gateVerdict, sample.gateVerdict, `${sample.name} / gateVerdict`)
+    for (const locale of HOOK_LOCALES) {
+      const allowed = hookAllows(f, locale)
+      assert.equal(allowed, sample.allowed, `${sample.name} / ${locale}`)
+      assert.equal(allowed, actual.approval === 'signed' && actual.gateVerdict !== 'BLOCKED', `${sample.name} / ${locale} / facts`)
+    }
+  }
 })
 
 test('facts：裁决行判定与 apply 前的签字 hook 一致，hook 因 BLOCKED 拦截当且仅当 gateVerdict 为 BLOCKED', t => {

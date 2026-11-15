@@ -1,5 +1,5 @@
 /**
- * review-summary.md 的签字行与裁决行样本。
+ * review-summary.md 的签字行、裁决行与整份汇总样本。
  *
  * apply 前的签字 hook（skills/openspec-technical-review/hooks/check-review-approval.sh）与门禁脚本 facts 子命令
  * （skills/openspec-technical-review/scripts/implementation-gate.mjs 的 readTechnicalReview）各有一份读取实现，
@@ -19,6 +19,13 @@ export const SIGNATURE_LINES = {
     'Technical Review Approved: __________ （签字 / 日期）',
     'Technical Review Approved: ____________________    （签名 / 日期）',
     'Technical Review Approved: ＿＿＿（签名）',
+  ],
+  /** 句中、反引号、表格或其他文字之后的标记不是键名行：hook 按缺签字行拦截。 */
+  notKeyLine: [
+    'R3 已签字（`Technical Review Approved: tigger`）',
+    '`Technical Review Approved: 张三`',
+    '签字：Technical Review Approved: 张三',
+    '| Technical Review Approved: 张三 |',
   ],
   /** 写入了批准人：hook 放行。最后一行以 CR 结尾，对应 CRLF 换行的 summary：hook 与 facts 都按 \n 分行，CR 留在行内。 */
   signed: [
@@ -75,6 +82,7 @@ export const UNICODE_SPACE_LINES = {
   readyVerdict: ['\u00A0Gate-Verdict: READY_FOR_HUMAN_APPROVAL', 'Gate-Verdict：READY_FOR_HUMAN_APPROVAL'],
   /** 签字值只有非 ASCII 空白，或非 ASCII 空白后接下划线占位：未签字，hook 拦截。 */
   blankSignature: [
+    '\u00A0Technical Review Approved: __________',
     'Technical Review Approved: \u00A0',
     'Technical Review Approved: \u2003',
     'Technical Review Approved: \u00A0__________',
@@ -85,6 +93,7 @@ export const UNICODE_SPACE_LINES = {
    * 最后一行的引号与连字符（U+2018、U+2019、U+2010）与 U+2000–U+200A 的前两个 UTF-8 字节相同，hook 按字节替换时不能误删。
    */
   signedSignature: [
+    '　Technical Review Approved: 张三 2026-10-14',
     'Technical Review Approved: 张三\u00A02026-10-14',
     'Technical Review Approved:\u2003张三 2026-10-14',
     'Technical Review Approved: ‘张三’‐2026-10-14',
@@ -119,3 +128,98 @@ export const VERDICT_LINES = {
     'Gate-Verdict: 待定',
   ],
 }
+
+/** 整份汇总样本：期望取自 gate-policy.md「机器可读裁决行」，不是从 hook 或 facts 推算。 */
+export const SUMMARY_SAMPLES = [
+  {
+    name: 'S1 正文句中提及旧签字，末尾签字空白',
+    lines: [
+      '# 技术评审汇总',
+      'R3 已签字（`Technical Review Approved: tigger`），本轮重走后签字作废。',
+      '## 人工确认区',
+      'Gate-Verdict: READY_FOR_HUMAN_APPROVAL',
+      'Technical Review Approved: __________',
+    ],
+    allowed: false,
+    approval: 'blank',
+    gateVerdict: 'READY_FOR_HUMAN_APPROVAL',
+  },
+  {
+    name: 'S2 正文引用旧 READY，本轮裁决 BLOCKED 且已签字',
+    lines: [
+      '# 技术评审汇总',
+      '- Gate-Verdict: READY_FOR_HUMAN_APPROVAL（R3 的裁决）',
+      '## 人工确认区',
+      'Gate-Verdict: BLOCKED',
+      'Technical Review Approved: tigger 2026-11-08',
+    ],
+    allowed: false,
+    approval: 'signed',
+    gateVerdict: 'BLOCKED',
+  },
+  {
+    name: 'S3 正文引用旧签字，本轮签字空白',
+    lines: [
+      '# 技术评审汇总',
+      '> Technical Review Approved: tigger',
+      '## 人工确认区',
+      'Gate-Verdict: READY_FOR_HUMAN_APPROVAL',
+      'Technical Review Approved: __________',
+    ],
+    allowed: false,
+    approval: 'blank',
+    gateVerdict: 'READY_FOR_HUMAN_APPROVAL',
+  },
+  {
+    name: 'S4 正文引用旧 BLOCKED，本轮 READY 且已签字',
+    lines: [
+      '# 技术评审汇总',
+      '- Gate-Verdict: BLOCKED（R2 的裁决）',
+      '## 人工确认区',
+      'Gate-Verdict: READY_FOR_HUMAN_APPROVAL',
+      'Technical Review Approved: tigger 2026-11-08',
+    ],
+    allowed: true,
+    approval: 'signed',
+    gateVerdict: 'READY_FOR_HUMAN_APPROVAL',
+  },
+  {
+    name: 'S5 空白占位在前，用户在末尾另写已签签字行',
+    lines: [
+      '# 技术评审汇总',
+      '## 人工确认区',
+      'Gate-Verdict: READY_FOR_HUMAN_APPROVAL',
+      'Technical Review Approved: __________',
+      'Technical Review Approved: 张三 2026-11-08',
+    ],
+    allowed: true,
+    approval: 'signed',
+    gateVerdict: 'READY_FOR_HUMAN_APPROVAL',
+  },
+  {
+    name: 'S6 空白签字行之后，句中出现签字示例',
+    lines: [
+      '# 技术评审汇总',
+      '## 人工确认区',
+      'Gate-Verdict: READY_FOR_HUMAN_APPROVAL',
+      'Technical Review Approved: __________',
+      '签字行写成 `Technical Review Approved: 张三 2026-11-08`。',
+    ],
+    allowed: false,
+    approval: 'blank',
+    gateVerdict: 'READY_FOR_HUMAN_APPROVAL',
+  },
+  {
+    name: 'S7 人工确认区的句中示例在空白签字行之前',
+    lines: [
+      '# 技术评审汇总',
+      '## 人工确认区',
+      'Gate-Verdict: READY_FOR_HUMAN_APPROVAL',
+      '签字行写成 `Technical Review Approved: 张三 2026-11-08`。',
+      'Technical Review Approved: __________',
+    ],
+    allowed: false,
+    approval: 'blank',
+    gateVerdict: 'READY_FOR_HUMAN_APPROVAL',
+  },
+]

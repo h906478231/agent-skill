@@ -1250,6 +1250,8 @@ Technical Review Approved: 张三  2026-08-26
 复核: 李四  2026-08-26
 ```
 
+hook 只认从行首写起的签字行，行首只能有列表标记、引用标记与空白；有多行时取最后一行。
+
 前两行由门禁汇总生成，人只填签字行；`Gate-Verdict: BLOCKED` 时签字也不放行。`复核:` 行是 L3 的建议项，留空不拦截。格式见 `skills/openspec-technical-review/shared/gate-policy.md`「机器可读裁决行」。
 
 ---

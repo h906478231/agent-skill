@@ -185,7 +185,7 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 13. **术语表**：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。
 14. **分级结论**：变更等级（L1/L2/L3，判定规则见 `shared/gate-levels.md`）+ 判定人 + 依据。L0 不进入本门禁，故此处的等级至少为 L1；MVP 且命中信号时写方案类型 MVP 与命中的信号。**同时确保变更目录 `overview.md` 开头有这一行**（没有该文件时创建只含文件头与分级行的最小 `overview.md`；已有分级行时改为本次判定，如 `/opsx:propose` 写的 L0 被本门禁判为 L2）—— 实现阶段的归档门禁从 `overview.md` 读等级，判定双轴评审是否必需（写法见 `shared/gate-levels.md`「分级决策责任」，文件头格式见 `../../openspec-change-overview/SKILL.md`）。
 15. **评审输入版本**：列出本轮评审依据的 `proposal.md` / `design.md` / `specs` / `tasks.md` 的版本依据（如 `git rev-parse HEAD` 或文件哈希），供重走门禁与恢复时判断输入是否已变化。
-16. **人工确认区**：先按 `shared/gate-policy.md`「机器可读裁决行」写 `Gate-Level: <L1|L2|L3|MVP>` 与 `Gate-Verdict: <第 5 项裁决>` 两行，再留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply；L3 追加一行 `复核: __________`（建议第二人复核，非必填）。
+16. **人工确认区**：人工确认区是最后一节，正文引用这几行时不从行首写起。不生成独立签字示例，代码块和 HTML 注释也不例外。签字说明使用普通文字，只在人工确认区保留待用户填写的签字行。先按 `shared/gate-policy.md`「机器可读裁决行」写 `Gate-Level: <L1|L2|L3|MVP>` 与 `Gate-Verdict: <第 5 项裁决>` 两行，再留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply；L3 追加一行 `复核: __________`（建议第二人复核，非必填）。
 
 裁决为 `BLOCKED` 时的告知内容与闭环记录格式，见 `shared/gate-policy.md`。
 

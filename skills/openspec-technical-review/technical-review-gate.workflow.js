@@ -214,7 +214,7 @@ const summary = await agent(
     `13) 术语表：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。`,
     `14) 分级结论：方案类型（MVP / 完整方案）+ 命中的升级信号 + 变更等级（完整方案为 L1/L2/L3，必须与本轮的 ${mvp ? 'MVP 分层' : level} 一致）或纳入维度（MVP，按映射表）+ 判定人 + 依据，规则见 ${SD}/shared/gate-levels.md。同时确保变更目录 overview.md 开头也写有这一行（还没有该文件时，创建只含文件头与分级行的最小 overview.md）——实现阶段的归档门禁从 overview.md 读等级判定双轴评审是否必需。`,
     `15) 评审输入版本：列出本轮依据的 proposal.md / design.md / specs / tasks.md 的版本依据（如 git rev-parse HEAD 或文件哈希），供重走与恢复时判断输入是否变化。`,
-    `16) 人工确认区：按 gate-policy.md「机器可读裁决行」的格式先写 "Gate-Level: ${mvp ? 'MVP' : level}" 与 "Gate-Verdict: <READY_FOR_HUMAN_APPROVAL 或 BLOCKED，取第 5 项裁决>" 两行，再留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply；L3 追加一行 "复核: __________"（建议第二人复核，非必填）。`,
+    `16) 人工确认区：人工确认区是最后一节，正文引用这几行时不从行首写起。不生成独立签字示例，代码块和 HTML 注释也不例外。签字说明使用普通文字，只在人工确认区保留待用户填写的签字行。按 gate-policy.md「机器可读裁决行」的格式先写 "Gate-Level: ${mvp ? 'MVP' : level}" 与 "Gate-Verdict: <READY_FOR_HUMAN_APPROVAL 或 BLOCKED，取第 5 项裁决>" 两行，再留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply；L3 追加一行 "复核: __________"（建议第二人复核，非必填）。`,
     `若本轮裁决为 BLOCKED，按 gate-policy.md 的闭环记录格式明确提示：回改 design.md 后必须登记每条 Blocker 的闭环记录，下一轮评审 Agent 依赖该区块验证闭环。`,
   ].join('\n'),
   { label: 'summarize', phase: 'Summarize' }

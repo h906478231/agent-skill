@@ -17,10 +17,12 @@
 
 ```bash
 grep -n -E 'Gate-Verdict(:|：)' "openspec/changes/<name>/review-summary.md"
-grep -m1 'Technical Review Approved:' "openspec/changes/<name>/review-summary.md"
+grep -n 'Technical Review Approved:' "openspec/changes/<name>/review-summary.md"
 ```
 
-裁决行是第一条命令输出中第一个满足这个条件的行：`Gate-Verdict` 之前只有列表、引用标记与空白。格式与读取规则见 `gate-policy.md`「机器可读裁决行」，与 hook 相同。行首不用 grep 的 `[[:space:]]` 判断：它是否包含全角空格、U+00A0 等非 ASCII 空白随 locale 变化。
+两条命令列出全部匹配行，不直接把输出的第一行当作签字或裁决。只认行首键名：键名之前只能有列表标记（`-`、`*`）、引用标记（`>`）与空白；排除句中、反引号、表格单元格或其他文字后的提及。裁决行与签字行各取最后一行键名行，标记与取值规则见 `gate-policy.md`「机器可读裁决行」，与 hook 相同。
+
+签字标记按原文字面匹配，只认半角冒号。行首不用 grep 的 `[[:space:]]` 判断：它是否包含全角空格、U+00A0 等非 ASCII 空白随 locale 变化；空白按 JS `\s` 的清单识别。
 
 | 情况 | 处理 |
 |------|------|
