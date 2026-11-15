@@ -32,7 +32,7 @@
 - 没有条件的输入：每条包含该阶段的分支都要检查。该阶段之前的某个阶段 MUST 产出该文件，或者该文件是项目资产（`CONTEXT.md`、`docs/adr/`）。
 - 写有条件的输入：阶段表中 MUST 有一个阶段产出该文件。
 - 分支中的每个阶段 MUST 在阶段表中有一行。
-- 阶段表中的每个阶段 MUST 出现在至少一条分支中，或者属于按需阶段（grill、explore、overview）。
+- 阶段表中的每个阶段 MUST 出现在至少一条分支中，或者属于按需阶段（grill、explore、overview、recap、research）。
 
 检查失败时 SHALL 输出分支、阶段与文件。
 
@@ -56,6 +56,11 @@
 
 - **WHEN** 在本仓库运行 `npm run test:handoff`
 - **THEN** 4 条分支的交接检查与规则文本对账全部通过
+
+#### Scenario: 事实预调研属于按需阶段
+
+- **WHEN** 阶段表有 research 一行，4 条分支都不包含 research
+- **THEN** `npm run test:handoff` 通过，research 按按需阶段处理
 
 ### Requirement: 阶段表与阶段 skill 的规则文本对账
 
