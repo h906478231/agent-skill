@@ -2,6 +2,7 @@
 name: "OPSX: Explain"
 description: 为技术评审的 finding 生成详细的业务场景解析文档 - 包含完整业务场景、代码示例、算法细节、实施步骤
 allowed-tools: Bash(openspec:*), Read, Write
+disable-model-invocation: true
 category: Workflow
 tags: [workflow, review, finding, documentation]
 ---

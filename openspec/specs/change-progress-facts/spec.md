@@ -5,12 +5,20 @@
 ## Requirements
 ### Requirement: The facts command SHALL report the facts of one change as JSON
 
-`implementation-gate.mjs facts <changeRoot> [--repo <dir>]` SHALL write one JSON object with the fields `command` (`facts`), `change`, `tier`, `technicalReview`, `verification`, `openQuestions`, `currentFingerprint` and `archive`. `tier` SHALL use the same reading as the `archive` command: `L0`, `L1`, `L2`, `L3`, `MVP` or `null`. `archive` SHALL contain the same `ok`, `blockers`, `warnings`, `notes`, `review` and `evidence` that the `archive` command writes for the same change root. The command SHALL exit with code `0` when it writes the facts, also when `archive.ok` is `false`. It SHALL exit with code `2` on the same argument and environment errors as the other commands. It SHALL NOT write files in the change directory.
+`implementation-gate.mjs facts <changeRoot> [--repo <dir>]` SHALL write one JSON object with the fields `command` (`facts`), `change`, `tier`, `technicalReview`, `verification`, `openQuestions`, `currentFingerprint` and `archive`. `tier` SHALL use the same reading as the `archive` command: `L0`, `L1`, `L2`, `L3`, `MVP` or `null`. `archive` SHALL contain the same `ok`, `blockers`, `warnings`, `notes`, `review` and `evidence` that the `archive` command writes for the same change root. The command SHALL exit with code `0` when it writes the facts, also when `archive.ok` is `false`. It SHALL exit with code `2` on the same argument and environment errors as the other commands. It SHALL NOT write files in the change directory. When the dual-axis review applies, `archive.review` SHALL contain `stale`: `true` when the `archive` command writes the warning that the implementation changed after the review (the baseline fingerprint differs from the current fingerprint, or from the fingerprint of the change head when `tasks.md` declares one, and the changes since the baseline are not only comment changes and not only changes registered as test only), and `false` in all other cases. The `archive` command SHALL write the same `stale` in its `review`.
 
 #### Scenario: Facts of a change with blockers
 - **WHEN** a change has a slice whose evidence fingerprint differs from the current fingerprint
 - **THEN** `facts` exits with code 0
 - **AND** `archive.ok` is `false` and `archive.blockers` contains the same text as the output of the `archive` command
+
+#### Scenario: Review is stale after a code change
+- **WHEN** the review baseline of a change is fingerprint A, and a source file changed after A
+- **THEN** `archive.review.stale` is `true` and `archive.warnings` contains the warning that the implementation changed after the review
+
+#### Scenario: Review is not stale after a comment change
+- **WHEN** the review baseline of a change is fingerprint A, and the only change after A is a comment
+- **THEN** `archive.review.stale` is `false`
 
 #### Scenario: Tier from the tier line
 - **WHEN** `overview.md` starts with the line `> 分级：L2 标准 ｜ 判定人：tigger ｜ 日期：2026-10-30 ｜ 依据：新增业务流程`

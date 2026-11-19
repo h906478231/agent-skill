@@ -754,6 +754,27 @@ test('hygiene：允许清单内的产物不报 warning，清单外的文件各�
   assert.notEqual(warnings.find(item => item.file === 'p0-optimization-report.md').reason, 'round copy')
 })
 
+test('hygiene：托管文件（decisions/autopilot.json 与 decisions/D-0001.json）不报 warning', t => {
+  // spec autopilot-entry「Autopilot files pass hygiene」。
+  const f = fixture(t)
+  f.write('openspec/changes/demo/decisions/autopilot.json', '{"status":"active"}\n')
+  f.write('openspec/changes/demo/decisions/D-0001.json', '{"id":"D-0001","status":"pending"}\n')
+  const result = f.run('hygiene', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  const reported = result.json().warnings.filter(item => item.file.startsWith('decisions/'))
+  assert.deepEqual(reported, [], JSON.stringify(reported))
+})
+
+test('hygiene：decisions 目录中其他文件报一条 warning', t => {
+  // spec autopilot-entry「Other file under decisions is reported」。
+  const f = fixture(t)
+  f.write('openspec/changes/demo/decisions/notes.md', 'x\n')
+  const result = f.run('hygiene', f.changeRoot)
+  assert.equal(result.code, 0, result.out)
+  const reported = result.json().warnings.filter(item => item.file === 'decisions/notes.md')
+  assert.equal(reported.length, 1, JSON.stringify(result.json().warnings))
+})
+
 test('hygiene：变更目录不存在时退出码 2', t => {
   const f = fixture(t)
   assert.equal(f.run('hygiene', join(f.repo, 'openspec/changes/missing')).code, 2)
@@ -2301,4 +2322,31 @@ test('facts：verification 输出 verify 报告的 verdict、criticalCount 与 l
   // 无法识别或缺少一行时为 null，legacy 仍为 false。
   writeVerification(f, current, ['- Verify-Verdict: 通过'])
   assert.deepEqual(verdictOf(), { verdict: null, criticalCount: null, legacy: false })
+})
+
+// ---------------------------------------------------------------------------
+// add-autopilot-loop Slice 10：裁决已通过后实现又有变化（Seam：implementation-gate.mjs facts，评审 ARCH-12）
+// ---------------------------------------------------------------------------
+
+test('facts：评审后源文件有修改时 archive.review.stale 为 true，archive.warnings 有评审后实现有变化的提醒', t => {
+  // spec change-progress-facts「Review is stale after a code change」。
+  const f = fixture(t)
+  writeReview(f, f.run('baseline', f.changeRoot).out)
+  assert.equal(factsOf(f).archive.review.stale, false, '评审基线就是当前实现时不陈旧')
+  f.write('src/order.js', 'export const create = () => 5\n')
+  const facts = factsOf(f)
+  assert.equal(facts.archive.review.stale, true)
+  assert.ok(facts.archive.warnings.some(item => item.includes('评审后实现有变化')), JSON.stringify(facts.archive.warnings))
+  assert.equal(f.run('archive', f.changeRoot).json().review.stale, true, 'archive 子命令输出同一个 stale')
+})
+
+test('facts：评审后只有注释修改时 archive.review.stale 为 false', t => {
+  // spec change-progress-facts「Review is not stale after a comment change」。
+  const f = fixture(t)
+  f.write('src/Order.java', JAVA_ORDER)
+  writeReview(f, f.run('baseline', f.changeRoot).out)
+  f.write('src/Order.java', javaCommentEdit(JAVA_ORDER))
+  const facts = factsOf(f)
+  assert.equal(facts.archive.review.stale, false)
+  assert.ok(!facts.archive.warnings.some(item => item.includes('评审后实现有变化')), JSON.stringify(facts.archive.warnings))
 })

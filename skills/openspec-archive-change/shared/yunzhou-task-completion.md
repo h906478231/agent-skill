@@ -10,6 +10,7 @@
   1. 变更名为 `yunzhou-<taskId>`（云舟自动化工作流 `workflow/devops-automation-loop-yunzhou.workflow.js` 的命名）；
   2. `proposal.md`（归档后在归档目录中）有一行 `云舟任务：<taskId>`。propose 与 ff 在变更来自云舟任务时把它写在第一行（`../../openspec-propose/SKILL.md`「云舟任务关联」）；已有变更缺少这一行时，可以手动补写。
 - 两条都不满足时跳过本步：不询问，也不提示。
+- 归档目录中 `decisions/autopilot.json` 的 `status` 为 `active` 时（变更在托管中归档），跳过本步：托管结束的通知卡片写出任务号，提示用户在会话中完成任务（skill `openspec-autopilot`）。读文件就能判断，不依赖环境变量。
 
 ## 步骤
 
@@ -29,4 +30,4 @@
 - 只修改完成状态，不修改任务描述、负责人、通知人、子任务与 Todo。
 - 本步骤不发布评论。评论分别用 skill `flows-solution-comment`（需求方案评论）、`flows-defect-investigation-comment`（缺陷排查评论）与 `flows-role-comment`（研发说明、协作说明与 commit 登记）。
 - 用户的确认只适用于当前这一个任务；同一会话归档多个变更时，逐个询问。
-- 云舟自动化工作流不执行本步骤：工作流到 verify 与本地 commit 为止，不归档，也不关闭任务。
+- 云舟自动化工作流与托管都不执行本步骤：工作流到 verify 与本地 commit 为止，不归档，也不关闭任务；托管在通知卡片中写出任务号，由用户在会话中完成任务。

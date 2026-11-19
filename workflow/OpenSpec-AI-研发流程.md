@@ -176,6 +176,7 @@
 | `/opsx:archive <change>` | `openspec-archive-change` | 变更归档 |
 | `/opsx:recap [change]` | `openspec-change-recap` | 完成清单：带变更名时为已归档变更补生成或重新生成 `recap.md`；不带参数时按主题打印跨变更总表（archive 归档后自动生成） |
 | `/opsx:explain <change>` | `openspec-finding-explain` | Finding 详细解析（按需生成） |
+| `/opsx:autopilot <change>` | `openspec-autopilot` | 托管（按需，签字之后）：调度脚本按进度规则运行 apply 到 archive，提问与出口动作经飞书决策卡片确认；`--cancel` 撤回 |
 | `/opsx:progress` | `openspec-change-progress` | 进度视图：当前项目每个活跃变更的阶段、卡点与下一步命令（旁路，只读，`--json` 供 agent 读取） |
 | `/opsx:video <change> [focus]` | `openspec-explainer-video` | 讲解视频（按需生成，不进默认流程） |
 
@@ -674,6 +675,9 @@ OpenSpec Explore
 【人工确认评审结果】← 硬门禁：人工写入 "Technical Review Approved"  │
       ▼                                                        │
       ◄────────────────────────────────────────────────────────┘
+（按需）/opsx:autopilot <name> → 交给托管：以下 Apply 到 Archive 由调度脚本按进度规则运行，
+      │  提问、告警与出口动作（提交与合并、推送）经飞书决策卡片由用户决定
+      ▼
 OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/测试）
       │  ◆ 卡点③：签字校验 → STE 检查 → 变更模型检查，任一项阻断即停止
       │  参考 review-summary.md 的"涉及代码模块"和"建议修复"
@@ -688,6 +692,7 @@ OpenSpec Apply（Phase 5）→ 代码实现（Controller/Service/Repository/SQL/
       ▼
 OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据与讨论产物随变更进 changes/archive/
       │  ※ 归档后生成 recap.md（完成清单，失败不回退归档）
+      │  ※ 托管时归档后执行出口动作：提交与合并、推送，每一项经决策卡片确认后由调度脚本执行
 
 旁路（不进默认流程，不参与任何卡点）：
   /opsx:explain → review/finding-details/<ID>.md（解析单个 finding）
@@ -719,6 +724,7 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 | Phase 6 验证 | `/opsx:verify` | 三维校验（含实现与设计一致性）+ 条件核对 + 项目自有测试 + 切片证据与双轴裁决核对 + STE / 变更模型检查；**实现与设计交叉核对** | `verification.md`（校验报告） | 修复项 |
 | 收口 | `/opsx:archive` | 变更归档，能力沉淀进 specs；评审与讨论产物随变更整体归档；关联云舟任务时，归档后经用户确认完成任务 | `openspec/specs/**` + `changes/archive/<name>/` + `changes/archive/<name>/recap.md`（完成清单，归档后生成，失败不回退归档） | 否 |
 | 完成清单（按需） | `/opsx:recap` | 为已归档变更补生成或重新生成完成清单，按新增、修改、删除、修复、没做与遗留列出事项，以实际结果为准；由一个子 agent 生成，主会话只接收结论；不带参数时由脚本按主题打印跨变更总表，不写文件（规则见 `skills/openspec-change-recap/SKILL.md`） | `changes/archive/<name>/recap.md`（派生视图）；跨变更总表只打印 | 否 |
+| 托管（按需，签字之后） | `/opsx:autopilot <变更名>`（`--cancel` 撤回） | 签字后（或分级不需要编码前评审时）把变更交给本机调度脚本，按进度规则依次运行 apply、quality、verify、archive；提问、告警与出口动作（提交与合并、推送）经飞书决策卡片由用户决定，签字仍在会话中手写（规则见 `skills/openspec-autopilot/SKILL.md`） | `decisions/autopilot.json` + `decisions/D-<编号>.json`（托管记录与托管决策，随变更归档） | 是（由各阶段 skill 修改） |
 | 讲解视频（按需，不进默认流程） | `/opsx:video` | 为含变更模型的变更选一个主题编写分镜，人工签署后渲染配音与中文字幕 | `video/storyboard.md` + `video/explainer.srt`；`video/media/` 不进 git | 否 |
 
 > 各阶段读取哪些文件、能否在新会话中开始，见 `skills/openspec-technical-review/shared/phases.md`「各阶段的输入与新会话」。上一阶段的结论写入文件后，换会话不丢信息，并且上下文更小。apply 完成后，推荐在新会话中运行 `/opsx:quality` 与 `/opsx:verify`，新会话中先运行 `/opsx:progress` 确认阶段；不强制。
@@ -1283,7 +1289,7 @@ hook 只认从行首写起的签字行，行首只能有列表标记、引用标
 
 **项目决定优先，agent 不执行提交**：上表是项目的保留策略，不是 agent 的操作步骤，项目 `.gitignore` 的决定优先。agent 写完产物后不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。
 
-**双轴评审与切片证据的两条边界**：一是**不追溯**——只对按新规则创建的变更生效（`tasks.md` 切片声明了 `Evidence:`，或已生成双轴评审产物；双轴评审还包括 `overview.md` 分级行为 MVP、L2、L3 的变更，分级行晚于双轴评审引入），历史变更与历史 archive 不补造证据、不补跑双轴；二是**不外发**——证据与评审动作只在本地读写变更目录，不自动执行 git push、创建 PR、部署、发布或云舟等外部任务回写，这些动作需另行授权。
+**双轴评审与切片证据的两条边界**：一是**不追溯**——只对按新规则创建的变更生效（`tasks.md` 切片声明了 `Evidence:`，或已生成双轴评审产物；双轴评审还包括 `overview.md` 分级行为 MVP、L2、L3 的变更，分级行晚于双轴评审引入），历史变更与历史 archive 不补造证据、不补跑双轴；二是**不外发**——证据与评审动作只在本地读写变更目录，不自动执行 git push、创建 PR、部署、发布或云舟等外部任务回写，这些动作需另行授权；托管时另行授权的方式是出口动作的决策卡片。
 
 ---
 

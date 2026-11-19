@@ -1,0 +1,26 @@
+{
+  "ownerOpenId": "<飞书 open_id，只有这个用户的点选会被记录>",
+  "model": "claude-sonnet-5-5",
+  "maxBudgetUsd": 3,
+  "intervalSeconds": 300,
+  "cancelWaitSeconds": 30,
+  "claudeBin": "claude",
+  "larkBin": "lark-cli",
+  "projects": [
+    {
+      "root": "<项目根目录的绝对路径，必须是 git 仓库根>",
+      "allowedCommands": [
+        "Bash(openspec:*)",
+        "Bash(node:*)",
+        "Bash(git status:*)",
+        "Bash(git diff:*)",
+        "Bash(git log:*)",
+        "Bash(git show:*)",
+        "Bash(npm test:*)",
+        "Bash(npm run:*)"
+      ],
+      "baseBranch": "main",
+      "branchPrefix": "fix/"
+    }
+  ]
+}

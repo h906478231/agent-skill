@@ -156,15 +156,18 @@ Blocker 与 Major 的选项相同，沿用 `../openspec-technical-review/shared/
 | `修复`，要改代码 | `tasks.md` 新增未勾选任务，写 finding ID 与位置；台账保持 `open` |
 | `修复`，只改一处规划产物 | 按问题中的文字修改该行，再运行 STE 检查与变更模型检查（命令与处理同 `/opsx:update`）；台账改为 `closed`，闭环依据写 `<文件>:<行号>` |
 | `risk accepted`、`误报` | 按 `gate-policy.md` 第 4 节的格式写入对应轴的原始报告，记录末尾加来源行；Findings 表与台账的闭环状态改为 `risk-accepted` / `false-positive`，台账的闭环依据写该记录所在的报告路径；接受人或驳回人写用户名 |
-| Sonar 行的 `误报`、`接受` | 「处理」写选项，「说明」写理由，「决策人」写 `<用户名>（AskUserQuestion，交互会话）`。不要求用户在 SonarQube 中标记，verify 只读 `review/sonar.md` |
+| Sonar 行的 `误报`、`接受` | 「处理」写选项，「说明」写理由，「决策人」写 `<用户名>（AskUserQuestion，交互会话）`，托管中写 `<用户名>（AskUserQuestion，托管决策 D-<编号>）`。不要求用户在 SonarQube 中标记，verify 只读 `review/sonar.md` |
 | 自填文字 | 按其中写明的处理方式写入。看不出处理方式时不写入，在下一批中再问该条 |
 | `回会话处理` | 不写入该条。写完同一批的其他回复后停止，提示运行 `/opsx:update <change>` |
 
 **留痕字段**
 
-- 用户名取项目的 `git config user.name`。为空时不写入任何留痕字段，停止并提示用户设置。
+- 用户名：交互会话中取项目的 `git config user.name`，为空时不写入任何留痕字段，停止并提示用户设置；托管中取阶段提示词给出的用户名。
 - 留痕字段只有三个：双轴原始报告中驳回记录的「驳回人」、risk accepted 记录的「接受人」，以及 `review/sonar.md` 的「决策人」。
-- 来源行：`> 来源：AskUserQuestion，交互会话`。
+- 来源行：交互会话中写 `> 来源：AskUserQuestion，交互会话`；托管中写 `> 来源：AskUserQuestion，托管决策 D-<编号>`。
+- 托管中的用户名取阶段提示词给出的用户名（托管运行时不读 `git config user.name`）；交互会话中取项目的 `git config user.name`。
+- 托管中的决策编号：用 Grep 在变更目录的 `decisions/` 中找状态为 `answered`、`request.questions` 含该 finding ID 的决策，取它的编号。
+  恢复的会话运行期间该决策仍为 `answered`，据此写来源行。
 - 只按用户对**该 finding ID 或该 Sonar 行**的回复写入；没有回复的条目不写。
 - 签署字段不按回复写入，仍只能由用户写：签字行 `Technical Review Approved:`、`tasks.md` 的变更终点区块（含「判定人」）、待环境补测登记的「确认人」、分镜签署行 `Storyboard Approved:`。
 
