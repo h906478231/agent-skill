@@ -71,6 +71,15 @@ const MAX_IMPLEMENTING = 1
  */
 const isImplementing = entry => IMPLEMENTATION_STAGES.has(entry.stage) && (entry.tasks.done > 0 || entry.stage !== 'apply')
 
+/** 门禁副本没有 archive.review.stale 时 R8 的卡点（add-autopilot-loop 评审 ARCH-18）：两个副本只同步一个时，R8 的新条件会静默失效。 */
+const STALE_MISSING_BLOCKER = '门禁脚本副本没有 archive.review.stale，同步 openspec-technical-review 副本'
+
+/**
+ * 条目的 reviewStale（add-autopilot-loop 评审 ARCH-18）：双轴评审适用时取门禁的 archive.review.stale；不适用时为 false；
+ * 适用而门禁没有给出布尔值（门禁副本早于该字段）时为 null。托管读这个字段判断两个副本是否同步，null 时拒绝运行。
+ */
+const reviewStaleOf = review => (!review.applicable ? false : typeof review.stale === 'boolean' ? review.stale : null)
+
 const USAGE = '用法：node progress.mjs [--json] [--gate <path>]'
 
 /** 参数与环境错误：只输出可读信息，退出码 2。 */
@@ -138,10 +147,20 @@ const RULES = Object.freeze([
   },
   {
     // 依据：dual-axis-review.md 与门禁 reviewRequired，MVP、L2、L3 等要求双轴评审的变更，裁决不是 PASSED 时不能归档。
+    // 裁决为 PASSED 后实现又有变化（门禁 archive.review.stale 为 true）时同样回到 quality：quality 询问后用户选「修复」，
+    // apply 改了代码，修复的代码要经过两轴评审（add-autopilot-loop 评审 ARCH-12）。stale 只有注释差异或只登记为仅测试时为 false，
+    // 不会在 quality 与 apply 之间循环。stale 不是 false（门禁副本早于该字段，值为 undefined）时也成立：不知道评审是否过期时不放行，
+    // 与 R11 对 verification.legacy 的处理同一原则（评审 ARCH-18）。
     id: 'R8', stage: 'quality',
-    when: ({ facts }) => facts.archive.review.applicable && facts.archive.review.verdict !== 'PASSED',
-    blockers: ({ facts }) => (facts.archive.review.issues.length ? facts.archive.review.issues
-      : [`双轴评审裁决：${facts.archive.review.verdict}`]),
+    when: ({ facts }) => facts.archive.review.applicable
+      && (facts.archive.review.verdict !== 'PASSED' || facts.archive.review.stale !== false),
+    blockers: ({ facts }) => {
+      const { issues, verdict, stale } = facts.archive.review
+      const reasons = issues.length ? issues
+        : verdict !== 'PASSED' ? [`双轴评审裁决：${verdict}`]
+          : stale === true ? ['双轴评审裁决为 PASSED，评审后实现有变化'] : []
+      return typeof stale === 'boolean' ? reasons : [...reasons, STALE_MISSING_BLOCKER]
+    },
     next: name => `/opsx:quality ${name}`,
   },
   {
@@ -270,7 +289,7 @@ function readProject() {
  */
 function inspect(name, tasks, gate) {
   const entry = { change: name, tier: null, stage: null, tasks, openQuestions: null, rule: null,
-    blockers: [], warnings: [], notes: [], next: null, error: null }
+    blockers: [], warnings: [], notes: [], reviewStale: null, next: null, error: null }
   const status = execJson('openspec', ['status', '--change', name, '--json'])
   if (status.error) return { entry: { ...entry, error: `openspec status 失败：${status.error}` }, changesDir: null }
   const changesDir = (status.value.planningHome && status.value.planningHome.changesDir) || null
@@ -289,7 +308,7 @@ function inspect(name, tasks, gate) {
   return {
     entry: { ...entry, tier: facts.value.tier, stage: rule.stage, openQuestions: facts.value.openQuestions, rule: rule.id,
       blockers: rule.blockers(ctx), warnings: facts.value.archive.warnings, notes: [...historical, ...facts.value.archive.notes],
-      next: rule.next(name, ctx) },
+      reviewStale: reviewStaleOf(facts.value.archive.review), next: rule.next(name, ctx) },
     changesDir,
   }
 }

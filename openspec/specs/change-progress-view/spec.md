@@ -29,12 +29,12 @@ The view SHALL check the rules in this order and SHALL use the first rule that m
 | R5 | `review-summary.md` exists and `approval` is not `signed` | `approval` | review `review/*.md` and sign `review-summary.md` |
 | R6 | `tasks.done` is less than `tasks.total` | `apply` | `/opsx:apply <name>` |
 | R7 | `archive.evidence.issues` is not empty | `apply` | run the slice again and update the evidence |
-| R8 | `archive.review.applicable` is `true` and `archive.review.verdict` is not `PASSED` | `quality` | `/opsx:quality <name>` |
+| R8 | `archive.review.applicable` is `true`, and `archive.review.verdict` is not `PASSED` or `archive.review.stale` is not `false` | `quality` | `/opsx:quality <name>` |
 | R9 | `verification.exists` is `false` or `verification.current` is not `true` | `verify` | `/opsx:verify <name>` |
 | R10 | `archive.ok` is `false` | `verify` | fix the blocker, then `/opsx:verify <name>` |
 | R11 | all other cases | `archive` | `/opsx:archive <name>` when `verification.legacy` is `false`; in all other cases, confirm that `verification.md` has no CRITICAL, then `/opsx:archive <name>` |
 
-The entry SHALL contain the rule ID in `rule`. For R10 the entry SHALL contain `archive.blockers` in `blockers`, including the blockers of the verify verdict. When `tier` is `null` and `tasks.done` is greater than 0, the entry SHALL contain a note that the change has no tier line and is handled as a historical change. `archive.warnings` SHALL be copied to `warnings` and SHALL NOT change the rule.
+The entry SHALL contain the rule ID in `rule`. For R10 the entry SHALL contain `archive.blockers` in `blockers`, including the blockers of the verify verdict. When `tier` is `null` and `tasks.done` is greater than 0, the entry SHALL contain a note that the change has no tier line and is handled as a historical change. `archive.warnings` SHALL be copied to `warnings` and SHALL NOT change the rule. The entry SHALL contain `reviewStale`: `archive.review.stale` when the review applies and that value is `true` or `false`, `false` when the review does not apply, and `null` when the review applies and the gate does not report a boolean `stale`. When `reviewStale` is `null` and R8 matches, the blockers SHALL contain a blocker that asks the user to sync the copy of `openspec-technical-review`.
 
 #### Scenario: Planning artifacts are not complete
 - **WHEN** a change has `proposal.md` and no `tasks.md`
@@ -68,6 +68,18 @@ The entry SHALL contain the rule ID in `rule`. For R10 the entry SHALL contain `
 #### Scenario: Dual-axis review is required and missing
 - **WHEN** `tier` is `MVP`, all tasks are checked, the slice evidence is current, and there is no `review/code-review-summary.md`
 - **THEN** `stage` is `quality` and `rule` is `R8`
+
+#### Scenario: Code changed after a passed review
+- **WHEN** `tier` is `MVP`, all tasks are checked, the slice evidence is current, `review/code-review-summary.md` has the verdict `PASSED`, and a source file changed after the review baseline
+- **THEN** `stage` is `quality` and `rule` is `R8`
+
+#### Scenario: Gate without the stale field
+- **WHEN** `review/code-review-summary.md` has the verdict `PASSED`, the slice evidence is current, and the gate test double writes `archive.review` without `stale`
+- **THEN** `rule` is `R8`, `reviewStale` is `null`, and `blockers` asks the user to sync `openspec-technical-review`
+
+#### Scenario: Comment change after a passed review
+- **WHEN** `review/code-review-summary.md` has the verdict `PASSED`, the slice evidence is current, and the only change after the review baseline is a comment
+- **THEN** `rule` is not `R8`
 
 #### Scenario: Verify report is out of date
 - **WHEN** all earlier rules do not match and the fingerprint in `verification.md` is not the current fingerprint

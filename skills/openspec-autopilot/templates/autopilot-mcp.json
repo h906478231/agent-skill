@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "autopilot": {
+      "command": "node",
+      "args": [
+        "<SKILL_DIR>/scripts/perm-host.mjs"
+      ],
+      "env": {
+        "AUTOPILOT_ALLOWED_COMMANDS": "<ALLOWED_COMMANDS>"
+      }
+    }
+  }
+}

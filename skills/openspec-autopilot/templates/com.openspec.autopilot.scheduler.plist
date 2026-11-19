@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openspec.autopilot.scheduler</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string><NODE_BIN></string>
+    <string><SCRIPT></string>
+    <string>--once</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string><PATH></string>
+    <key>OPENSPEC_AUTOPILOT_HOME</key>
+    <string><AUTOPILOT_HOME></string>
+  </dict>
+  <key>StartInterval</key>
+  <integer><INTERVAL_SECONDS></integer>
+  <key>StandardOutPath</key>
+  <string><AUTOPILOT_HOME>/logs/scheduler.out.log</string>
+  <key>StandardErrorPath</key>
+  <string><AUTOPILOT_HOME>/logs/scheduler.err.log</string>
+</dict>
+</plist>

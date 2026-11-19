@@ -108,6 +108,22 @@ _Avoid_: 代填字段、决策字段
 只能由用户写的字段：签字行 `Technical Review Approved:`、`tasks.md` 的变更终点区块（含「判定人」）、待环境补测登记的「确认人」与分镜签署行 `Storyboard Approved:`。agent 不写入、不修改，AskUserQuestion 的回复不能代替用户写入（见 ADR-0009）。与留痕字段无关。
 _Avoid_: 签名字段、手写字段
 
+**Autopilot（托管）**:
+用户在会话中完成 review 与签字后（或分级不需要编码前评审时），用 `/opsx:autopilot` 把一个变更交给本机调度脚本，由它按进度规则依次运行 apply、quality、verify、archive，并在归档后执行出口动作。签字仍由用户在会话中手写（见 ADR-0011）。
+_Avoid_: 自动驾驶、交接循环
+
+**Autopilot Decision（托管决策）**:
+托管中需要用户决定的一件事，写成变更目录 `decisions/D-<四位数字>.json`：提问决策、会话告警、出口决策与出口告警。状态为 `pending`、`answered`、`used`、`void`，按预期状态比较后写入；文件随变更归档，保存提问原文与回复。
+_Avoid_: 决策请求、决策记录
+
+**Decision Card（决策卡片）**:
+托管决策在飞书中的卡片：问题与选项原样复制，用户点选或填写后由桥接脚本核对并写入回复。只认配置中本人的 `operator_id`；卡片变成「已记录」才算点选成功。
+_Avoid_: 审批卡片
+
+**Exit Action（出口动作）**:
+托管中变更归档后由调度脚本执行的对外写入：提交与合并、推送。每一项由 agent 只读起草，调度脚本核对计划，用户在决策卡片上确认后执行并回读。
+_Avoid_: 收尾动作、外发动作
+
 **Fact Research（事实预调研）**:
 explore 之前，由一个只读子 agent 针对一个主题查明代码现状、既有约定与外部事实的步骤，结果按五段契约写入变更目录的 `discussion-log.md`，只写事实与出处，不写推荐方案。与 explore 不同，它不与用户讨论（见 ADR-0012）。
 _Avoid_: 预调研、先行调研

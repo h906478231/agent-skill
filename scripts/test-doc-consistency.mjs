@@ -757,6 +757,20 @@ test('quality 询问处理方式：SKILL.md Step 6 写出询问对象、跳过�
   ]) assert.match(body, pattern, `Step 6 缺少：${label}`)
 })
 
+test('quality 询问处理方式：托管中写出来源行与决策人的托管写法，并给出决策编号的查找规则', async () => {
+  // add-autopilot-loop Slice 09：托管中的来源行写托管决策编号，用户名取阶段提示词（design D15「留痕字段」）。
+  const body = sectionBody(await read(QUALITY_SKILL), '执行步骤').split('\n### Step 6')[1]
+  assert.ok(body, `${QUALITY_SKILL} 缺少 Step 6`)
+  for (const [label, pattern] of [
+    ['托管来源行', /> 来源：AskUserQuestion，托管决策 D-<编号>/],
+    ['托管用户名取阶段提示词', /托管[^\n]*用户名[^\n]*阶段提示词/],
+    ['决策编号查找规则', /decisions\/[^\n]*`answered`[^\n]*`request\.questions`/],
+  ]) assert.match(body, pattern, `Step 6 缺少：${label}`)
+  const sonar = await read('skills/openspec-code-quality/shared/sonar-scan.md')
+  assert.match(sonar, /<用户名>（AskUserQuestion，托管决策 D-<编号>）/,
+    'sonar-scan.md 的「决策人」缺少托管中的写法')
+})
+
 test('quality 询问处理方式：引用处口径一致，「无需新一轮」不再停止，Sonar 决策人不再只能由用户填写', async () => {
   const missing = []
   const stale = []

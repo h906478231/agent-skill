@@ -35,7 +35,7 @@ node <GATE> review <changeRoot>
 | `review.applicable = false` | 报告写「双轴评审：<reason>」 |
 | `review.verdict = BLOCKED` | **CRITICAL**，列出各轴 `openBlockers`，回 `/opsx:quality` 闭环 |
 | `review.verdict = INCOMPLETE` 或 `review.issues` 非空 | **CRITICAL**，补齐或修正评审报告后重跑 |
-| `review.warnings`（评审基线指纹 ≠ 当前实现，且不只有注释差异；`tasks.md` 声明了 `## 变更终点` 时比较的是终点指纹，终点之后其他变更的提交不触发本提醒） | WARNING：评审后实现有变化。运行 `classify --from <评审基线 Fingerprint>`，未登记的文件按 `../../openspec-apply-change/shared/post-implementation-changes.md` 按档位登记，再按档位决定是否回 `/opsx:quality` 重跑 |
+| `review.warnings`（评审基线指纹 ≠ 当前实现，且不只有注释差异；`tasks.md` 声明了 `## 变更终点` 时比较的是终点指纹，终点之后其他变更的提交不触发本提醒） | WARNING：评审后实现有变化。运行 `classify --from <评审基线 Fingerprint>`，未登记的文件按 `../../openspec-apply-change/shared/post-implementation-changes.md` 按档位登记，再按档位决定是否回 `/opsx:quality` 重跑。同一判断写入 `review.stale`（`archive`、`facts` 都输出）：为 `true` 时进度视图的 R8 成立，裁决为 `PASSED` 也回到 quality |
 
 脚本之外，Verify 还需人工核对两点（脚本无法判断语义）：
 

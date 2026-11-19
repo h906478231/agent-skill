@@ -159,7 +159,8 @@ test('视图为每个活跃变更输出一个条目，字段齐全，不写变�
   assert.equal(view.active.length, 17)
   for (const item of view.active) {
     assert.deepEqual(Object.keys(item).sort(),
-      ['blockers', 'change', 'error', 'next', 'notes', 'openQuestions', 'rule', 'stage', 'tasks', 'tier', 'warnings'], item.change)
+      ['blockers', 'change', 'error', 'next', 'notes', 'openQuestions', 'reviewStale', 'rule', 'stage', 'tasks', 'tier', 'warnings'],
+      item.change)
     assert.equal(item.error, null, `${item.change}：${item.error}`)
   }
   assert.deepEqual(entry('r6-l0').tasks, { done: 1, total: 3 })
@@ -396,7 +397,7 @@ test('门禁脚本的用法文本中没有 facts 时退出码 2，不输出任�
  * verification 没有 verdict、criticalCount、legacy，与 add-verify-verdict 之前的门禁脚本输出相同。
  * @returns {string} 假门禁的路径。
  */
-function fakeGate(p, { ok, blockers }) {
+function fakeGate(p, { ok, blockers, review = { applicable: false, verdict: null, issues: [] } }) {
   const fingerprint = `git-tree:${'0'.repeat(40)}`
   const facts = {
     tier: 'L0',
@@ -405,7 +406,7 @@ function fakeGate(p, { ok, blockers }) {
     openQuestions: { pending: 0, total: 0 },
     currentFingerprint: fingerprint,
     archive: { ok, blockers, warnings: [], notes: [],
-      review: { applicable: false, verdict: null, issues: [] }, evidence: { issues: [] } },
+      review, evidence: { issues: [] } },
   }
   const file = join(p.repo, 'fake-gate.mjs')
   writeFileSync(file, [
@@ -443,6 +444,76 @@ test('R11：门禁脚本的 facts 没有 legacy 字段时按旧报告处理，�
   assert.ok(item, 'active 中没有 r11-old-gate')
   assert.equal(item.rule, 'R11')
   assert.ok(item.next.includes('CRITICAL') && item.next.indexOf('CRITICAL') < item.next.indexOf('/opsx:archive r11-old-gate'), item.next)
+})
+
+// ---------------------------------------------------------------------------
+// add-autopilot-loop Slice 10：裁决已通过后实现又有变化时回到 quality（评审 ARCH-12，spec change-progress-view R8）
+// ---------------------------------------------------------------------------
+
+const JAVA_ORDER = ['package demo;', '', 'public class Order {', '  // 创建订单', '  int create() { return 1; }', '}', ''].join('\n')
+
+/** 用门禁脚本 baseline 子命令的输出写一组裁决为 PASSED、没有 finding 的双轴评审报告。 */
+function passedReview(p, name) {
+  const root = join(p.repo, 'openspec/changes', name)
+  const result = spawnSync(process.execPath, [gate, 'baseline', root], { cwd: p.repo, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  const baseline = result.stdout.trim()
+  const ledger = ['## Finding 台账', '', '| ID | 严重级别 | 首次轮次 | 状态 | 闭环轮次 | 闭环依据 |', '|----|---------|---------|------|---------|---------|', '']
+  const axis = title => [`# ${title}（${name}）`, '', baseline, '', '## Findings', '',
+    '| ID | 严重级别 | 影响业务功能 | 位置 | 涉及代码模块 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复 | 闭环状态 |',
+    '|----|---------|------------|------|------------|-----------|---------|-----------|---------|---------|', '| 无 | | | | | | | | | |', '',
+    ...ledger, '## 结论', '', `${title} 结论：通过`, ''].join('\n')
+  p.write(`openspec/changes/${name}/review/standards.md`, axis('Standards Review'))
+  p.write(`openspec/changes/${name}/review/spec-fidelity.md`, axis('Spec Fidelity Review'))
+  p.write(`openspec/changes/${name}/review/code-review-summary.md`, ['# 实现后双轴评审汇总', '', baseline, '',
+    '| 评审轴 | 原始报告 |', '|---|---|', '| Standards Review | review/standards.md |', '| Spec Fidelity Review | review/spec-fidelity.md |', '',
+    'Code Review Verdict: PASSED', ''].join('\n'))
+}
+
+test('R8：裁决 PASSED 后源文件有修改时回到 quality；只有注释修改时不回到 quality', t => {
+  // spec change-progress-view「Code changed after a passed review」「Comment change after a passed review」。
+  const p = project()
+  t.after(p.cleanup)
+  p.write('src/Order.java', JAVA_ORDER)
+  change(p, 'code-changed', { tier: 'MVP', slice: true, tasks: [true, true] })
+  change(p, 'comment-changed', { tier: 'MVP', slice: true, tasks: [true, true] })
+  passedReview(p, 'code-changed')
+  p.write('src/order.js', 'export const create = () => 2\n')
+  passedReview(p, 'comment-changed')
+  p.write('src/Order.java', JAVA_ORDER.replace('// 创建订单', '// 创建一笔订单'))
+  const current = p.fingerprint()
+  for (const name of ['code-changed', 'comment-changed']) p.write(`openspec/changes/${name}/evidence/slice-01.md`, evidence(current))
+  const active = viewOf(p).active
+  const code = active.find(item => item.change === 'code-changed')
+  assert.equal(code.rule, 'R8', JSON.stringify(code))
+  assert.equal(code.stage, 'quality')
+  assert.equal(code.reviewStale, true)
+  assert.ok(code.next.includes('/opsx:quality code-changed'), code.next)
+  const comment = active.find(item => item.change === 'comment-changed')
+  assert.notEqual(comment.rule, 'R8', JSON.stringify(comment))
+  assert.equal(comment.reviewStale, false)
+})
+
+test('R8：门禁的 archive.review 没有 stale 时 reviewStale 为 null，卡点提示同步 openspec-technical-review', t => {
+  // spec change-progress-view「Gate without the stale field」：门禁副本早于 Slice 10 时不知道评审是否过期，不放行（评审 ARCH-18）。
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'old-gate-review', { tier: 'MVP', tasks: [true] })
+  const review = { applicable: true, verdict: 'PASSED', issues: [] }
+  const item = viewOf(p, ['--gate', fakeGate(p, { ok: true, blockers: [], review })]).active
+    .find(found => found.change === 'old-gate-review')
+  assert.ok(item, 'active 中没有 old-gate-review')
+  assert.equal(item.rule, 'R8')
+  assert.equal(item.reviewStale, null)
+  assert.ok(item.blockers.some(text => text.includes('openspec-technical-review')), JSON.stringify(item.blockers))
+})
+
+test('双轴评审不适用时 reviewStale 为 false', t => {
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'l0-change', { tier: 'L0', tasks: [true] })
+  const item = viewOf(p, ['--gate', fakeGate(p, { ok: true, blockers: [] })]).active.find(found => found.change === 'l0-change')
+  assert.equal(item.reviewStale, false)
 })
 
 test('找不到项目的 openspec/ 目录时退出码 2', t => {

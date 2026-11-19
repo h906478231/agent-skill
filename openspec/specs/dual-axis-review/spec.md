@@ -42,12 +42,13 @@ The Spec Fidelity Review SHALL check the implementation against the proposal, de
 
 ### Requirement: A configured Sonar scan SHALL cover the changed lines after the two axes
 
-When the project configures Sonar (`sonar-project.properties` or `sonar.projectKey`), `SONAR_HOST_URL` and `SONAR_TOKEN` are set, and the server status is `UP`, `/opsx:quality` SHALL run SonarScanner after the summary with branch or pull-request parameters. The scan SHALL NOT write its result into the analysis of the main branch. Only the issues on the lines changed since the `Base Commit` of the review baseline SHALL be handled; the agent SHALL record them and the failed quality-gate conditions in `review/sonar.md`. In this case the Standards Review SHALL NOT assess copy-paste duplication, cognitive complexity, unused private code and commented-out code, and empty catch blocks. Verify SHALL report a CRITICAL issue for each recorded issue or condition that the user has not marked as a false positive or accepted with a reason.
+When the project configures Sonar (`sonar-project.properties` or `sonar.projectKey`), `SONAR_HOST_URL` and `SONAR_TOKEN` are set, and the server status is `UP`, `/opsx:quality` SHALL run SonarScanner after the summary with branch or pull-request parameters. The scan SHALL NOT write its result into the analysis of the main branch. Only the issues on the lines changed since the `Base Commit` of the review baseline SHALL be handled; the agent SHALL record them and the failed quality-gate conditions in `review/sonar.md`, and SHALL ask the user how to handle each of them (spec `autopilot-decisions`). In this case the Standards Review SHALL NOT assess copy-paste duplication, cognitive complexity, unused private code and commented-out code, and empty catch blocks. Verify SHALL report a CRITICAL issue for each recorded issue or condition that the user has not marked as a false positive or accepted with a reason.
 
 #### Scenario: Sonar finds an issue on a changed line
 - **WHEN** the scan reports an issue on a line that the change modified
 - **THEN** `review/sonar.md` lists the issue
-- **AND** the main agent adds a task to fix it before verify
+- **AND** quality asks the user how to handle the issue
+- **AND** the main agent adds a task to fix it before verify only when the user answers `修复`
 
 #### Scenario: Issue on an unchanged line
 - **WHEN** the scan reports an issue on a line that the change did not modify

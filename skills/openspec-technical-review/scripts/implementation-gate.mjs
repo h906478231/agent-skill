@@ -1068,7 +1068,7 @@ function checkCarried(repo, changeRoot, from, to) {
  * @param {object} options required：是否必须存在评审产物；currentFingerprint：用于评审基线陈旧提醒；
  *   repo：仓库根目录，用于判定基线以来是否只有注释差异。
  * @returns {object} applicable、verdict（PASSED / BLOCKED / INCOMPLETE）、carried（沿用轮的核对范围，非沿用轮为 null）、
- *   axes、issues、warnings 等。
+ *   stale（评审后实现有变化，与 warnings 中的陈旧提醒同一判断；不适用时没有该字段）、axes、issues、warnings 等。
  *   options.changeHead：变更终点（readChangeHead），给出时陈旧提醒改为与终点指纹比较（add-change-head design D5）。
  */
 function checkReview(changeRoot, { required = false, currentFingerprint = null, repo = null, changeHead = null } = {}) {
@@ -1175,14 +1175,17 @@ function checkReview(changeRoot, { required = false, currentFingerprint = null, 
     const ledger = matchLedger(repo, changeRoot, diff.other, target)
     return !ledger.unregistered.length && ledger.registered.every(entry => entry.tier === TEST_ONLY_TIER)
   }
-  if (target && baseline && baseline.Fingerprint && baseline.Fingerprint !== target && !noNewRoundSince()) {
+  // stale 与下面的陈旧提醒是同一个判断：进度视图的 R8 读它，裁决为 PASSED 后实现又有变化时回到 quality
+  // （add-autopilot-loop 评审 ARCH-12）。只有注释差异或只有登记为仅测试的修改时为 false，不会在 quality 与 apply 之间循环。
+  const stale = Boolean(target && baseline && baseline.Fingerprint && baseline.Fingerprint !== target && !noNewRoundSince())
+  if (stale) {
     warnings.push(`评审基线 Fingerprint ${baseline.Fingerprint} 与${targetLabel} ${target} 不一致：评审后实现有变化。`
       + `运行 classify --from ${baseline.Fingerprint}，把 unregistered 中的文件（含门禁外提交）按档位登记到 tasks.md 的「## ${CHANGE_LEDGER_TITLE}」，`
       + '再按档位决定是否生成新基线重跑（规则见 post-implementation-changes.md）')
   }
 
   const verdict = blocked ? 'BLOCKED' : issues.length ? 'INCOMPLETE' : 'PASSED'
-  return { applicable: true, verdict, declaredVerdict, baseline, carried, axes, issues, warnings }
+  return { applicable: true, verdict, declaredVerdict, baseline, carried, stale, axes, issues, warnings }
 }
 
 // ============================================================================
@@ -1674,6 +1677,7 @@ const ARTIFACT_ALLOWLIST = [
   /^discussion-log\.md$/, // openspec-discussion-sync / openspec-grill
   /^video\/(storyboard\.md|explainer\.srt)$/, /^video\/media\/.+$/, // openspec-explainer-video
   /^recap\.md$/, // openspec-change-recap（归档后生成，只在变更的归档目录根下）
+  /^decisions\/(autopilot|D-\d{4})\.json$/, // openspec-autopilot（托管记录与托管决策）
 ]
 
 /** 系统生成的文件，不计入产物检查。 */

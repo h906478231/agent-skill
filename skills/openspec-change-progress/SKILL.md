@@ -54,6 +54,7 @@ node <PROGRESS> [--json] [--gate <path>]   # 在项目目录中运行
 | `tasks` | `{ done, total }`，与 `openspec list` 的勾选数相同 |
 | `blockers` | 命中规则的卡点，全部列出 |
 | `warnings` | 门禁 `archive` 检查的告警，原样复制，不参与推导。例如「评审后实现有变化，要运行 `classify`」 |
+| `reviewStale` | 双轴评审适用时为门禁 `archive.review.stale`（评审后实现有变化，R8 据此在裁决为 `PASSED` 时也回到 quality）；不适用时为 `false`；门禁副本没有给出该字段时为 `null`，R8 成立，卡点提示同步 `openspec-technical-review` 副本 |
 | `notes` | 说明。例如没有分级行、已有勾选的变更按历史变更处理，以及门禁的「不适用」理由 |
 | `openQuestions` | `{ pending, total }`：`design.md`「## Open Questions」中的条目数与没写「结论」的条目数。**只展示，不参与推导，不作为卡点**；由用户或 agent 看过条目后判断是否阻断 |
 | `next` | 下一步命令或人工动作 |
