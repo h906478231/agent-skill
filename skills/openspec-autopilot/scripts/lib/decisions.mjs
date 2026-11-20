@@ -7,17 +7,51 @@
  */
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, opendirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { writeJsonAtomic } from './atomic-write.mjs'
+import { readBoundedJson, sameObject } from './bounded-json.mjs'
 
 /** 托管记录的文件名（design D2）。 */
 export const RECORD_FILE = 'autopilot.json'
 
 /** 决策文件名的格式：D-0001 递增到四位数字。 */
-const DECISION_FILE = /^D-(\d{4})\.json$/
+const DECISION_FILE = /^D-((?!0000)\d{4})\.json$/
+const DECISION_LIMIT = 32 * 1024 * 1024
+export const OPEN_STATUSES = ['pending', 'answered']
+const DECISION_STATUSES = [...OPEN_STATUSES, 'used', 'void']
 
 /** 托管记录与决策的目录名（design D2）。 */
 export const DECISIONS_DIR = 'decisions'
+let decisionAnchor = null
+let checkAnchor = () => {}
+
+/**
+ * 项目保护区内将本机文件操作绑定到已核验的决策目录对象。
+ * 同步调用使用相对路径。目录名被替换时不能误写同名新对象。
+ */
+export function inDecisionDirectory(target, restore, work, check = () => {}) {
+  if (!target.decisionIdentity) return work(target)
+  const directory = decisionsDir(target.directory)
+  const original = process.cwd()
+  const prior = decisionAnchor
+  const priorCheck = checkAnchor
+  process.chdir(directory)
+  try {
+    if (!sameObject(target.decisionIdentity, statSync('.'))) throw new Error('决策目录已改变')
+    decisionAnchor = directory
+    checkAnchor = check
+    return work(target)
+  } finally {
+    decisionAnchor = prior
+    checkAnchor = priorCheck
+    try { process.chdir(original) } catch { process.chdir(restore) }
+  }
+}
+
+function decisionPath(file) {
+  return decisionAnchor && path.dirname(file) === decisionAnchor ? path.basename(file) : file
+}
 
 /**
  * 读一个 JSON 文件。文件不存在时返回 null；JSON 解析失败时返回 { error }，调用方按「跳过该文件并写日志」处理（design D6）。
@@ -25,11 +59,14 @@ export const DECISIONS_DIR = 'decisions'
  * @returns {{ value: object|null, error: string|null }} 读取结果。
  */
 export function readJsonFile(file) {
-  if (!existsSync(file)) return { value: null, error: null }
   try {
-    return { value: JSON.parse(readFileSync(file, 'utf8')), error: null }
+    checkAnchor()
+    const value = readBoundedJson(decisionPath(file), DECISION_LIMIT)
+    checkAnchor()
+    return { value, error: null }
   } catch (error) {
-    return { value: null, error: `JSON 解析失败：${file}（${error.message}）` }
+    if (error.code === 'ENOENT' && error.path === path.dirname(file)) return { value: null, error: null }
+    return { value: null, error: `决策资料读取失败：${file}（${error.code || error.message}）` }
   }
 }
 
@@ -75,19 +112,64 @@ export function listDecisions(changeDir) {
  * @returns {{ decisions: object[], error: string|null }} 决策列表与错误说明。
  */
 export function listDecisionsIn(dir) {
-  if (!existsSync(dir)) return { decisions: [], error: null }
-  const names = readdirSync(dir).filter(name => DECISION_FILE.test(name)).sort()
   const decisions = []
-  const errors = []
-  for (const name of names) {
-    const read = readJsonFile(path.join(dir, name))
-    if (read.error) {
-      errors.push(read.error)
-      continue
-    }
-    if (read.value) decisions.push({ ...read.value, id: read.value.id || name.replace(/\.json$/, '') })
+  const error = scanDecisions(dir, decision => decisions.push(decision))
+  return { decisions: decisions.sort((left, right) => left.id.localeCompare(right.id)), error }
+}
+
+export function decisionFile(changeDir, id) {
+  if (!DECISION_FILE.test(`${id}.json`)) throw new Error('决策编号无效')
+  return path.join(decisionsDir(changeDir), `${id}.json`)
+}
+
+export function readDecision(changeDir, id) {
+  const result = readJsonFile(decisionFile(changeDir, id))
+  if (result.value && (result.value.id !== id || !DECISION_STATUSES.includes(result.value.status))) {
+    return { value: null, error: `${id} 的决策内容无效` }
   }
-  return { decisions, error: errors.length ? errors.join('；') : null }
+  return result
+}
+
+/** 逐项访问决策。中断或任一读取失败时，返回的清单不能用来证明没有未完成决策。 */
+export function scanDecisions(dir, visit, checkBudget = () => {}) {
+  let stream
+  let failure = null
+  try {
+    const target = dir === decisionAnchor ? '.' : dir
+    if (!lstatSync(target).isDirectory()) throw new Error('决策目录类型无效')
+    stream = opendirSync(target)
+    for (let item = stream.readSync(); item; item = stream.readSync()) {
+      checkAnchor()
+      checkBudget()
+      if (!DECISION_FILE.test(item.name)) continue
+      const id = item.name.slice(0, -5)
+      const result = readDecision(path.dirname(dir), id)
+      checkAnchor()
+      checkBudget()
+      if (result.value) visit(result.value)
+      else failure ||= result.error || `${id} 在枚举后消失`
+    }
+    return failure
+  } catch (error) {
+    if (!stream && error.code === 'ENOENT') return null
+    return error.code || error.message
+  } finally {
+    stream?.closeSync()
+  }
+}
+
+export function voidOpenDecisions(changeDir, voidReason, { preserve = null } = {}) {
+  const open = []
+  const failed = []
+  const error = scanDecisions(decisionsDir(changeDir), decision => {
+    if (OPEN_STATUSES.includes(decision.status)) open.push(decision)
+  })
+  for (const decision of open) {
+    if (decision.id === preserve) continue
+    const result = transition(decisionFile(changeDir, decision.id), OPEN_STATUSES, { status: 'void', voidReason })
+    if (!result.ok) failed.push({ id: decision.id, reason: result.reason })
+  }
+  return { open, failed, error }
 }
 
 /**
@@ -95,13 +177,23 @@ export function listDecisionsIn(dir) {
  * @param {string} changeDir 变更目录。
  * @returns {string} 决策编号。
  */
-export function nextDecisionId(changeDir) {
-  const { decisions } = listDecisions(changeDir)
-  const max = decisions.reduce((last, decision) => {
-    const match = DECISION_FILE.exec(`${decision.id}.json`)
-    return match ? Math.max(last, Number(match[1])) : last
-  }, 0)
-  return `D-${String(max + 1).padStart(4, '0')}`
+export function nextDecisionId(changeDir, after = '', checkBudget = () => {}) {
+  const directory = decisionsDir(changeDir)
+  const target = directory === decisionAnchor ? '.' : directory
+  if (!lstatSync(target).isDirectory()) throw new Error('决策目录类型无效')
+  const stream = opendirSync(target)
+  let max = Number(DECISION_FILE.exec(`${after}.json`)?.[1] || 0)
+  try {
+    for (let item = stream.readSync(); item; item = stream.readSync()) {
+      checkAnchor()
+      checkBudget()
+      const match = DECISION_FILE.exec(item.name)
+      if (match) max = Math.max(max, Number(match[1]))
+    }
+  } finally {
+    stream.closeSync()
+  }
+  return max < 9999 ? `D-${String(max + 1).padStart(4, '0')}` : null
 }
 
 /**
@@ -140,21 +232,20 @@ export function transition(file, expectedStatuses, patch, options = {}) {
   if (options.startedAt !== undefined && current.startedAt !== options.startedAt) {
     return { ok: false, reason: `startedAt 为 ${current.startedAt || '（无）'}，与预期 ${options.startedAt} 不同` }
   }
-  writeJsonAtomic(file, options.replace ? patch : { ...current, ...patch })
-  return { ok: true, reason: null }
+  try {
+    writeDecisionJson(file, options.replace ? patch : { ...current, ...patch })
+    return { ok: true, reason: null }
+  } catch (error) {
+    return { ok: false, reason: error.code || error.message }
+  }
 }
 
-/**
- * 原子写一个 JSON 文件：先写 <file>.tmp.<pid>，再 rename 覆盖（design D6）。
- * @param {string} file 目标文件。
- * @param {unknown} value 要写入的值。
- * @returns {string} 目标文件路径。
- */
-export function writeJsonAtomic(file, value) {
-  const tmp = `${file}.tmp.${process.pid}`
-  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
-  renameSync(tmp, file)
-  return file
+function writeDecisionJson(file, value, replace = true) {
+  if (Buffer.byteLength(JSON.stringify(value, null, 2), 'utf8') + 1 > DECISION_LIMIT) {
+    throw new Error('决策资料超过 32 MiB')
+  }
+  checkAnchor()
+  writeJsonAtomic(decisionPath(file), value, { replace })
 }
 
 /**
@@ -165,8 +256,11 @@ export function writeJsonAtomic(file, value) {
  */
 export function createDecision(changeDir, decision) {
   const id = decision.id || nextDecisionId(changeDir)
-  const file = path.join(decisionsDir(changeDir), `${id}.json`)
-  writeJsonAtomic(file, { ...decision, id })
+  if (!id) throw new Error('四位决策编号已用尽')
+  const file = decisionFile(changeDir, id)
+  const present = readDecision(changeDir, id)
+  if (present.value || present.error) throw new Error('决策编号已占用')
+  writeDecisionJson(file, { ...decision, id }, false)
   return { file, id }
 }
 

@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { homeDir } from './lib/home.mjs'
+import { ensureHomeDir, homeDir, writeHomeFile } from './lib/home.mjs'
 
 /** 本 skill 的目录。 */
 const SKILL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -106,8 +106,8 @@ function main(argv) {
 
   if (write) {
     // 托管目录 0o700、配置 0o600（design D2，评审 SEC-08）。
-    mkdirSync(home, { recursive: true, mode: 0o700 })
-    if (!existsSync(configFile)) writeFileSync(configFile, template, { mode: 0o600 })
+    ensureHomeDir()
+    if (!existsSync(configFile)) writeHomeFile('config.json', template)
     mkdirSync(agentsDir, { recursive: true })
     for (const item of plists) writeFileSync(item.file, item.content)
   }

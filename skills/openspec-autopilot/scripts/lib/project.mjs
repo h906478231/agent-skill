@@ -9,7 +9,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 /** 进度视图错误信息中保留的输出长度。 */
@@ -22,7 +22,9 @@ const PROGRESS_ERROR_LIMIT = 300
  * @returns {{ view: object|null, error: string|null }} 进度视图与错误说明。
  */
 export function readProgressView(config, root) {
-  const result = spawnSync(process.execPath, [config.progressBin, '--json'], {
+  const args = [config.progressBin, '--json']
+  if (config.gateBin) args.push('--gate', config.gateBin)
+  const result = spawnSync(process.execPath, args, {
     cwd: root,
     encoding: 'utf8',
     env: { ...process.env, OPENSPEC_TELEMETRY: '0' },
@@ -36,7 +38,11 @@ export function readProgressView(config, root) {
     }
   }
   try {
-    return { view: JSON.parse(result.stdout), error: null }
+    const view = JSON.parse(result.stdout)
+    if (!view || !Array.isArray(view.active) || !Array.isArray(view.archived)) {
+      return { view: null, error: '进度视图缺少 active 或 archived 列表' }
+    }
+    return { view, error: null }
   } catch (error) {
     return { view: null, error: `进度视图输出不是 JSON：${error.message}` }
   }
@@ -83,6 +89,9 @@ export function gitUserName(root) {
   return result.status === 0 ? result.stdout.trim() : ''
 }
 
+/** 读取磁盘上的实际路径和大小写，供调度和写入保护共同使用。 */
+export const realPath = target => realpathSync.native(target)
+
 /**
  * 判断一个路径是否在某个目录之内（含目录本身）。
  * @param {string} target 目标路径。
@@ -92,5 +101,5 @@ export function gitUserName(root) {
 export function inside(target, dir) {
   if (!target || !dir) return false
   const relative = path.relative(path.resolve(dir), path.resolve(target))
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
 }

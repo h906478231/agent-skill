@@ -92,18 +92,6 @@ export function otherMainSpecs(root, mainSpecs) {
 }
 
 /**
- * 判断一个路径是不是被 git 忽略的文件。
- * @param {string} root 项目根目录。
- * @param {string} file 相对路径。
- * @returns {boolean} 被忽略时为 true。
- */
-export function isIgnored(root, file) {
-  const status = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored', '--', file])
-  if (status.code !== 0) return false
-  return parseStatus(status.out).some(record => record.status.startsWith('!!'))
-}
-
-/**
  * 判断一个路径是不是已跟踪文件的删除。
  * @param {string} root 项目根目录。
  * @param {string} file 相对路径。
@@ -295,12 +283,15 @@ export function executeCommitMerge(candidate, decision, { draftsDir, log = () =>
   const message = String(request.message || '')
   const merge = (decision.answer && decision.answer.choice) === '提交并合并'
   const exitState = currentExit(candidate)['commit-merge'] || {}
-  const stopped = () => ({ ok: false, error: '托管记录已变化（撤回或重新托管），停止剩余步骤', steps, stopped: true })
   const branchExists = git(root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).code === 0
   const draftFile = path.join(draftsDir, `${branch.replace(/\//g, '_')}.txt`)
 
   // 第 1 步：先回读。托管记录已有提交号，或分支已存在并且最后一次提交的说明等于计划说明时，不再提交（spec 第 1 步）。
   let commit = exitState.commit || null
+  const stopped = () => {
+    log('commit-merge-stopped', { change: candidate.entry.change, steps, commit })
+    return { ok: false, error: '托管记录已变化（撤回或重新托管），停止剩余步骤', steps, stopped: true }
+  }
   if (!commit && branchExists && gitLine(root, ['log', '-1', '--format=%B', branch]).trim() === message.trim()) {
     commit = gitLine(root, ['rev-parse', branch])
   }
@@ -416,10 +407,16 @@ export function executePush(candidate, decision, { log = () => {} } = {}) {
     const out = git(root, ['ls-remote', 'origin', ref])
     return out.code === 0 ? (out.out.trim().split(/\s+/)[0] || '') : ''
   }
+  const stopped = () => {
+    log('push-stopped', { change: candidate.entry.change, steps, before: remoteBefore, after: remoteAfter, commit: target })
+    return { ok: false, error: '托管记录已变化，停止剩余步骤', steps, stopped: true }
+  }
+  const remoteBefore = remoteHead(`refs/heads/${mergeCommit ? base : branch}`)
+  let remoteAfter = remoteBefore
   // 先回读：远端主分支已指向合并提交时跳过推送（spec「A failed exit action ...」最后一段）。
-  if (mergeCommit && remoteHead(`refs/heads/${base}`) === mergeCommit) {
+  if (mergeCommit && remoteBefore === mergeCommit) {
     steps.push('read-back')
-    if (!writeExitState(candidate, 'push', { ok: true }, log)) return { ok: false, error: '托管记录已变化，停止剩余步骤', steps }
+    if (!writeExitState(candidate, 'push', { ok: true }, log)) return stopped()
     return { ok: true, error: null, steps }
   }
   // 重新计算将推送的提交，与卡片不一致时按执行失败处理（design D11「推送」，评审 SEC-14）。
@@ -431,8 +428,7 @@ export function executePush(candidate, decision, { log = () => {} } = {}) {
   // fetch 期间可能被撤回：推送前复核托管记录，撤回后不推送（评审 CONC-06）。
   const again = readRecord(candidate.changeDir)
   if (!again.value || again.value.status !== 'exiting' || again.value.startedAt !== candidate.record.startedAt) {
-    log('push-stopped', { change: candidate.entry.change, steps })
-    return { ok: false, error: '托管记录已变化，停止剩余步骤', steps, stopped: true }
+    return stopped()
   }
   // 只快进远端主分支：远端主分支不是要推送的提交的祖先时不推送，不强制推送（design D11「其他」）。
   const remoteBase = gitLine(root, ['rev-parse', '--verify', '--quiet', `origin/${base}`])
@@ -443,19 +439,23 @@ export function executePush(candidate, decision, { log = () => {} } = {}) {
     const pushed = git(root, ['push', 'origin', `refs/heads/${branch}:refs/heads/${branch}`])
     if (pushed.code !== 0) return { ok: false, error: `推送分支失败：${pushed.err.trim().slice(0, 200)}`, steps }
     steps.push('push-branch')
+    if (!mergeCommit) remoteAfter = exitState.commit
   }
   // 选了只提交到分支时没有合并提交，只推分支（design D11 表格第 2 行）。
   if (mergeCommit) {
+    const current = readRecord(candidate.changeDir).value
+    if (current?.status !== 'exiting' || current.startedAt !== candidate.record.startedAt || current.exitBlock) return stopped()
     const pushed = git(root, ['push', 'origin', `${mergeCommit}:refs/heads/${base}`])
     if (pushed.code !== 0) return { ok: false, error: `推送主分支失败：${pushed.err.trim().slice(0, 200)}`, steps }
     steps.push('push-base')
+    remoteAfter = mergeCommit
   }
   // 回读远端引用：远端要指向本次推送的提交（design D11「推送」）。
   if (mergeCommit && remoteHead(`refs/heads/${base}`) !== mergeCommit) return { ok: false, error: '回读远端主分支失败', steps }
   if (branch && !mergeCommit && remoteHead(`refs/heads/${branch}`) !== exitState.commit) {
     return { ok: false, error: '回读远端分支失败', steps }
   }
-  if (!writeExitState(candidate, 'push', { ok: true }, log)) return { ok: false, error: '托管记录已变化，停止剩余步骤', steps }
+  if (!writeExitState(candidate, 'push', { ok: true }, log)) return stopped()
   return { ok: true, error: null, steps }
 }
 
@@ -479,11 +479,13 @@ export function currentExit(candidate) {
  * @returns {boolean} 写入成功时为 true。
  */
 export function writeExitState(candidate, action, patch, log = () => {}) {
-  const exit = currentExit(candidate)
-  exit[action] = { ...(exit[action] || {}), ...patch }
-  const written = transition(recordFile(candidate.changeDir), ['exiting'], { exit }, { startedAt: candidate.record.startedAt })
-  if (!written.ok) log('exit-state-write-failed', { change: candidate.entry.change, action, reason: written.reason })
-  return written.ok
+  const written = candidate.updateExit(record => {
+    const exit = { ...(record.exit || {}) }
+    exit[action] = { ...(exit[action] || {}), ...patch }
+    return transition(recordFile(candidate.changeDir), ['exiting'], { exit }, { startedAt: candidate.record.startedAt }).ok
+  })
+  if (!written) log('exit-state-write-failed', { change: candidate.entry.change, action })
+  return written
 }
 
 export { COMMIT_OPTIONS, PUSH_OPTIONS }

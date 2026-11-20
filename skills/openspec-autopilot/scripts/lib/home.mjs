@@ -16,6 +16,7 @@ const SKILL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 /** 托管目录的缺省名（design D2）：~/.openspec-autopilot/，可用环境变量 OPENSPEC_AUTOPILOT_HOME 改。 */
 const DEFAULT_HOME_NAME = '.openspec-autopilot'
+const startupDirectory = process.cwd()
 
 /**
  * 托管目录的绝对路径。测试用环境变量指向临时目录（design D2）。
@@ -23,7 +24,7 @@ const DEFAULT_HOME_NAME = '.openspec-autopilot'
  */
 export function homeDir() {
   const fromEnv = process.env.OPENSPEC_AUTOPILOT_HOME
-  return fromEnv && fromEnv.trim() ? path.resolve(fromEnv.trim()) : path.join(homedir(), DEFAULT_HOME_NAME)
+  return fromEnv && fromEnv.trim() ? path.resolve(startupDirectory, fromEnv.trim()) : path.join(homedir(), DEFAULT_HOME_NAME)
 }
 
 /**

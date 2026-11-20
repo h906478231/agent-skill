@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync, chmodSync, utimesSync, symlinkSync, realpathSync, renameSync, statSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync, chmodSync, utimesSync, truncateSync, symlinkSync, realpathSync, renameSync, statSync } from 'node:fs'
 import { tmpdir, uptime } from 'node:os'
 import { join, dirname, resolve as resolvePath, sep as pathSep } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto'
 import {
   tempDir, initRepo, writeFiles, projectOf, writeConfig, progressDouble, claudeDouble, larkDouble, setClaudeOutput,
 } from './lib/autopilot-doubles.mjs'
+import { GATE_TRACE_SAMPLES, STANDARD_TRACE_REPORT } from './lib/gate-trace-samples.mjs'
 import { alertCard, exitCard, questionCard } from '../skills/openspec-autopilot/scripts/lib/card.mjs'
 
 /**
@@ -272,6 +273,100 @@ test('status 打印托管记录与各状态的决策数', t => {
   assert.ok(result.all.includes('active'), result.all)
 })
 
+test('查询托管状态区分本批次没有运行与存活旧锁无法核验', t => {
+  const f = cancelScenario(t)
+  const clean = f.run(['status', 'demo'])
+  assert.equal(clean.code, 0, clean.all)
+  assert.match(clean.out, /阶段运行中：否/)
+  writeLock(f, { pid: process.pid, bootTime: bootTime(), change: 'demo', claudePid: null })
+  const unknown = f.run(['status', 'demo'])
+  assert.equal(unknown.code, 0, unknown.all)
+  assert.match(unknown.out, /阶段运行中：无法确定/)
+})
+
+test('查询锁状态忽略其他批次并识别已核验的同批次写者', t => {
+  const f = cancelScenario(t)
+  const writer = spawnSignalTarget()
+  t.after(() => writer.kill('SIGKILL'))
+  const lock = managedLock(f, process.pid, writer.pid)
+  writeLock(f, { ...lock, startedAt: '2026-11-05T10:00:00Z' })
+  assert.match(f.run(['status', 'demo']).out, /阶段运行中：否/)
+  writeLock(f, lock)
+  assert.match(f.run(['status', 'demo']).out, /阶段运行中：是/)
+  writeFileSync(join(f.home, 'run.lock'), '未写完')
+  assert.match(f.run(['status', 'demo']).out, /阶段运行中：无法确定/)
+  const stale = new Date(Date.now() - 120_000)
+  utimesSync(join(f.home, 'run.lock'), stale, stale)
+  assert.match(f.run(['status', 'demo']).out, /阶段运行中：否/)
+})
+
+test('查询和撤回在同名空活跃目录后定位归档批次', t => {
+  const f = scenario(t)
+  const archive = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-19-demo')
+  writeFiles(archive, { 'decisions/autopilot.json': managedRecord({ status: 'exiting' }),
+    'decisions/D-0001.json': { id: 'D-0001', kind: 'alert', status: 'pending' } })
+  const result = f.run(['status', 'demo'])
+  assert.equal(result.code, 0, result.all)
+  assert.ok(result.out.includes(realpathSync.native(archive)))
+  assert.match(result.out, /阶段运行中：否/)
+  assert.equal(f.run(['cancel', 'demo']).code, 0)
+  assert.equal(JSON.parse(readFileSync(join(archive, 'decisions', 'D-0001.json'), 'utf8')).status, 'void')
+})
+
+test('两个配置项目有同名批次时按当前检出查询和撤回', t => {
+  const f = scenario(t, { files: { 'decisions/autopilot.json': managedRecord() } })
+  const otherRoot = tempDir(t, 'autopilot-other-repo-')
+  initRepo(otherRoot)
+  const other = join(otherRoot, 'openspec', 'changes', 'demo')
+  writeFiles(other, { 'decisions/autopilot.json': managedRecord({ startedAt: '2026-11-19T10:00:00Z' }) })
+  const file = join(f.home, 'config.json')
+  writeConfig(f.home, { ...JSON.parse(readFileSync(file)), projects: [projectOf(otherRoot), projectOf(f.repo)] })
+  const status = f.run(['status', 'demo'])
+  assert.equal(status.code, 0, status.all)
+  assert.ok(status.out.includes(realpathSync.native(f.changeDir)))
+  assert.equal(f.run(['cancel', 'demo']).code, 0)
+  assert.equal(f.record().status, 'void')
+  assert.equal(JSON.parse(readFileSync(join(other, 'decisions', 'autopilot.json'))).status, 'active')
+  const outside = tempDir(t, 'autopilot-outside-')
+  const ambiguous = spawnSync(process.execPath, [autopilot, 'status', 'demo'], { encoding: 'utf8', cwd: outside,
+    env: { ...process.env, OPENSPEC_AUTOPILOT_HOME: f.home } })
+  assert.notEqual(ambiguous.status, 0)
+  assert.match(ambiguous.stderr, /存在多个可选批次/)
+})
+
+test('管理命令拒绝歧义的归档批次且保留记录', t => {
+  const f = scenario(t)
+  const archives = ['2026-11-18-demo', '2026-11-19-demo'].map(name => join(f.repo, 'openspec', 'changes', 'archive', name))
+  for (const directory of archives) writeFiles(directory, { 'decisions/autopilot.json': managedRecord() })
+  for (const command of ['status', 'cancel', 'start']) assert.notEqual(f.run([command, 'demo']).code, 0)
+  for (const dir of archives) assert.equal(JSON.parse(readFileSync(join(dir, 'decisions', 'autopilot.json'), 'utf8')).status, 'active')
+})
+
+test('重复撤回清理旧待答决策且不重写 void 记录', t => {
+  const f = cancelScenario(t, { recordValue: managedRecord({ status: 'void', voidReason: '用户撤回' }) })
+  const record = join(f.changeDir, 'decisions', 'autopilot.json')
+  writeFiles(f.changeDir, { 'decisions/D-0001.json': { id: 'D-0001', kind: 'alert', status: 'pending' } })
+  const identity = statSync(record).ino
+  assert.equal(f.run(['cancel', 'demo']).code, 0)
+  assert.equal(statSync(record).ino, identity)
+  assert.equal(JSON.parse(readFileSync(join(f.changeDir, 'decisions', 'D-0001.json'), 'utf8')).status, 'void')
+  assert.equal(f.run(['cancel', 'demo']).code, 0)
+  assert.equal(statSync(record).ino, identity)
+})
+
+test('撤回保护已核验的回会话交接并清理其他待答决策', t => {
+  const f = cancelScenario(t, { recordValue: managedRecord({ status: 'void', returnHandoff: 'D-0001' }) })
+  const handoff = { id: 'D-0001', kind: 'alert', status: 'answered', answer: { operatorId: 'ou_owner', choice: '回会话处理' } }
+  writeFiles(f.changeDir, { 'decisions/D-0001.json': handoff,
+    'decisions/D-0002.json': { id: 'D-0002', kind: 'exit', status: 'pending' } })
+  const result = f.run(['cancel', 'demo'])
+  assert.equal(result.code, 0, result.all)
+  assert.match(result.out, /D-0001 仍待核验交接/)
+  const decision = id => JSON.parse(readFileSync(join(f.changeDir, 'decisions', `${id}.json`), 'utf8'))
+  assert.deepEqual(decision('D-0001'), handoff)
+  assert.equal(decision('D-0002').status, 'void')
+})
+
 test('撤回已归档的变更时找到归档目录', t => {
   const f = scenario(t, { progress: view({ active: [], archived: [{ name: 'demo', date: '2026-11-16' }] }) })
   const archiveDir = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-16-demo', 'decisions')
@@ -324,6 +419,24 @@ function hookScenario(t, { files = {}, ownerOpenId = 'ou_owner' } = {}) {
   const changeRoot = join(repo, 'openspec', 'changes', 'demo')
   mkdirSync(changeRoot, { recursive: true })
   writeFiles(changeRoot, files)
+  const bind = (id, directory = changeRoot) => {
+    const writer = spawnSignalTarget()
+    t.after(() => writer.kill('SIGKILL'))
+    const root = realpathSync.native(repo)
+    const batch = managedRecord()
+    writeFiles(directory, { 'decisions/autopilot.json': batch })
+    const runId = 'hook-fixture-run'
+    const instance = writerIdentity(writer.pid)
+    writeLock({ home }, { pid: process.pid, bootTime: bootTime(), projectRoot: root, change: 'demo', startedAt: batch.startedAt,
+      runId, claudePid: writer.pid, writer: instance })
+    const key = JSON.stringify([root, 'demo', batch.startedAt])
+    writeFiles(home, { 'pending-trace.json': { version: 1, entries: { [key]: {
+      mode: 'stage', root, name: 'demo', startedAt: batch.startedAt, directory: realpathSync.native(changeRoot), location: 'active',
+      stage: 'quality', runId, consumedDecisionId: id, writer: instance, traceBefore: { traceVersion: 1, resumedDecisionIds: [id] },
+    } } } })
+  }
+  const [decision] = Object.keys(files).filter(file => /^decisions\/D-\d{4}\.json$/.test(file))
+  if (decision) bind(decision.slice(10, -5))
   const run = (input, env = {}) => {
     const result = spawnSync(process.execPath, [hook], {
       cwd: repo,
@@ -333,7 +446,7 @@ function hookScenario(t, { files = {}, ownerOpenId = 'ou_owner' } = {}) {
     })
     return { code: result.status, out: result.stdout.trim(), err: result.stderr.trim(), json: () => JSON.parse(result.stdout) }
   }
-  return { repo, home, changeRoot, run }
+  return { repo, home, changeRoot, run, bind }
 }
 
 /** 构造一个已回复的提问决策文件内容。 */
@@ -373,6 +486,22 @@ test('回复人不是本人时不填回，改为 defer', t => {
   assert.equal(result.json().permissionDecision, 'defer')
 })
 
+for (const field of ['startedAt', 'runId']) {
+  test(`提问回复的${field}无法归属本次运行时保持挂起`, t => {
+    const f = hookScenario(t, { files: { 'decisions/D-0001.json': answeredQuestion() } })
+    const lockFile = join(f.home, 'run.lock')
+    const original = JSON.parse(readFileSync(lockFile, 'utf8'))
+    writeFileSync(lockFile, JSON.stringify({ ...original, [field]: 'different-instance' }))
+    const input = { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'T1', tool_input: QUESTION }
+    const result = f.run(input)
+    assert.equal(result.code, 0, result.err)
+    assert.equal(result.json().permissionDecision, 'defer')
+    assert.equal(result.json().updatedInput, undefined)
+    writeFileSync(lockFile, JSON.stringify(original))
+    assert.equal(f.run(input).json().permissionDecision, 'allow')
+  })
+}
+
 test('提问已变化时 defer', t => {
   const f = hookScenario(t, { files: { 'decisions/D-0001.json': answeredQuestion() } })
   const changed = { questions: [{ question: '换了一个问题？', header: '换了一个问题？', multiSelect: false, options: [{ label: '好' }] }] }
@@ -402,6 +531,7 @@ test('归档目录中的回复也能填回', t => {
   const archive = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-06-demo', 'decisions')
   mkdirSync(archive, { recursive: true })
   writeFileSync(join(archive, 'D-0005.json'), `${JSON.stringify(answeredQuestion({ id: 'D-0005' }))}\n`)
+  f.bind('D-0005', join(archive, '..'))
   const result = f.run({ hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'T1', tool_input: QUESTION })
   assert.equal(result.code, 0, result.err)
   assert.equal(result.json().permissionDecision, 'allow')
@@ -432,6 +562,19 @@ test('写入 decisions 目录被拒绝', t => {
     tool_input: { file_path: join(f.changeRoot, 'decisions', 'D-0001.json'), content: '{}' } })
   assert.equal(result.code, 0, result.err)
   assert.equal(result.json().permissionDecision, 'deny')
+})
+
+test('托管写入保护使用决策目录在磁盘上的实际大小写', t => {
+  const f = hookScenario(t, { files: { 'decisions/D-0001.json': answeredQuestion() } })
+  const differentlyCased = join(f.changeRoot, 'DECISIONS', 'D-0001.json')
+  if (!existsSync(differentlyCased)) return t.skip('文件系统区分大小写')
+  for (const target of [differentlyCased, join(f.changeRoot, 'Decisions', 'D-0001.json'),
+    join(dirname(f.changeRoot), 'DEMO', 'decisions', 'D-0001.json')]) {
+    const result = f.run({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_use_id: 'W1',
+      tool_input: { file_path: target, content: '{}' } })
+    assert.equal(result.code, 0, result.err)
+    assert.equal(result.json().permissionDecision, 'deny')
+  }
 })
 
 test('写入普通源文件时放行，不输出任何内容', t => {
@@ -523,6 +666,7 @@ test('模板文件是合法 JSON，且写出 hook 注册与拒绝规则', t => {
 
 /** 调度脚本的路径。 */
 const scheduler = fileURLToPath(new URL('../skills/openspec-autopilot/scripts/scheduler.mjs', import.meta.url))
+const gateBin = fileURLToPath(new URL('../skills/openspec-technical-review/scripts/implementation-gate.mjs', import.meta.url))
 
 /** 进度视图的一条变更条目。 */
 const schedEntry = (overrides = {}) => ({
@@ -560,7 +704,7 @@ function schedScenario(t, {
   const { viewFile, progressBin } = progressDouble(doublesDir, view || { root: repo, active: [schedEntry()], implementing: [], archived: [] })
   const { claudeBin, claudeCalls, claudeSignals } = claudeDouble(doublesDir, { output: claude })
   const { larkBin, larkCalls } = larkDouble(doublesDir, { messageId: lark || 'om_test' })
-  const fullConfig = writeConfig(home, { claudeBin, larkBin, progressBin, projects: projects || [projectOf(repo)], ...config })
+  const fullConfig = writeConfig(home, { claudeBin, larkBin, progressBin, gateBin, projects: projects || [projectOf(repo)], ...config })
 
   const run = (args = ['--once'], env = {}) => {
     const result = spawnSync(process.execPath, [scheduler, ...args], {
@@ -1156,8 +1300,26 @@ function spawnSignalTarget(onTerm, { ignore = false } = {}) {
   const child = spawn(process.execPath, ['-e', `
 ${ignore ? 'process.on("SIGTERM", () => {})' : `process.on("SIGTERM", () => { ${onTerm || ''} ; process.exit(0) })`}
 setInterval(() => {}, 1000)
-`], { stdio: 'ignore' })
+`], { stdio: 'ignore', detached: true })
   return child
+}
+
+/** 读取替身的实际组实例，供 CLI 夹具写入运行锁。 */
+function writerIdentity(pid) {
+  if (process.platform === 'linux') {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    return { state: 'published', pid, bootId: readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(),
+      instance: stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19] }
+  }
+  const bootId = spawnSync('/usr/sbin/sysctl', ['-n', 'kern.bootsessionuuid'], { encoding: 'utf8' }).stdout.trim()
+  const instance = spawnSync('/bin/ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8' }).stdout.trim()
+  return { state: 'published', pid, bootId, instance }
+}
+
+function managedLock(f, pid, claudePid = null) {
+  const record = f.record()
+  return { pid, claudePid, bootTime: bootTime(), change: 'demo', projectRoot: realpathSync.native(f.repo),
+    startedAt: record.startedAt, runId: 'cancel-fixture-run', ...(claudePid ? { writer: writerIdentity(claudePid) } : {}) }
 }
 
 /**
@@ -1180,9 +1342,7 @@ test('撤回时向运行中的阶段进程组发 SIGTERM', t => {
   // 目标进程收到 SIGTERM 后删除运行锁并退出。
   const target = spawnSignalTarget(`require('node:fs').unlinkSync(${JSON.stringify(join(f.home, 'run.lock'))})`)
   t.after(() => target.kill('SIGKILL'))
-  writeFileSync(join(f.home, 'run.lock'), `${JSON.stringify({
-    pid: scheduler.pid, bootTime: bootTime(), change: 'demo', claudePid: target.pid,
-  })}\n`)
+  writeLock(f, managedLock(f, scheduler.pid, target.pid))
   const result = f.run(['cancel', 'demo'])
   assert.equal(result.code, 0, result.all)
   assert.equal(f.record().status, 'void')
@@ -1259,8 +1419,8 @@ test('恢复会话期间撤回，恢复的 claude 收到 SIGTERM，撤回退出�
 test('阶段不停止时撤回退出码为 1 并说明仍在停止', t => {
   const target = spawnSignalTarget('', { ignore: true })
   t.after(() => target.kill('SIGKILL'))
-  const f = cancelScenario(t, { lock: { pid: target.pid, bootTime: bootTime(), change: 'demo', claudePid: target.pid },
-    cancelWaitSeconds: 1 })
+  const f = cancelScenario(t, { cancelWaitSeconds: 1 })
+  writeLock(f, managedLock(f, target.pid, target.pid))
   const result = f.run(['cancel', 'demo'])
   assert.equal(result.code, 1, result.all)
   assert.ok(result.all.includes('仍在停止'), result.all)
@@ -1273,6 +1433,7 @@ test('锁中没有 claude 进程时撤回只等待锁释放，不发信号', t =
   const scheduler = spawnSignalTarget()
   t.after(() => scheduler.kill('SIGKILL'))
   const f = cancelScenario(t, { lock: { pid: scheduler.pid, bootTime: bootTime(), change: 'demo', claudePid: null } })
+  writeLock(f, managedLock(f, scheduler.pid))
   // 模拟调度进程：一秒后删除运行锁。
   spawnHelper(`require('node:fs').unlinkSync(${JSON.stringify(join(f.home, 'run.lock'))})`, 1000)
   const result = f.run(['cancel', 'demo'])
@@ -1289,9 +1450,10 @@ test('等待期间出现 claude 进程时补发一次 SIGTERM', t => {
   const f = cancelScenario(t, { lock: { pid: scheduler.pid, bootTime: bootTime(), change: 'demo', claudePid: null } })
   const target = spawnSignalTarget(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'x')`)
   t.after(() => target.kill('SIGKILL'))
+  writeLock(f, managedLock(f, scheduler.pid))
   // 模拟调度进程：一秒后写入 claudePid，再删除运行锁。
   spawnHelper(`const fs = require('node:fs')
-fs.writeFileSync(${JSON.stringify(join(f.home, 'run.lock'))}, JSON.stringify({ pid: ${scheduler.pid}, bootTime: ${bootTime()}, change: 'demo', claudePid: ${target.pid} }))
+fs.writeFileSync(${JSON.stringify(join(f.home, 'run.lock'))}, JSON.stringify(${JSON.stringify(managedLock(f, scheduler.pid, target.pid))}))
 setTimeout(() => { fs.unlinkSync(${JSON.stringify(join(f.home, 'run.lock'))}); process.exit(0) }, 2000)`, 1000)
   const result = f.run(['cancel', 'demo'])
   assert.equal(result.code, 0, result.all)
@@ -1307,9 +1469,7 @@ test('记录已是 void 时撤回仍停止正在运行的阶段，不改文件',
   })
   const target = spawnSignalTarget(`require('node:fs').unlinkSync(${JSON.stringify(join(f.home, 'run.lock'))})`)
   t.after(() => target.kill('SIGKILL'))
-  writeFileSync(join(f.home, 'run.lock'), `${JSON.stringify({
-    pid: scheduler.pid, bootTime: bootTime(), change: 'demo', claudePid: target.pid,
-  })}\n`)
+  writeLock(f, managedLock(f, scheduler.pid, target.pid))
   const before = f.record()
   const result = f.run(['cancel', 'demo'])
   assert.equal(result.code, 0, result.all)
@@ -1336,9 +1496,7 @@ test('阶段还在停止时拒绝重新托管', t => {
   })
   const target = spawnSignalTarget()
   t.after(() => target.kill('SIGKILL'))
-  writeFileSync(join(f.home, 'run.lock'), `${JSON.stringify({
-    pid: scheduler.pid, bootTime: bootTime(), change: 'demo', claudePid: target.pid,
-  })}\n`)
+  writeLock(f, managedLock(f, scheduler.pid, target.pid))
   const before = f.record()
   const result = f.run(['start', 'demo'])
   assert.equal(result.code, 1, result.all)
@@ -1376,14 +1534,10 @@ test('托管被撤回后不创建决策也不发卡片', t => {
     claude: { session_id: 's1', stop_reason: 'tool_deferred',
       deferred_tool_use: { id: 'T1', name: 'AskUserQuestion', input: QUESTION } },
   })
-  // 调度脚本运行 claude 的过程中把托管记录改为 void：进度视图替身按调用次数切换输出。
-  const original = JSON.parse(readFileSync(f.viewFile, 'utf8'))
-  const counter = `${f.viewFile}.count`
-  writeFileSync(f.progressBin, `import { existsSync, readFileSync, writeFileSync } from 'node:fs'\n`
-    + `const n = Number(existsSync(${JSON.stringify(counter)}) ? readFileSync(${JSON.stringify(counter)}, 'utf8') : 0)\n`
-    + `writeFileSync(${JSON.stringify(counter)}, String(n + 1))\n`
-    + `const view = n === 0 ? ${JSON.stringify(original)} : ${JSON.stringify({ ...original, active: [] })}\n`
-    + `process.stdout.write(JSON.stringify(view))\n`)
+  // 阶段替身写出实际撤回状态，进度视图仍可列出该变更。
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([{
+    file: join(f.changeDir, 'decisions', 'autopilot.json'), content: JSON.stringify(managedRecord({ status: 'void' })),
+  }]))
   const result = f.run()
   assert.equal(result.code, 0, result.all)
   assert.equal(f.decisions().filter(item => item.kind === 'question').length, 0)
@@ -1666,29 +1820,44 @@ process.stdout.write(JSON.stringify(${JSON.stringify(original)}))
   assert.equal(f.larkCalls().length, 0)
 })
 
-test('撤回后创建的决策被作废，不发卡片', t => {
-  const f = schedScenario(t, {
-    claude: { session_id: 's1', stop_reason: 'tool_deferred',
-      deferred_tool_use: { id: 'T1', name: 'AskUserQuestion', input: QUESTION } },
-  })
-  // 进度视图替身：第三次调用（创建决策后复核托管记录时）把托管记录改为 void。
-  const counter = `${f.viewFile}.count`
-  const recordFile = join(f.changeDir, 'decisions', 'autopilot.json')
-  const original = JSON.parse(readFileSync(f.viewFile, 'utf8'))
-  writeFileSync(f.progressBin, `import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-const n = Number(existsSync(${JSON.stringify(counter)}) ? readFileSync(${JSON.stringify(counter)}, 'utf8') : 0)
-writeFileSync(${JSON.stringify(counter)}, String(n + 1))
-if (n >= 2) writeFileSync(${JSON.stringify(recordFile)}, JSON.stringify({ status: 'void', startedAt: '2026-11-06T10:00:00Z', voidReason: '用户撤回' }))
-process.stdout.write(JSON.stringify(${JSON.stringify(original)}))
+test('已写决策在发卡前遇到撤回时作废且不发送', t => {
+  const f = schedScenario(t, { claude: { session_id: 's1', stop_reason: 'tool_deferred',
+    deferred_tool_use: { id: 'T1', name: 'AskUserQuestion', input: QUESTION } } })
+  const probe = join(f.doublesDir, 'withdraw-before-send.cjs')
+  writeFileSync(probe, `const fs = require('node:fs')
+if (process.argv[1]?.endsWith('scheduler.mjs')) {
+  const link = fs.linkSync
+  fs.linkSync = (from, to) => {
+    link(from, to)
+    if (String(to).endsWith('D-0001.json')) {
+      const record = ${JSON.stringify(join(f.changeDir, 'decisions', 'autopilot.json'))}
+      const current = JSON.parse(fs.readFileSync(record))
+      fs.writeFileSync(record, JSON.stringify({ ...current, status: 'void' }))
+    }
+  }
+  require('node:module').syncBuiltinESMExports()
+}
 `)
+  assert.equal(f.run(['--once'], { NODE_OPTIONS: `--require ${probe}` }).code, 0)
+  const [decision] = f.decisions()
+  assert.equal(decision.status, 'void')
+  assert.equal(decision.voidReason, '托管已撤回')
+  assert.equal(f.larkCalls().length, 0)
+})
+
+test('进度视图确认变更离开视图后只发通知并保留核对起点', t => {
+  const f = schedScenario(t, { claude: { session_id: 's1', stop_reason: 'tool_deferred',
+    deferred_tool_use: { id: 'T1', name: 'AskUserQuestion', input: QUESTION } } })
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([{
+    file: f.viewFile, content: JSON.stringify(view({ active: [] })),
+  }]))
   const result = f.run()
   assert.equal(result.code, 0, result.all)
-  assert.equal(readFileSync(`${f.viewFile}.count`, 'utf8'), '3', '进度视图应被调用三次')
-  const created = f.decisions().find(item => item.kind === 'question')
-  assert.ok(created, '应创建决策文件')
-  assert.equal(created.status, 'void')
-  assert.equal(created.voidReason, '托管已撤回')
-  assert.equal(f.larkCalls().length, 0)
+  assert.deepEqual(f.decisions(), [])
+  assert.equal(f.larkCalls().length, 1)
+  assert.match(f.larkCalls()[0].content, /托管不再处理/)
+  const saved = JSON.parse(readFileSync(join(f.home, 'pending-trace.json'), 'utf8'))
+  assert.equal(Object.values(saved.entries).length, 1)
 })
 
 // ---------------------------------------------------------------------------
@@ -2019,13 +2188,18 @@ test('签署字段被改动时发告警', t => {
  * @param {object} [files] 其他运行前的文件，例如提问决策。
  * @returns {{ failures: object[], card: string }} 核对不通过项与卡片内容。
  */
-function traceRound(t, before, after, files = {}) {
-  const f = schedScenario(t, { files: { ...before, ...files }, claude: { session_id: 's1', stop_reason: 'end_turn', result: 'done' } })
+function traceRound(t, before, after, files = {}, progressEntry = schedEntry()) {
+  const f = schedScenario(t, { files: { ...before, ...files }, view: view({ active: [progressEntry] }),
+    claude: { session_id: 's1', stop_reason: 'end_turn', result: 'done' } })
+  for (const rel of Object.keys(after)) mkdirSync(dirname(join(f.changeDir, rel)), { recursive: true })
   writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify(Object.entries(after)
     .map(([rel, content]) => ({ file: join(f.changeDir, rel), content }))))
-  f.run()
+  const result = f.run()
+  assert.equal(result.code, 0, result.all)
+  assert.equal(f.claudeCalls().length, 1)
   const alerts = f.decisions().filter(item => item.kind === 'alert')
   return {
+    alerts,
     failures: alerts.length ? alerts[0].request.checkFailures || [] : [],
     card: f.larkCalls().map(call => call.content || '').join('\n'),
   }
@@ -2033,6 +2207,1387 @@ function traceRound(t, before, after, files = {}) {
 
 /** 一份只有表头、可放入若干行的 Standards 报告。 */
 const standardsReport = (findings = [], ledger = []) => `# Standards Review\n\n## Findings\n\n| ID | 严重级别 | 影响业务功能 | 位置 | 涉及代码模块 | 一句话白话 | 触发场景 | 不修的后果 | 建议修复 | 闭环状态 |\n|----|---------|------------|------|------------|-----------|---------|-----------|---------|---------|\n${findings.join('\n')}\n\n## Finding 台账\n\n| ID | 严重级别 | 首次轮次 | 状态 | 闭环轮次 | 闭环依据 |\n|----|---------|---------|------|---------|---------|\n${ledger.join('\n')}\n`
+
+test('门禁核对：运行后旧报告的规则版本变化需要确认', t => {
+  const report = standardsReport([findingRow('STD-02', 'Major')], [ledgerRow('STD-02', 'Major')])
+  const before = report.replace('## Findings', '## 评审基线\n\n- Rules Version: 2\n\n## Findings')
+  const { failures } = traceRound(t, { 'review/standards.md': before }, { 'review/standards.md': report })
+  assert.ok(failures.some(item => item.file === 'review/standards.md' && item.field === 'Rules Version'),
+    JSON.stringify(failures))
+})
+
+test('门禁核对：运行前读取失败保留重跑标记且同批次只通知一次', t => {
+  const f = schedScenario(t, {
+    view: view({ active: [schedEntry({ rule: 'R9', stage: 'verify' })] }),
+    files: { 'decisions/autopilot.json': managedRecord({ rerunStage: 'quality' }) },
+  })
+  const gate = join(f.doublesDir, 'gate.mjs')
+  writeFileSync(gate, `if (process.argv[2] === 'trace') {
+  process.stderr.write('合成读取失败详情')
+  process.exitCode = 1
+} else {
+  process.stdout.write('usage: trace')
+}\n`)
+  writeConfig(f.home, { ...f.config, gateBin: gate })
+  for (let round = 0; round < 2; round += 1) {
+    const result = f.run()
+    assert.equal(result.code, 0, result.all)
+  }
+  assert.equal(f.claudeCalls().length, 0)
+  assert.deepEqual(f.decisions(), [])
+  assert.equal(f.changeRecord().rerunStage, 'quality')
+  const cards = f.larkCalls()
+  assert.equal(cards.length, 1)
+  assert.match(cards[0].content, /修复读取原因后等待下一轮/)
+  assert.doesNotMatch(cards[0].content, /合成读取失败详情/)
+})
+
+test('恢复前读取失败保留已答决策且环境检查不清除通知原因', t => {
+  const question = answeredQuestion()
+  const f = schedScenario(t, { files: { 'decisions/D-0001.json': question } })
+  const gate = join(f.doublesDir, 'gate.mjs')
+  writeFileSync(gate, "if (process.argv[2] === 'trace') process.exitCode = 1; else process.stdout.write('usage: trace')\n")
+  writeConfig(f.home, { ...f.config, gateBin: gate })
+  const file = join(f.changeDir, 'decisions', question.id + '.json')
+  const before = readFileSync(file, 'utf8')
+  assert.equal(f.run().code, 0)
+  const errors = JSON.parse(readFileSync(join(f.home, 'rule-check.json'), 'utf8')).traceErrors
+  assert.equal(Object.keys(errors).length, 1)
+  assert.equal(Object.values(errors)[0].startedAt, f.changeRecord().startedAt)
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(JSON.parse(readFileSync(join(f.home, 'rule-check.json'), 'utf8')).traceErrors, errors)
+  assert.equal(readFileSync(file, 'utf8'), before)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.equal(f.larkCalls().length, 1)
+})
+
+test('前置核对通知在新批次出现同一原因时再次发送', t => {
+  const f = schedScenario(t)
+  const gate = join(f.doublesDir, 'gate.mjs')
+  writeFileSync(gate, "if (process.argv[2]) process.exitCode = 1; else process.stdout.write('usage: trace')\n")
+  writeConfig(f.home, { ...f.config, gateBin: gate })
+  assert.equal(f.run().code, 0)
+  assert.equal(f.run().code, 0)
+  assert.equal(f.larkCalls().length, 1)
+  const cli = (command) => spawnSync(process.execPath, [autopilot, command, 'demo'], { cwd: f.repo, encoding: 'utf8',
+    env: { ...process.env, OPENSPEC_AUTOPILOT_HOME: f.home, HOME: f.userHome } })
+  for (const command of ['cancel', 'start']) {
+    const result = cli(command)
+    assert.equal(result.status, 0, result.stderr)
+  }
+  assert.equal(f.run().code, 0)
+  assert.equal(f.larkCalls().length, 2)
+  assert.equal(f.claudeCalls().length, 0)
+})
+
+test('门禁核对：变更后快照不可读时保留原起点', t => {
+  const before = standardsReport([findingRow('STD-02', 'Blocker')], [ledgerRow('STD-02', 'Blocker')])
+  const f = schedScenario(t, { files: { 'review/standards.md': before } })
+  const gate = join(f.doublesDir, 'gate.mjs')
+  const marker = join(f.doublesDir, 'trace-check-failure')
+  writeFileSync(gate, `import { existsSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+if (process.argv[2] === 'trace' && existsSync(${JSON.stringify(marker)})) {
+  process.stderr.write('合成读取失败详情')
+  process.exitCode = 2
+} else {
+  const child = spawnSync(process.execPath, [${JSON.stringify(gateBin)}, ...process.argv.slice(2)], { stdio: 'inherit' })
+  process.exitCode = child.status
+}\n`)
+  writeConfig(f.home, { ...f.config, gateBin: gate })
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([{ file: marker, content: '' }]))
+  assert.equal(f.run().code, 0)
+  const [alert] = f.decisions()
+  assert.equal(alert.kind, 'alert')
+  assert.equal(alert.request.comparisonState, 'unread')
+  assert.match(alert.request.text, /选「回会话处理」后，托管不再列出这次运行的修改/)
+  assert.match(f.larkCalls()[0].content, /托管不再列出这次运行的修改/)
+  assert.deepEqual(alert.request.traceBefore.resumedDecisionIds, [])
+  assert.ok(alert.request.traceBefore.findings.some(item => item.id === 'STD-02' && item.openBlocker))
+  assert.doesNotMatch(JSON.stringify(alert.request), /合成读取失败详情/)
+})
+
+test('连续两次读取失败的告警沿用初次快照并记录恢复编号', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  const fixture = join(f.doublesDir, 'claude.mjs')
+  const original = readFileSync(fixture, 'utf8')
+  const sonar = join(f.changeDir, 'review', 'sonar.md')
+  const blocked = `${original}\nimport { mkdirSync } from 'node:fs'\nmkdirSync(${JSON.stringify(sonar)})\n`
+  const effect = join(f.doublesDir, 'effect.json')
+  writeFileSync(effect, JSON.stringify([{ file: join(f.changeDir, 'review', 'standards.md'), content: acceptedStandards() }]))
+  const continueWith = alert => writeFiles(f.changeDir, { [`decisions/${alert.id}.json`]: { ...alert, status: 'answered',
+    answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '原因已修复' } } })
+  writeFileSync(fixture, blocked)
+  assert.equal(f.run().code, 0)
+  const [first] = f.decisions()
+  assert.equal(first.request.comparisonState, 'unread')
+  assert.match(first.request.text, /无法读取处理记录/)
+  rmSync(sonar, { recursive: true })
+  continueWith(first)
+  assert.equal(f.run().code, 0)
+  const second = f.decisions().at(-1)
+  assert.deepEqual(second.request.traceBefore.findings, first.request.traceBefore.findings)
+  assert.deepEqual(second.request.traceBefore.resumedDecisionIds, [first.id])
+  rmSync(sonar, { recursive: true })
+  rmSync(effect)
+  writeFileSync(fixture, original)
+  continueWith(second)
+  assert.equal(f.run().code, 0)
+  const third = f.decisions().at(-1)
+  assert.equal(third.request.comparisonState, 'listed')
+  assert.ok(third.request.checkFailures.some(item => item.finding === 'STD-02'))
+})
+
+for (const [label, result] of [
+  ['无会话编号', '没有有效会话'],
+  ['新提问已挂起', { session_id: 's1', stop_reason: 'tool_deferred',
+    deferred_tool_use: { name: 'AskUserQuestion', id: 'T-blocked', input: QUESTION } }],
+]) {
+  test(`核对失败优先处理运行结果：${label}`, t => {
+    const f = schedScenario(t, { files: { 'review/standards.md': openStandards() }, claude: result })
+    writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([
+      { file: join(f.changeDir, 'review', 'standards.md'), content: acceptedStandards() },
+    ]))
+    assert.equal(f.run().code, 0)
+    const [alert] = f.decisions()
+    assert.equal(f.decisions().length, 1)
+    assert.equal(alert.kind, 'alert')
+    assert.ok(alert.request.checkFailures.some(item => item.finding === 'STD-02'))
+    if (typeof result === 'string') assert.deepEqual(alert.request.options, ['回会话处理'])
+    else assert.equal(alert.request.deferredToolUseId, 'T-blocked')
+  })
+}
+
+test('会话无法恢复时保留核对告警并且没有阶段重跑通知', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards(),
+    'decisions/D-0001.json': answeredQuestion() }, claude: 'No conversation found' })
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([
+    { file: join(f.changeDir, 'review', 'standards.md'), content: acceptedStandards() },
+  ]))
+  assert.equal(f.run().code, 0)
+  const [question, alert] = f.decisions()
+  assert.equal(question.status, 'void')
+  assert.deepEqual(alert.request.options, ['回会话处理'])
+  assert.ok(alert.request.checkFailures.some(item => item.finding === 'STD-02'))
+  assert.equal(f.changeRecord().rerunStage, 'quality')
+  assert.ok(f.larkCalls().every(item => !item.content?.includes('阶段将重跑')))
+})
+
+test('未读告警的会话失效时仍按原起点列出修改', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  const original = { ...traceFrom(f), resumedDecisionIds: [] }
+  const source = { id: 'D-0003', kind: 'alert', status: 'answered', stage: 'quality',
+    request: { sessionId: 's1', traceBefore: original, comparisonState: 'unread', options: ['补充说明后继续', '回会话处理'] },
+    answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '读取问题已恢复' },
+  }
+  writeFiles(f.changeDir, { 'review/standards.md': acceptedStandards(), 'decisions/D-0003.json': source })
+  setClaudeOutput(f.doublesDir, 'No conversation found')
+  assert.equal(f.run().code, 0)
+  const [prior, alert] = f.decisions()
+  assert.equal(prior.status, 'void')
+  assert.deepEqual(prior.request, source.request)
+  assert.deepEqual(alert.request.options, ['回会话处理'])
+  assert.deepEqual(alert.request.traceBefore.findings, original.findings)
+  assert.ok(alert.request.checkFailures.some(item => item.finding === 'STD-02'))
+  assert.equal(f.changeRecord().rerunStage, 'quality')
+  assert.ok(f.larkCalls().every(item => !item.content?.includes('阶段将重跑')))
+})
+
+for (const excess of [0, 1]) {
+  test(`继续告警合入编号后的 4 MiB 边界：${excess}`, t => {
+    const f = schedScenario(t)
+    const boundary = { ...traceFrom(f), resumedDecisionIds: [], fixture: '' }
+    const size = Buffer.byteLength(JSON.stringify({ ...boundary, resumedDecisionIds: ['D-0001'] }))
+    const count = 4 * 1024 * 1024 + excess - size
+    boundary.fixture = '界'.repeat(Math.floor(count / 3)) + 'x'.repeat(count % 3)
+    const alert = { id: 'D-0001', status: 'answered', kind: 'alert', stage: 'quality',
+      request: { sessionId: 's1', comparisonState: 'unread', traceBefore: boundary },
+      answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '继续核对' },
+    }
+    writeFiles(f.changeDir, { 'decisions/D-0001.json': alert })
+    assert.equal(f.run().code, 0)
+    if (excess) {
+      assert.equal(f.claudeCalls().length, 0)
+      assert.deepEqual(f.decisions(), [alert])
+      assert.match(f.larkCalls()[0].content, /续查起点超过 4 MiB/)
+    } else {
+      assert.equal(f.claudeCalls().length, 1)
+      assert.equal(f.decisions()[0].status, 'used')
+    }
+  })
+}
+
+for (const excess of [0, 1]) {
+  test(`告警发出前按预留编号校验续查容量：${excess}`, t => {
+    const f = schedScenario(t)
+    const original = { ...traceFrom(f), resumedDecisionIds: [], fixture: '' }
+    const count = 4 * 1024 * 1024 + excess
+      - Buffer.byteLength(JSON.stringify({ ...original, resumedDecisionIds: ['D-0001'] }))
+    original.fixture = '界'.repeat(Math.floor(count / 3)) + 'x'.repeat(count % 3)
+    const snapshotFile = join(f.doublesDir, 'snapshot.json')
+    const marker = join(f.doublesDir, 'after-stage')
+    const gate = join(f.doublesDir, 'gate.mjs')
+    writeFileSync(snapshotFile, JSON.stringify(original))
+    writeFileSync(gate, `import { readFileSync, existsSync } from 'node:fs'
+if (process.argv[2] !== 'trace') process.stdout.write('usage: trace')
+else if (existsSync(${JSON.stringify(marker)})) process.exitCode = 2
+else process.stdout.write(readFileSync(${JSON.stringify(snapshotFile)}, 'utf8'))
+`)
+    writeConfig(f.home, { ...f.config, gateBin: gate })
+    writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([{ file: marker, content: '' }]))
+    assert.equal(f.run().code, 0)
+    assert.equal(f.claudeCalls().length, 1)
+    const [alert] = f.decisions()
+    assert.deepEqual(alert.request.traceBefore, original)
+    assert.deepEqual(alert.request.options, excess ? ['回会话处理'] : ['补充说明后继续', '回会话处理'])
+    assert.equal(f.larkCalls().length, 1)
+    if (excess) assert.ok(!f.larkCalls()[0].content.includes('"text": "补充说明后继续"'))
+  })
+}
+
+test('真实已列明告警续查不重报已展示差异且保留历史起点', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  const effect = join(f.doublesDir, 'effect.json')
+  writeFileSync(effect, JSON.stringify([{ file: join(f.changeDir, 'review', 'standards.md'), content: acceptedStandards() }]))
+  assert.equal(f.run().code, 0)
+  const [first] = f.decisions()
+  assert.equal(first.request.comparisonState, 'listed')
+  assert.ok(first.request.checkFailures.some(item => item.finding === 'STD-02'))
+  assert.ok(first.request.traceBefore.findings.some(item => item.id === 'STD-02' && item.openBlocker))
+  assert.ok(first.request.comparisonBoundary.findings.some(item => item.id === 'STD-02' && item.status === 'risk-accepted'))
+  writeFiles(f.changeDir, { [`decisions/${first.id}.json`]: { ...first, status: 'answered',
+    answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '保留已列明问题，继续实施' } } })
+  writeFileSync(effect, JSON.stringify([{ file: join(f.changeDir, 'notes.md'), content: '本轮继续实施\n' }]))
+  assert.equal(f.run().code, 0)
+  assert.equal(f.claudeCalls().length, 2)
+  assert.equal(f.decisions().length, 1)
+  assert.equal(f.decisions()[0].status, 'used')
+  assert.deepEqual(f.decisions()[0].request, first.request)
+})
+
+test('已列明告警按后置边界核对等待期间的再次改动', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  const effect = join(f.doublesDir, 'effect.json')
+  const report = join(f.changeDir, 'review', 'standards.md')
+  writeFileSync(effect, JSON.stringify([{ file: report, content: acceptedStandards() }]))
+  assert.equal(f.run().code, 0)
+  const [first] = f.decisions()
+  writeFileSync(report, acceptedStandards().replaceAll('risk-accepted', 'false-positive'))
+  writeFiles(f.changeDir, { [`decisions/${first.id}.json`]: { ...first, status: 'answered',
+    answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '检查等待期间的改动' } } })
+  writeFileSync(effect, JSON.stringify([{ file: join(f.changeDir, 'notes.md'), content: '继续实施\n' }]))
+  assert.equal(f.run().code, 0)
+  assert.equal(f.claudeCalls().length, 2)
+  const [source, next] = f.decisions()
+  assert.deepEqual(source.request, first.request)
+  assert.deepEqual(next.request.traceBefore.findings, first.request.comparisonBoundary.findings)
+  assert.deepEqual(next.request.traceBefore.resumedDecisionIds, [first.id])
+  assert.ok(next.request.checkFailures.some(item => item.finding === 'STD-02'
+    && item.before === 'risk-accepted' && item.after === 'false-positive'))
+})
+
+test('普通阶段告警用已核对的后置快照查找等待期间的变化', t => {
+  const f = schedScenario(t, { claude: { session_id: 's1', is_error: true, result: '测试阶段错误' } })
+  mkdirSync(join(f.changeDir, 'review'))
+  const report = join(f.changeDir, 'review', 'standards.md')
+  const effect = join(f.doublesDir, 'effect.json')
+  writeFileSync(effect, JSON.stringify([{ file: report, content: openStandards() }]))
+  assert.equal(f.run().code, 0)
+  const [prior] = f.decisions()
+  assert.equal(prior.kind, 'alert')
+  assert.equal(prior.request.comparisonState, 'stage')
+  rmSync(report)
+  rmSync(effect)
+  writeFiles(f.changeDir, { 'decisions/D-0001.json': { ...prior, status: 'answered',
+    answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '继续' } } })
+  setClaudeOutput(f.doublesDir, { session_id: 's1', stop_reason: 'end_turn', result: '完成' })
+  assert.equal(f.run().code, 0)
+  assert.ok(f.decisions()[1].request.checkFailures.some(item => item.finding === 'STD-02'))
+})
+
+test('仅已列明告警的续查边界版本不符时转交而不恢复', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  const original = { ...traceFrom(f), resumedDecisionIds: [] }
+  const source = { id: 'D-0003', kind: 'alert', status: 'answered', stage: 'quality',
+    request: { sessionId: 's1', traceBefore: original, comparisonState: 'listed',
+      comparisonBoundary: { ...original, traceVersion: 0 }, options: ['补充说明后继续', '回会话处理'] },
+    answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '继续核对' },
+  }
+  writeFiles(f.changeDir, { 'decisions/D-0003.json': source })
+  assert.equal(f.run().code, 0)
+  assert.equal(f.claudeCalls().length, 0)
+  const [prior, replacement] = f.decisions()
+  assert.equal(prior.status, 'used')
+  assert.deepEqual(prior.request, source.request)
+  assert.deepEqual(replacement.request.traceBefore, original)
+  assert.deepEqual(replacement.request.options, ['回会话处理'])
+  assert.match(replacement.request.text, /版本与当前不同/)
+  assert.equal(replacement.request.checkFailures, undefined)
+})
+
+test('核对版本转交保留原起点并沿用唯一的回会话告警', t => {
+  const original = { traceVersion: 0, findings: [], resumedDecisionIds: ['D-0002'] }
+  const f = schedScenario(t, { files: {
+    'decisions/D-0003.json': {
+      id: 'D-0003', kind: 'alert', status: 'answered', stage: 'quality',
+      request: { sessionId: 's1', traceBefore: original, comparisonState: 'unread', options: ['补充说明后继续'] },
+      answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '继续核对' },
+    },
+  } })
+  const result = f.run()
+  assert.equal(result.code, 0, result.all)
+  assert.equal(f.claudeCalls().length, 0)
+  const [source, replacement] = f.decisions()
+  assert.equal(source.status, 'used')
+  assert.deepEqual(replacement.request.traceBefore, original)
+  assert.deepEqual(replacement.request.options, ['回会话处理'])
+  assert.match(replacement.request.text, /版本与当前不同/)
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(f.decisions().map(item => item.id), ['D-0003', 'D-0004'])
+})
+
+for (const sample of GATE_TRACE_SAMPLES.filter(item => ['状态带反引号', '状态大写', '三级小标题',
+  '删除分隔行', '同名闭环状态列', '大写严重级别', '同 ID 的两行互换严重级别'].includes(item.name))) {
+  test(`调度读取门禁认出的报告变化：${sample.name}`, t => {
+    const after = sample.name === '三级小标题' ? sample.text.replace(/(src\/order\.js:[^\n]*\| )open/, '$1risk-accepted') : sample.text
+    const { failures } = traceRound(t, { [sample.file]: sample.before || STANDARD_TRACE_REPORT }, { [sample.file]: after })
+    assert.ok(failures.some(item => item.finding === 'STD-02'), JSON.stringify(failures))
+  })
+}
+
+const envTasks = '# Tasks\n\n## Slice 02: 次要环境\nEnvironment: MQ\nEvidence: evidence/slice-02.md\n\n- [x] 2.1 实现行为\n'
+const envEvidence = '# Slice 02\n\n- Fingerprint: git-tree:abc\n\n## 待环境补测\n| 登记指纹 | 原因 | 补测计划 | 负责人 | 确认人 | 日期 |\n|---|---|---|---|---|---|\n| git-tree:abc | MQ | 复验 | tester | | 2026-11-20 |\n'
+const envBefore = { 'tasks.md': envTasks, 'evidence/slice-02.md': envEvidence }
+for (const [name, change] of [
+  ['移除环境声明', { 'tasks.md': envTasks.replace('Environment: MQ\n', '') }],
+  ['切片不再完整', { 'tasks.md': envTasks + '- [ ] 2.2 核验新行为\n' }],
+  ['移除登记', { 'evidence/slice-02.md': envEvidence.split('\n').slice(0, -2).join('\n') }],
+  ['重记指纹后的登记缺失', { 'evidence/slice-02.md': envEvidence.replace('Fingerprint: git-tree:abc', 'Fingerprint: git-tree:new') }],
+]) {
+  test(`门禁核对识别待环境补测变化：${name}`, t => {
+    const { failures } = traceRound(t, envBefore, change)
+    assert.ok(failures.some(item => ['tasks.md', 'evidence/slice-02.md'].includes(item.file)), JSON.stringify(failures))
+  })
+}
+
+for (const [name, before, after, expected] of [
+  ['签字边界的变更终点', { 'tasks.md': '##  变更终点\n- 判定人：甲\n' },
+    { 'tasks.md': '##  变更终点\n- 判定人：乙\n' }, '变更终点'],
+  ['分镜采用围栏外首个签署行', { 'storyboard.md': 'Storyboard Approved: ____\n' },
+    { 'storyboard.md': 'Storyboard Approved: tester\nStoryboard Approved: ____\n' }, 'Storyboard Approved'],
+  ['同一待环境补测指纹增加确认人', envBefore,
+    { 'evidence/slice-02.md': envEvidence.replace('| tester | |', '| tester | owner |') + envEvidence.trimEnd().split('\n').at(-1) + '\n' }, '确认人'],
+  ['待环境补测双空格标题', { ...envBefore, 'evidence/slice-02.md': envEvidence.replace('## 待环境补测', '##  待环境补测') },
+    { 'evidence/slice-02.md': envEvidence.replace('## 待环境补测', '##  待环境补测').replace('| tester | |', '| tester | owner |') }, '确认人'],
+  ['完全勾选切片取消一项', envBefore, { 'tasks.md': envTasks.replace('[x]', '[ ]') }, '待环境补测切片'],
+  ['切片标题缺少冒号', envBefore, { 'tasks.md': envTasks.replace('02:', '02') }, '待环境补测切片'],
+  ['切片标题变成三级', envBefore, { 'tasks.md': envTasks.replace('## Slice', '### Slice') }, '待环境补测切片'],
+  ['环境声明后出现二级标题', envBefore, { 'tasks.md': envTasks.replace('Evidence:', '## Other\nEvidence:') }, '待环境补测切片'],
+  ['Sonar 质量门新增接受', { 'review/sonar.md': '## 质量门\n| 条件 | 处理 |\n|---|---|\n| 覆盖率 | 修复 |\n' },
+    { 'review/sonar.md': '## 质量门\n| 条件 | 处理 |\n|---|---|\n| 覆盖率 | 接受 |\n' }, '处理'],
+]) {
+  test(`运行前后字段变化触发核对：${name}`, t => {
+    const { failures } = traceRound(t, before, after)
+    assert.ok(failures.some(item => item.field === expected), JSON.stringify(failures))
+  })
+}
+
+for (const [name, before, after, progressEntry] of [
+  ['首次写规则版本', {}, { 'review/standards.md': STANDARD_TRACE_REPORT,
+    'review/spec-fidelity.md': STANDARD_TRACE_REPORT }, schedEntry({ rule: 'R8', stage: 'quality' })],
+  ['发现空状态与台账 open 一致', { 'review/standards.md': openStandards() },
+    { 'review/standards.md': standardsReport([findingRow('STD-02', 'Blocker', '')], [ledgerRow('STD-02', 'Blocker')]) }],
+  ['原有不一致没有发生变化', { 'review/standards.md': standardsReport([findingRow('STD-02', 'Blocker')],
+    [ledgerRow('STD-02', 'Blocker', 'risk-accepted')]) }, { 'notes.md': '# 本轮修改\n' }],
+  ['已接受发现移出且台账不变', { 'review/standards.md': acceptedStandards() },
+    { 'review/standards.md': standardsReport([], [ledgerRow('STD-02', 'Blocker', 'risk-accepted')]) },
+    schedEntry({ rule: 'R8', stage: 'quality' })],
+  ['另一个切片勾选不影响未开始的环境切片', { 'tasks.md': '## Slice 01: 验收\n- [ ] 1.1 任务\n' + envTasks.replace('[x]', '[ ]') },
+    { 'tasks.md': '## Slice 01: 验收\n- [x] 1.1 任务\n' + envTasks.replace('[x]', '[ ]') }],
+]) {
+  test(`正常变更不触发核对告警：${name}`, t => {
+    const { failures, alerts } = traceRound(t, before, after, {}, progressEntry)
+    assert.deepEqual(failures, [])
+    assert.deepEqual(alerts, [])
+  })
+}
+
+test('恢复未读告警时继续识别原先有效的风险接受回复', t => {
+  const question = answeredQuestion({ id: 'D-0001', request: { sessionId: 's1', toolUseId: 'T1',
+    questions: [{ header: 'STD-02', question: '如何处理？' }] },
+  answer: { operatorId: 'ou_owner', selected: { 'STD-02': 'risk accepted' } } })
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards(), 'decisions/D-0001.json': question } })
+  const program = join(f.doublesDir, 'claude.mjs')
+  const normal = readFileSync(program, 'utf8')
+  const sonar = join(f.changeDir, 'review', 'sonar.md')
+  writeFileSync(program, `${normal}\nimport { mkdirSync } from 'node:fs'\nmkdirSync(${JSON.stringify(sonar)})\n`)
+  const effect = join(f.doublesDir, 'effect.json')
+  writeFileSync(effect, JSON.stringify([{ file: join(f.changeDir, 'review', 'standards.md'), content: acceptedStandards() }]))
+  assert.equal(f.run().code, 0)
+  const first = f.decisions().at(-1)
+  assert.deepEqual(first.request.traceBefore.resumedDecisionIds, ['D-0001'])
+  rmSync(sonar, { recursive: true })
+  rmSync(effect)
+  writeFileSync(program, normal)
+  writeFiles(f.changeDir, { [`decisions/${first.id}.json`]: { ...first, status: 'answered',
+    answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '恢复核对' } } })
+  assert.equal(f.run().code, 0)
+  assert.equal(f.decisions().find(item => item.id === first.id).status, 'used')
+  assert.ok(f.decisions().filter(item => item.id > first.id).every(item =>
+    !item.request.checkFailures?.some(failure => failure.finding === 'STD-02')))
+})
+
+test('后置门禁快照版本不匹配时只报告读取失败', t => {
+  const f = schedScenario(t)
+  const gate = join(f.doublesDir, 'gate.mjs')
+  const marker = join(f.doublesDir, 'after-stage')
+  const before = traceFrom(f)
+  writeFileSync(gate, `import { existsSync } from 'node:fs'
+if (process.argv[2] === 'trace') {
+  const snapshot = ${JSON.stringify(before)}
+  if (existsSync(${JSON.stringify(marker)})) snapshot.traceVersion = 2
+  process.stdout.write(JSON.stringify(snapshot))
+} else process.stdout.write('usage: trace')
+`)
+  writeConfig(f.home, { ...f.config, gateBin: gate })
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([{ file: marker, content: '' }]))
+  assert.equal(f.run().code, 0)
+  const [alert] = f.decisions()
+  assert.equal(alert.request.comparisonState, 'unread')
+  assert.match(alert.request.checkFailures[0].after, /版本不匹配/)
+})
+
+test('门禁没有 trace 子命令时停止这一轮', t => {
+  const f = schedScenario(t)
+  const gate = join(f.doublesDir, 'gate.mjs')
+  writeFileSync(gate, "process.stderr.write('implementation-gate.mjs facts')\n")
+  writeConfig(f.home, { ...f.config, gateBin: gate })
+  assert.equal(f.run().code, 2)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.match(f.larkCalls()[0].content, /同步 openspec-technical-review/)
+})
+
+test('调度拒绝从项目内部或相对路径载入门禁脚本', t => {
+  const f = schedScenario(t)
+  const internal = join(f.repo, 'gate.mjs')
+  const alias = join(f.doublesDir, 'gate-alias.mjs')
+  const marker = join(f.doublesDir, 'unexpected-gate-run')
+  writeFileSync(internal, `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, '')\n`)
+  symlinkSync(internal, alias)
+  for (const path of [internal, alias, 'gate.mjs']) {
+    writeConfig(f.home, { ...f.config, gateBin: path })
+    assert.equal(f.run().code, 2)
+    assert.equal(f.claudeCalls().length, 0)
+    assert.equal(existsSync(marker), false)
+  }
+})
+
+test('真实门禁拒绝归属不明资料且调度只转交安全类别', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  const report = join(f.changeDir, 'review', 'standards.md')
+  const outside = join(f.doublesDir, 'unverified-report.md')
+  const marker = 'SYNTHETIC_UNVERIFIED_CONTENT_8f93'
+  writeFileSync(outside, acceptedStandards() + marker)
+  const program = join(f.doublesDir, 'claude.mjs')
+  writeFileSync(program, readFileSync(program, 'utf8') + `\nimport { unlinkSync, symlinkSync } from 'node:fs'\nunlinkSync(${JSON.stringify(report)})\nsymlinkSync(${JSON.stringify(outside)}, ${JSON.stringify(report)})\n`)
+  assert.equal(f.run().code, 0)
+  assert.equal(f.claudeCalls().length, 1)
+  const [alert] = f.decisions()
+  assert.equal(alert.request.comparisonState, 'unread')
+  assert.ok(alert.request.traceBefore.findings.some(item => item.id === 'STD-02' && item.openBlocker))
+  assert.match(alert.request.checkFailures[0].after, /评审报告：类型或链接无效/)
+  const output = JSON.stringify([alert, f.larkCalls()])
+  assert.ok(!output.includes(marker))
+  assert.ok(!output.includes(outside))
+})
+
+test('门禁路径与项目根大小写不同时仍拒绝执行项目内脚本', t => {
+  const f = schedScenario(t)
+  const internal = join(f.repo, 'gate.mjs')
+  const differentlyCased = join(f.repo.toUpperCase(), 'gate.mjs')
+  const marker = join(f.doublesDir, 'unexpected-gate-run')
+  writeFileSync(internal, `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, '')\n`)
+  if (!existsSync(differentlyCased)) return t.skip('文件系统区分大小写')
+  writeConfig(f.home, { ...f.config, gateBin: differentlyCased })
+  assert.equal(f.run().code, 2)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.equal(existsSync(marker), false)
+})
+
+test('历史用于另一次核对的风险接受没有效力', t => {
+  const history = answeredQuestion({ id: 'D-0002', status: 'used',
+    request: { sessionId: 's0', toolUseId: 'T0', questions: [{ header: 'STD-02' }] },
+    answer: { operatorId: 'ou_owner', selected: { 'STD-02': 'risk accepted' } },
+  })
+  const { failures } = traceRound(t, { 'review/standards.md': openStandards() },
+    { 'review/standards.md': acceptedStandards() }, { 'decisions/D-0002.json': history })
+  assert.ok(failures.some(item => item.finding === 'STD-02'))
+})
+
+for (const [name, before, after, history = false] of [
+  ['接受改为误报', acceptedStandards(), acceptedStandards().replaceAll('risk-accepted', 'false-positive')],
+  ['同编号第二行改为接受',
+    standardsReport([findingRow('STD-02', 'Minor', 'risk-accepted'), findingRow('STD-02', 'Blocker')],
+      [ledgerRow('STD-02', 'Blocker')]),
+    standardsReport([findingRow('STD-02', 'Minor', 'risk-accepted'), findingRow('STD-02', 'Blocker', 'risk-accepted')],
+      [ledgerRow('STD-02', 'Blocker', 'risk-accepted')])],
+  ['历史接受不能授权交换严重级别',
+    standardsReport([findingRow('STD-02', 'Minor', 'risk-accepted'), findingRow('STD-02', 'Blocker')],
+      [ledgerRow('STD-02', 'Blocker')]),
+    standardsReport([findingRow('STD-02', 'Blocker', 'risk-accepted'), findingRow('STD-02', 'Minor')],
+      [ledgerRow('STD-02', 'Blocker')]), true],
+  ['历史接受不能授权第二行接受',
+    standardsReport([findingRow('STD-02', 'Minor', 'risk-accepted'), findingRow('STD-02', 'Blocker')],
+      [ledgerRow('STD-02', 'Blocker')]),
+    standardsReport([findingRow('STD-02', 'Minor', 'risk-accepted'), findingRow('STD-02', 'Blocker', 'risk-accepted')],
+      [ledgerRow('STD-02', 'Blocker', 'risk-accepted')]), true],
+]) {
+  test(`核对接受变化的授权边界：${name}`, t => {
+    const files = history ? { 'decisions/D-0002.json': answeredQuestion({ id: 'D-0002', status: 'used',
+      request: { sessionId: 's0', toolUseId: 'T0', questions: [{ header: 'STD-02' }] },
+      answer: { operatorId: 'ou_owner', selected: { 'STD-02': 'risk accepted' } },
+    }) } : {}
+    const { failures, alerts } = traceRound(t, { 'review/standards.md': before },
+      { 'review/standards.md': after }, files, schedEntry({ rule: 'R8', stage: 'quality' }))
+    assert.equal(alerts.length, 1)
+    assert.ok(failures.some(item => item.finding === 'STD-02'), JSON.stringify(failures))
+  })
+}
+
+for (const status of ['closed', 'open']) {
+  test(`Findings 移入上轮闭环验证时核对台账：${status}`, t => {
+    const before = standardsReport([findingRow('SPEC-01', 'Blocker')], [ledgerRow('SPEC-01', 'Blocker')])
+    const after = standardsReport([], [ledgerRow('SPEC-01', 'Blocker', status)])
+      + '\n## 上轮闭环验证\n\n| ID | 严重级别 | 闭环状态 |\n|---|---|---|\n| SPEC-01 | Blocker | closed |\n'
+    const { alerts, failures } = traceRound(t, { 'review/spec-fidelity.md': before },
+      { 'review/spec-fidelity.md': after }, {}, schedEntry({ rule: 'R8', stage: 'quality' }))
+    if (status === 'closed') assert.deepEqual(alerts, [])
+    else {
+      assert.equal(alerts.length, 1)
+      assert.ok(failures.some(item => item.finding === 'SPEC-01'))
+    }
+  })
+}
+
+test('没有台账的旧报告删除开放 Major 时仍发告警', t => {
+  const before = standardsReport([findingRow('STD-06', 'Major')]).split('## Finding 台账')[0]
+  const after = before.replace(findingRow('STD-06', 'Major'), '')
+  const { failures, alerts } = traceRound(t, { 'review/standards.md': before }, { 'review/standards.md': after })
+  assert.equal(alerts.length, 1)
+  assert.ok(failures.some(item => item.finding === 'STD-06' && item.after === '消失'))
+})
+
+test('核对先使用编号较大的相同问题回复', t => {
+  const makeDecision = (id, status, selected) => answeredQuestion({ id, status,
+    request: { sessionId: 's1', toolUseId: 'T2', questions: [{ header: 'STD-02', question: '怎么处理？' }] },
+    answer: { operatorId: 'ou_owner', selected: { 'STD-02': selected } },
+  })
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards(),
+    'decisions/D-0002.json': makeDecision('D-0002', 'used', 'risk accepted'),
+    'decisions/D-0005.json': makeDecision('D-0005', 'used', '修复'),
+  } })
+  writeFiles(f.changeDir, { 'decisions/D-0006.json': { id: 'D-0006', kind: 'alert', stage: 'quality', status: 'answered',
+    request: { sessionId: 's1', comparisonState: 'unread',
+      traceBefore: { ...traceFrom(f), resumedDecisionIds: ['D-0002', 'D-0005'] } },
+    answer: { operatorId: 'ou_owner', choice: '补充说明后继续', text: '请继续核对' },
+  } })
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([
+    { file: join(f.changeDir, 'review', 'standards.md'), content: acceptedStandards() },
+  ]))
+  assert.equal(f.run().code, 0)
+  assert.ok(f.decisions().at(-1).request.checkFailures.some(item => item.finding === 'STD-02'))
+})
+
+test('Sonar 接受改成误报也需要对应回复', t => {
+  const sonar = status => `## 质量门\n| 条件 | 处理 |\n|---|---|\n| 覆盖率 | ${status} |\n`
+  const { failures } = traceRound(t, { 'review/sonar.md': sonar('接受') }, { 'review/sonar.md': sonar('误报') })
+  assert.ok(failures.some(item => item.finding === '覆盖率' && item.after === '误报'))
+})
+
+test('核对只接受与新状态完全对应的提问选项', t => {
+  const question = 'STD-02 怎么处理？'
+  const record = answeredQuestion({ id: 'D-0003',
+    request: { sessionId: 's1', toolUseId: 'T1', questions: [{ question, header: 'STD-02' }] },
+    answer: { operatorId: 'ou_owner', selected: { 'STD-02': 'risk accepted' }, text: {}, answers: { [question]: 'risk accepted' } },
+  })
+  const report = status => standardsReport([findingRow('STD-02', 'Major', status)], [ledgerRow('STD-02', 'Major', status)])
+  const { failures, card } = traceRound(t, { 'review/standards.md': report('open') },
+    { 'review/standards.md': report('false-positive') }, { 'decisions/D-0003.json': record })
+  assert.ok(failures.some(item => item.finding === 'STD-02'))
+  assert.match(card, /false-positive/)
+})
+
+test('核对不会用选项覆盖同时提交的自填说明', t => {
+  const text = '不同意该处理，请保留问题'
+  const record = answeredQuestion({ id: 'D-0003',
+    request: { sessionId: 's1', toolUseId: 'T1', questions: [{ question: '怎么处理？', header: 'STD-02' }] },
+    answer: { operatorId: 'ou_owner', selected: { 'STD-02': 'risk accepted' }, text: { 'STD-02': text },
+      answeredAt: '2026-11-20T07:00:00Z' },
+  })
+  const { failures, card } = traceRound(t, { 'review/standards.md': openStandards() },
+    { 'review/standards.md': acceptedStandards() }, { 'decisions/D-0003.json': record })
+  const failure = failures.find(item => item.finding === 'STD-02' && item.note?.includes(text))
+  assert.ok(failure)
+  assert.equal(failure.answeredAt, '2026-11-20T07:00:00Z')
+  assert.ok(card.includes(text))
+})
+
+test('核对允许把已关闭的发现移出报告正文', t => {
+  const closed = standardsReport([], [ledgerRow('STD-02', 'Blocker', 'closed')])
+  const { failures } = traceRound(t, { 'review/standards.md': openStandards() }, { 'review/standards.md': closed })
+  assert.deepEqual(failures, [])
+})
+
+test('仅改变门禁认出的进度条目也算有进展', t => {
+  const f = schedScenario(t)
+  const changes = view({ active: [schedEntry({ rule: 'R7', tasks: { done: 1, total: 3 } })] })
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([{ file: f.viewFile, content: JSON.stringify(changes) }]))
+  assert.equal(f.run().code, 0)
+  assert.equal(f.claudeCalls().length, 1)
+  assert.deepEqual(f.decisions(), [])
+})
+
+function pendingState(f) {
+  return JSON.parse(readFileSync(join(f.home, 'pending-trace.json'), 'utf8'))
+}
+
+function openStandards() {
+  return standardsReport([findingRow('STD-02', 'Blocker')], [ledgerRow('STD-02', 'Blocker')])
+}
+
+function acceptedStandards() {
+  return standardsReport([findingRow('STD-02', 'Blocker', 'risk-accepted')], [ledgerRow('STD-02', 'Blocker', 'risk-accepted')])
+}
+
+function traceFrom(f) {
+  const result = spawnSync(process.execPath, [gateBin, 'trace', f.changeDir], { encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  return JSON.parse(result.stdout)
+}
+
+function savedTraceFixture(f, overrides = {}) {
+  const root = realpathSync.native(f.repo)
+  const startedAt = f.changeRecord().startedAt
+  const key = JSON.stringify([root, 'demo', startedAt])
+  return { key, saved: {
+    root, name: 'demo', startedAt, directory: realpathSync.native(f.changeDir), location: 'active',
+    mode: 'stage', stage: 'apply', runId: 'fixture-previous-run', writer: { state: 'exited' },
+    traceBefore: { ...traceFrom(f), resumedDecisionIds: [] }, ...overrides,
+  } }
+}
+
+for (const stage of ['answered', 'used']) {
+  test(`版本转交从原告警为 ${stage} 的断点恢复`, t => {
+    const original = { traceVersion: 0, resumedDecisionIds: ['D-0002'] }
+    const reason = '比较起点的版本与当前不同'
+    const source = { id: 'D-0003', stage: 'quality', kind: 'alert', status: stage,
+      request: { traceBefore: original }, answer: { operatorId: 'ou_owner', choice: '补充说明后继续' },
+      ...(stage === 'used' ? { result: { reason, replacement: 'D-0005' } } : {}),
+    }
+    const f = schedScenario(t, { files: { 'decisions/D-0003.json': source } })
+    const { key, saved } = savedTraceFixture(f)
+    const { mode, stage: unusedStage, runId, writer, ...batch } = saved
+    writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: { ...batch,
+      mode: 'version-handoff', sourceDecisionId: 'D-0003', alertId: 'D-0005', traceBefore: original,
+    } } } })
+    assert.equal(f.run().code, 0)
+    assert.deepEqual(f.decisions().map(item => item.id), ['D-0003', 'D-0005'])
+    assert.deepEqual(f.decisions()[1].request.traceBefore, original)
+    assert.deepEqual(f.decisions()[1].request.options, ['回会话处理'])
+    assert.equal(f.claudeCalls().length, 0)
+    assert.deepEqual(pendingState(f).entries, {})
+  })
+}
+
+test('旧版本转交已写出的替代告警在重启后复用同一个发送键', t => {
+  const original = { traceVersion: 0, resumedDecisionIds: ['D-0002'] }
+  const replacement = 'D-0005'
+  const reason = '比较起点的版本与当前不同'
+  const source = { id: 'D-0003', stage: 'quality', kind: 'alert', status: 'used', request: { traceBefore: original },
+    answer: { operatorId: 'ou_owner', choice: '补充说明后继续' }, result: { reason, replacement } }
+  const f = schedScenario(t, { files: { 'decisions/D-0003.json': source } })
+  const { key, saved } = savedTraceFixture(f)
+  const { traceBefore, runId, stage, writer, ...batch } = saved
+  const alert = { id: replacement, stage: 'quality', kind: 'alert', status: 'pending', batchStartedAt: saved.startedAt,
+    request: { traceBefore: original, pendingTraceKey: key, options: ['回会话处理'], comparisonState: 'unread', text: reason },
+    card: { messageId: null } }
+  writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: { ...batch,
+    mode: 'version-handoff', sourceDecisionId: source.id, alertId: replacement, traceBefore: original,
+  } } } })
+  writeFiles(f.changeDir, { 'decisions/D-0005.json': { ...alert, batchStartedAt: '2026-11-19T10:00:00Z' } })
+  assert.equal(f.run().code, 0)
+  assert.ok(pendingState(f).entries[key])
+  assert.equal(f.decisions()[1].batchStartedAt, '2026-11-19T10:00:00Z')
+  writeFiles(f.changeDir, { 'decisions/D-0005.json': alert })
+  const lark = join(f.doublesDir, 'lark-cli.mjs')
+  const normal = readFileSync(lark, 'utf8')
+  writeFileSync(lark, `${normal}\nprocess.exitCode = 1\n`)
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(f.decisions().map(item => item.id), [source.id, replacement])
+  assert.deepEqual(pendingState(f).entries, {})
+  writeFileSync(lark, normal)
+  assert.equal(f.run().code, 0)
+  const attempts = f.larkCalls().filter(call => call.content?.includes('回会话处理') && call.content.includes('版本与当前不同'))
+  assert.equal(attempts.length, 2)
+  const keyOf = call => call.args[call.args.indexOf('--idempotency-key') + 1]
+  assert.ok(keyOf(attempts[0]))
+  assert.equal(keyOf(attempts[0]), keyOf(attempts[1]))
+  assert.equal(attempts[0].content, attempts[1].content)
+})
+
+for (const [label, fault, archived] of [
+  ['缺少文件', 'missing', true],
+  ['无法读取', 'unreadable', false],
+  ['内容不符', 'changed', false],
+]) {
+  test(`版本转交末次复核${label}时保留预留，重启复用编号`, t => {
+    const original = { traceVersion: 0, resumedDecisionIds: ['D-0002'] }
+    const replacement = 'D-0005'
+    const reason = '比较起点的版本与当前不同'
+    const source = { id: 'D-0003', stage: 'quality', kind: 'alert', status: 'used', request: { traceBefore: original },
+      answer: { operatorId: 'ou_owner', choice: '补充说明后继续' }, result: { reason, replacement } }
+    const f = schedScenario(t, { files: { 'decisions/D-0003.json': source } })
+    const { key, saved } = savedTraceFixture(f)
+    const date = '2026-11-20'
+    const location = archived ? 'archived' : 'active'
+    const changeDir = archived ? join(dirname(f.changeDir), 'archive', `${date}-demo`) : f.changeDir
+    if (archived) {
+      mkdirSync(dirname(changeDir), { recursive: true })
+      renameSync(f.changeDir, changeDir)
+      mutableView(f, view({ active: [], archived: [{ name: 'demo', date }] }))
+    }
+    const reservation = { root: saved.root, name: saved.name, startedAt: saved.startedAt,
+      directory: realpathSync.native(changeDir), location, mode: 'version-handoff', sourceDecisionId: source.id,
+      alertId: replacement, traceBefore: original }
+    const files = join(changeDir, 'decisions')
+    const alert = { id: replacement, stage: 'quality', kind: 'alert', status: 'pending', batchStartedAt: saved.startedAt,
+      request: { traceBefore: original, pendingTraceKey: key, options: ['回会话处理'], comparisonState: 'unread', text: reason },
+      card: { messageId: null } }
+    const alertFile = join(files, `${replacement}.json`)
+    writeFileSync(alertFile, JSON.stringify(alert))
+    writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: reservation } } })
+
+    // 在两段已完成的项目保护（恢复原告警、回读替代告警）之后改变磁盘夹具，不替换调度或决策读取函数。
+    const probe = join(f.doublesDir, 'change-before-send.cjs')
+    const marker = join(f.doublesDir, 'changed-before-send')
+    const changed = JSON.stringify({ ...alert, request: { ...alert.request, text: '复核后改变的告警' } })
+    writeFileSync(probe, `const fs = require('node:fs')
+const path = require('node:path')
+if (process.argv[1] === ${JSON.stringify(scheduler)}) {
+  const unlink = fs.unlinkSync
+  let releases = 0
+  fs.unlinkSync = file => {
+    unlink(file)
+    if (path.extname(file) !== '.lock' || path.dirname(file) !== ${JSON.stringify(join(f.home, 'project-locks'))} || ++releases !== 2) return
+    const alertFile = ${JSON.stringify(alertFile)}
+    if (${JSON.stringify(fault)} === 'missing') unlink(alertFile)
+    else fs.writeFileSync(alertFile, ${JSON.stringify(fault === 'unreadable' ? '{' : changed)})
+    fs.writeFileSync(${JSON.stringify(marker)}, '')
+  }
+  require('node:module').syncBuiltinESMExports()
+}
+`)
+    const sent = () => f.larkCalls().filter(call => call.content?.includes(reason))
+    const result = f.run(['--once'], { NODE_OPTIONS: `--require ${probe}` })
+    assert.equal(result.code, 0, result.all)
+    assert.ok(existsSync(marker), '已在末次发卡复核前改变替代告警')
+    assert.equal(sent().length, 0)
+    assert.deepEqual(pendingState(f).entries[key], reservation)
+    assert.equal(f.claudeCalls().length, 0)
+    assert.equal(JSON.parse(readFileSync(join(files, 'autopilot.json'), 'utf8')).status, 'active')
+    assert.deepEqual(JSON.parse(readFileSync(join(files, `${source.id}.json`), 'utf8')), source)
+
+    // 缺失项由重启恢复同一预留编号；不可读或不符时先恢复原文件再重试。
+    if (fault !== 'missing') writeFileSync(alertFile, JSON.stringify(alert))
+    assert.equal(f.run().code, 0)
+    assert.deepEqual(readdirSync(files).sort(), [source.id + '.json', replacement + '.json', 'autopilot.json'])
+    const recovered = JSON.parse(readFileSync(alertFile, 'utf8'))
+    assert.deepEqual(recovered.request.traceBefore, original)
+    assert.deepEqual(recovered.request.options, ['回会话处理'])
+    assert.equal(recovered.card.messageId, 'om_test')
+    assert.equal(sent().length, 1)
+    assert.equal(f.claudeCalls().length, 0)
+    assert.deepEqual(pendingState(f).entries, {})
+  })
+}
+
+test('历史提问文件缺失时恢复告警使用更大的编号', t => {
+  const f = schedScenario(t, { files: { 'decisions/D-0004.json': { id: 'D-0004', kind: 'question', status: 'used' } } })
+  const { key, saved } = savedTraceFixture(f, { resultDecisionId: 'D-0005', resultKind: 'question', traceAfter: traceFrom(f) })
+  writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: saved } } })
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(f.decisions().map(item => item.id), ['D-0004', 'D-0006'])
+  assert.deepEqual(f.decisions()[1].request.traceBefore, saved.traceBefore)
+  assert.equal(f.claudeCalls().length, 0)
+})
+
+test('最后一个已预留的提问文件缺失时保留原核对与编号', t => {
+  const f = schedScenario(t, { files: { 'decisions/D-9998.json': { id: 'D-9998', kind: 'question', status: 'used' } } })
+  const { key, saved } = savedTraceFixture(f, { resultDecisionId: 'D-9999', resultKind: 'question', traceAfter: traceFrom(f) })
+  writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: saved } } })
+
+  for (let round = 0; round < 2; round += 1) assert.equal(f.run().code, 0)
+  assert.deepEqual(pendingState(f).entries[key], saved)
+  assert.deepEqual(f.decisions().map(item => item.id), ['D-9998'])
+  assert.equal(f.claudeCalls().length, 0)
+  assert.equal(f.larkCalls().length, 1)
+  assert.match(f.larkCalls()[0].content, /决策编号已用尽/)
+})
+
+test('未证实退出的写者阻断恢复，组退出后核对原起点', async t => {
+  const f = schedScenario(t)
+  const writer = spawnSignalTarget()
+  t.after(() => writer.kill('SIGKILL'))
+  const { key, saved } = savedTraceFixture(f, { writer: writerIdentity(writer.pid) })
+  writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: saved } } })
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(pendingState(f).entries[key], saved)
+  assert.deepEqual(f.decisions(), [])
+  const exit = new Promise(resolve => writer.once('exit', resolve))
+  writer.kill('SIGTERM')
+  await exit
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(f.decisions()[0].request.traceBefore, saved.traceBefore)
+  assert.deepEqual(pendingState(f).entries, {})
+  assert.equal(f.claudeCalls().length, 0)
+})
+
+test('调度保存版本转交失败时保持原告警已答并抑制重复通知', t => {
+  const original = { traceVersion: 0, resumedDecisionIds: ['D-0002'] }
+  const source = { id: 'D-0003', stage: 'quality', kind: 'alert', status: 'answered',
+    request: { sessionId: 's1', traceBefore: original }, answer: { operatorId: 'ou_owner', choice: '补充说明后继续' } }
+  const f = schedScenario(t, { files: { 'decisions/D-0003.json': source } })
+  const probe = join(f.doublesDir, 'reject-trace-write.cjs')
+  writeFileSync(probe, `const fs = require('node:fs')
+if (process.argv[1]?.endsWith('scheduler.mjs')) {
+  const rename = fs.renameSync
+  fs.renameSync = (from, to) => {
+    if (String(to).endsWith('/pending-trace.json')) throw Object.assign(new Error('test'), { code: 'EACCES' })
+    return rename(from, to)
+  }
+  require('node:module').syncBuiltinESMExports()
+}
+`)
+  for (let round = 0; round < 2; round += 1) assert.equal(f.run(['--once'], { NODE_OPTIONS: `--require ${probe}` }).code, 0)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.deepEqual(f.decisions(), [source])
+  assert.equal(f.larkCalls().length, 1)
+})
+
+test('普通提问转交恢复按摘要核验，快照变化时只转交新告警', t => {
+  const f = schedScenario(t)
+  const { key } = savedTraceFixture(f)
+  // 提问由调度真实生成摘要，清理中断后再通过公开 CLI 验证。
+  const question = { session_id: 's1', stop_reason: 'tool_deferred',
+    deferred_tool_use: { id: 'T1', name: 'AskUserQuestion', input: QUESTION } }
+  setClaudeOutput(f.doublesDir, question)
+  const probe = join(f.doublesDir, 'reject-trace-remove.cjs')
+  writeFileSync(probe, `const fs = require('node:fs')
+if (process.argv[1]?.endsWith('scheduler.mjs')) {
+  const rename = fs.renameSync
+  fs.renameSync = (from, to) => {
+    if (String(to).endsWith('/pending-trace.json') && !Object.keys(JSON.parse(fs.readFileSync(from)).entries).length) {
+      throw Object.assign(new Error('test'), { code: 'EACCES' })
+    }
+    return rename(from, to)
+  }
+  require('node:module').syncBuiltinESMExports()
+}
+`)
+  assert.equal(f.run(['--once'], { NODE_OPTIONS: `--require ${probe}` }).code, 0)
+  const [questionDecision] = f.decisions()
+  assert.equal(questionDecision.kind, 'question')
+  assert.equal(questionDecision.request.traceBefore, undefined)
+  assert.equal(questionDecision.request.pendingTraceKey, key)
+  assert.match(questionDecision.request.pendingTraceDigest.value, /^[a-f0-9]{64}$/)
+  assert.equal(pendingState(f).entries[key].resultDecisionId, 'D-0001')
+  writeFiles(f.changeDir, { 'review/standards.md': acceptedStandards() })
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(f.decisions().map(item => item.status), ['void', 'pending'])
+  assert.equal(f.decisions()[1].kind, 'alert')
+  assert.equal(f.claudeCalls().length, 1)
+})
+
+test('旧归档不会遮住当前同名批次的核对', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() },
+    view: view({ active: [schedEntry()], archived: [{ name: 'demo', date: '2026-11-19' }] }) })
+  const prior = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-19-demo')
+  writeFiles(prior, { 'decisions/autopilot.json': managedRecord({ status: 'void', startedAt: '2026-11-05T10:00:00Z' }) })
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([
+    { file: join(f.changeDir, 'review', 'standards.md'), content: acceptedStandards() },
+  ]))
+  assert.equal(f.run().code, 0)
+  const [alert] = f.decisions()
+  assert.ok(alert.request.checkFailures.some(item => item.finding === 'STD-02'))
+  assert.ok(!alert.request.checkFailures.some(item => item.field === '原位置出现同名目录'))
+  assert.deepEqual(readdirSync(join(prior, 'decisions')), ['autopilot.json'])
+})
+
+test('保存原起点后同身份的两份归档阻断而不选首项', t => {
+  const f = schedScenario(t)
+  const { key, saved } = savedTraceFixture(f)
+  const archiveRoot = join(f.repo, 'openspec', 'changes', 'archive')
+  const first = join(archiveRoot, '2026-11-18-demo')
+  const second = join(archiveRoot, '2026-11-19-demo')
+  const record = f.changeRecord()
+  writeFiles(first, { 'decisions/autopilot.json': record })
+  writeFiles(second, { 'decisions/autopilot.json': record })
+  rmSync(join(f.changeDir, 'decisions', 'autopilot.json'))
+  writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: saved } } })
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(pendingState(f).entries[key], saved)
+  assert.deepEqual(readdirSync(join(first, 'decisions')), ['autopilot.json'])
+  assert.deepEqual(readdirSync(join(second, 'decisions')), ['autopilot.json'])
+  assert.equal(f.claudeCalls().length, 0)
+  assert.match(f.larkCalls()[0].content, /同一批次有多份托管记录/)
+})
+
+test('不能核验归属的候选保留核对起点且不写外部资料', t => {
+  const f = schedScenario(t)
+  const { key, saved } = savedTraceFixture(f)
+  const external = tempDir(t, 'autopilot-unowned-')
+  const decisions = join(f.changeDir, 'decisions')
+  writeFiles(external, { 'autopilot.json': f.changeRecord() })
+  renameSync(decisions, join(f.home, 'original-decisions'))
+  symlinkSync(external, decisions)
+  writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: saved } } })
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(pendingState(f).entries[key], saved)
+  assert.deepEqual(readdirSync(external), ['autopilot.json'])
+  assert.equal(f.claudeCalls().length, 0)
+  assert.match(f.larkCalls()[0].content, /目录类型或归属无效/)
+  assert.ok(!f.larkCalls()[0].content.includes(external))
+})
+
+test('已核验的归档交接缺少历史告警时允许同名新托管', t => {
+  const f = scenario(t)
+  const old = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-19-demo')
+  const startedAt = '2026-11-05T10:00:00Z'
+  const archived = managedRecord({ status: 'void', startedAt, returnHandoff: 'D-0002' })
+  writeFiles(old, { 'decisions/autopilot.json': archived })
+  assert.notEqual(f.run(['start', 'demo']).code, 0)
+  writeFiles(old, { 'decisions/autopilot.json': { ...archived, returnHandoffCompleted: { id: 'D-0002', startedAt } } })
+  const result = f.run(['start', 'demo'])
+  assert.equal(result.code, 0, result.all)
+})
+
+test('正常阶段返回要等待原进程组退出才读取后置快照', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  const file = join(f.changeDir, 'review', 'standards.md')
+  const main = join(f.doublesDir, 'claude.mjs')
+  const original = readFileSync(main, 'utf8')
+  const delayedWrite = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(file)}, ${JSON.stringify(acceptedStandards())}), 300)`
+  writeFileSync(main, `${original}\nimport { spawn } from 'node:child_process'
+spawn(process.execPath, ['-e', ${JSON.stringify(delayedWrite)}], { stdio: 'ignore' }).unref()
+`)
+  assert.equal(f.run().code, 0)
+  const [alert] = f.decisions()
+  assert.ok(alert?.request.checkFailures.some(item => item.finding === 'STD-02'))
+  assert.equal(f.claudeCalls().length, 1)
+})
+
+test('阶段进程实例发布失败时握手不放行写入', t => {
+  const f = schedScenario(t)
+  const probe = join(f.doublesDir, 'reject-writer-publication.cjs')
+  writeFileSync(probe, `const fs = require('node:fs')
+if (process.argv[1]?.endsWith('scheduler.mjs')) {
+  const rename = fs.renameSync
+  fs.renameSync = (from, to) => {
+    if (String(to).endsWith('/pending-trace.json') && Object.values(JSON.parse(fs.readFileSync(from)).entries)
+      .some(item => item.writer?.state === 'published')) throw Object.assign(new Error('test'), { code: 'EACCES' })
+    return rename(from, to)
+  }
+  require('node:module').syncBuiltinESMExports()
+}
+`)
+  assert.equal(f.run(['--once'], { NODE_OPTIONS: `--require ${probe}` }).code, 0)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.equal(Object.values(pendingState(f).entries)[0].writer.state, 'unreleased')
+})
+
+test('快照保存失败时保留重跑标记和原决策', t => {
+  const f = schedScenario(t, { files: { 'decisions/autopilot.json': managedRecord({ rerunStage: 'quality' }) } })
+  const pending = join(f.home, 'pending-trace.json')
+  mkdirSync(pending)
+  assert.equal(f.run().code, 2)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.equal(f.changeRecord().rerunStage, 'quality')
+  assert.deepEqual(f.decisions(), [])
+})
+
+test('托管记录跨轮恢复后使用第一次比较起点且不重放阶段', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  const recordFile = join(f.changeDir, 'decisions', 'autopilot.json')
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([
+    { file: recordFile, content: '临时读取失败' },
+    { file: join(f.changeDir, 'review', 'standards.md'), content: acceptedStandards() },
+  ]))
+  assert.equal(f.run().code, 0)
+  const [saved] = Object.values(pendingState(f).entries)
+  assert.equal(statSync(join(f.home, 'pending-trace.json')).mode & 0o777, 0o600)
+  assert.ok(saved.traceBefore.findings.some(item => item.id === 'STD-02' && item.status === 'open'))
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(Object.values(pendingState(f).entries)[0].traceBefore, saved.traceBefore)
+  assert.deepEqual(f.decisions(), [])
+  writeFiles(f.changeDir, { 'decisions/autopilot.json': managedRecord() })
+  assert.equal(f.run().code, 0)
+  const [alert] = f.decisions()
+  assert.equal(alert.kind, 'alert')
+  assert.ok(alert.request.checkFailures.some(item => item.finding === 'STD-02'))
+  assert.deepEqual(alert.request.traceBefore, saved.traceBefore)
+  assert.deepEqual(pendingState(f).entries, {})
+  assert.equal(f.claudeCalls().length, 1)
+})
+
+test('本次归档后原活跃目录重建仍在原批次归档中核对', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() },
+    view: view({ active: [schedEntry({ rule: 'R11', stage: 'archive' })] }) })
+  const archive = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-20-demo')
+  const script = join(f.doublesDir, 'claude.mjs')
+  writeFileSync(script, `${readFileSync(script, 'utf8')}\nimport { mkdirSync, renameSync } from 'node:fs'
+mkdirSync(${JSON.stringify(join(archive, '..'))}, { recursive: true })
+renameSync(${JSON.stringify(f.changeDir)}, ${JSON.stringify(archive)})
+mkdirSync(${JSON.stringify(f.changeDir)})
+writeFileSync(${JSON.stringify(join(f.changeDir, 'notes.md'))}, '同名空位置')
+writeFileSync(${JSON.stringify(join(archive, 'review', 'standards.md'))}, ${JSON.stringify(acceptedStandards())})
+writeFileSync(${JSON.stringify(f.viewFile)}, ${JSON.stringify(JSON.stringify(view({ archived: [{ name: 'demo' }] })))})
+`)
+  assert.equal(f.run().code, 0)
+  const alert = JSON.parse(readFileSync(join(archive, 'decisions', 'D-0001.json'), 'utf8'))
+  assert.ok(alert.request.checkFailures.some(item => item.finding === 'STD-02'))
+  assert.ok(alert.request.checkFailures.some(item => item.field === '原位置出现同名目录'))
+  assert.deepEqual(readdirSync(f.changeDir), ['notes.md'])
+  assert.equal(f.run().code, 0)
+  assert.equal(f.claudeCalls().length, 1)
+})
+
+test('提前归档保留原批次的出口阻断与仅回会话告警', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  const archive = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-20-demo')
+  const archived = view({ active: [], archived: [{ name: 'demo', date: '2026-11-20' }] })
+  const script = join(f.doublesDir, 'claude.mjs')
+  writeFileSync(script, `${readFileSync(script, 'utf8')}\nimport { mkdirSync, renameSync } from 'node:fs'
+mkdirSync(${JSON.stringify(join(archive, '..'))}, { recursive: true })
+renameSync(${JSON.stringify(f.changeDir)}, ${JSON.stringify(archive)})
+writeFileSync(${JSON.stringify(f.viewFile)}, ${JSON.stringify(JSON.stringify(archived))})
+`)
+  assert.equal(f.run().code, 0)
+  const record = () => JSON.parse(readFileSync(join(archive, 'decisions', 'autopilot.json'), 'utf8'))
+  const alert = () => JSON.parse(readFileSync(join(archive, 'decisions', 'D-0001.json'), 'utf8'))
+  assert.deepEqual(record().exitBlock, { reason: 'early-archive', stage: 'apply' })
+  assert.deepEqual(alert().request.options, ['回会话处理'])
+  assert.match(alert().request.text, /quality、verify/)
+  assert.equal(f.run().code, 0)
+  assert.equal(f.claudeCalls().length, 1)
+  assert.deepEqual(record().exitBlock, { reason: 'early-archive', stage: 'apply' })
+})
+
+test('重启发现提前归档时替换原有继续选项的告警', t => {
+  const f = schedScenario(t)
+  const { key, saved } = savedTraceFixture(f, { resultDecisionId: 'D-0001', resultKind: 'stage-alert' })
+  const prior = { id: 'D-0001', status: 'pending', kind: 'alert', stage: 'apply', batchStartedAt: saved.startedAt,
+    request: { pendingTraceKey: key, traceBefore: saved.traceBefore, sessionId: 's1', options: ['补充说明后继续', '回会话处理'] },
+    card: { messageId: 'om_existing' } }
+  writeFiles(f.changeDir, { 'decisions/D-0001.json': prior })
+  writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: saved } } })
+  const archive = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-20-demo')
+  mkdirSync(join(archive, '..'), { recursive: true })
+  renameSync(f.changeDir, archive)
+  mutableView(f, view({ active: [], archived: [{ name: 'demo', date: '2026-11-20' }] }))
+  assert.equal(f.run().code, 0)
+  const read = id => JSON.parse(readFileSync(join(archive, 'decisions', `${id}.json`), 'utf8'))
+  assert.equal(read('D-0001').status, 'void')
+  assert.deepEqual(read('D-0002').request.options, ['回会话处理'])
+  assert.deepEqual(read('D-0002').request.traceBefore, saved.traceBefore)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.deepEqual(pendingState(f).entries, {})
+})
+
+test('调度重启补完原回会话告警且结束通知只尝试一次', t => {
+  const f = schedScenario(t, { files: {
+    'decisions/autopilot.json': managedRecord({ status: 'void', returnHandoff: 'D-0001' }),
+    'decisions/D-0001.json': {
+      id: 'D-0001', status: 'answered', kind: 'alert', stage: 'apply',
+      request: { options: ['回会话处理'] }, answer: { operatorId: 'ou_owner', choice: '回会话处理' },
+    },
+  } })
+  assert.equal(f.run().code, 0)
+  assert.equal(f.decisions()[0].status, 'used')
+  assert.equal(f.changeRecord().returnHandoffCompleted.id, 'D-0001')
+  assert.equal(f.run().code, 0)
+  assert.equal(f.larkCalls().length, 1)
+  assert.equal(f.claudeCalls().length, 0)
+})
+
+test('回会话通知发送失败时重启仍保留终态且不重试', t => {
+  const f = schedScenario(t, { files: {
+    'decisions/autopilot.json': managedRecord({ status: 'void', returnHandoff: 'D-0001' }),
+    'decisions/D-0001.json': { id: 'D-0001', status: 'answered', kind: 'alert', stage: 'apply',
+      request: { options: ['回会话处理'] }, answer: { operatorId: 'ou_owner', choice: '回会话处理' } },
+  } })
+  const lark = join(f.doublesDir, 'lark-cli.mjs')
+  const original = readFileSync(lark, 'utf8')
+  writeFileSync(lark, original.replace('process.stdout.write(JSON.stringify({ message_id:', 'process.exitCode = 1\nprocess.stdout.write(JSON.stringify({ message_id:'))
+  for (let round = 0; round < 2; round += 1) assert.equal(f.run().code, 0)
+  assert.equal(f.changeRecord().status, 'void')
+  assert.equal(f.decisions()[0].status, 'used')
+  assert.equal(f.larkCalls().length, 1)
+})
+
+for (const extraBytes of [-1, 0, 1]) {
+  test(`核对快照 UTF-8 容量边界：4 MiB ${extraBytes}`, t => {
+    const f = schedScenario(t)
+    const { key, saved } = savedTraceFixture(f, { writer: { state: 'unreleased' } })
+    const byteLimit = 4 * 1024 * 1024
+    const trace = { ...saved.traceBefore, testFixture: '' }
+    const available = byteLimit + extraBytes - Buffer.byteLength(JSON.stringify(trace))
+    trace.testFixture = '核'.repeat(Math.floor(available / 3)) + 'x'.repeat(available % 3)
+    const file = join(f.home, 'pending-trace.json')
+    const content = JSON.stringify({ version: 1, entries: { [key]: { ...saved, traceBefore: trace } } }) + '\n'
+    writeFileSync(file, content)
+    assert.equal(f.run().code, extraBytes > 0 ? 2 : 0)
+    assert.equal(f.claudeCalls().length, 0)
+    if (extraBytes > 0) assert.equal(readFileSync(file, 'utf8'), content)
+    else assert.equal(f.decisions()[0].kind, 'alert')
+  })
+}
+
+test('接纳的核对起点在总量边界仍可预留恢复告警', t => {
+  const f = schedScenario(t)
+  const { key, saved } = savedTraceFixture(f)
+  const limit = 64 * 1024 * 1024
+  const reserve = 16 * 1024
+  const full = 4 * 1024 * 1024
+  const withSize = (trace, size) => ({ ...trace,
+    fixture: 'x'.repeat(size - Buffer.byteLength(JSON.stringify({ ...trace, fixture: '' }))) })
+  const entries = {}
+  // 16 条共享总量：进入计费上限后仍可保存恢复编号及游标。
+  for (let index = 0; index < 15; index += 1) {
+    const item = { ...saved, name: `history-${index}`, directory: join(saved.root, 'openspec', 'changes', `history-${index}`),
+      traceBefore: withSize(saved.traceBefore, full) }
+    entries[JSON.stringify([item.root, item.name, item.startedAt])] = item
+  }
+  const remaining = limit - reserve * 17 - 15 * full
+  entries[key] = { ...saved, traceBefore: withSize(saved.traceBefore, remaining) }
+  writeFileSync(join(f.home, 'pending-trace.json'), JSON.stringify({ version: 1, entries }) + '\n')
+  assert.equal(f.run().code, 0)
+  assert.equal(f.claudeCalls().length, 0)
+  const [alert] = f.decisions()
+  assert.equal(alert.kind, 'alert')
+  assert.equal(Buffer.byteLength(JSON.stringify(alert.request.traceBefore)), remaining)
+  assert.equal(Object.keys(pendingState(f).entries).length, 15)
+})
+
+test('总量超限的核对文件停止本轮且不会被改写', t => {
+  const f = schedScenario(t)
+  const file = join(f.home, 'pending-trace.json')
+  writeFileSync(file, '{"version":1,"entries":{}}\n')
+  const size = 64 * 1024 * 1024 + 1
+  truncateSync(file, size)
+  assert.equal(f.run().code, 2)
+  assert.equal(statSync(file).size, size)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.match(f.larkCalls()[0].content, /字节上限/)
+})
+
+test('决策历史中超限文件阻断核对，未受影响的项目仍可运行', t => {
+  const f = schedScenario(t)
+  const { key, saved } = savedTraceFixture(f)
+  writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: saved } } })
+  const historic = join(f.changeDir, 'decisions', 'D-0001.json')
+  writeFileSync(historic, '{"id":"D-0001","status":"used"}')
+  truncateSync(historic, 32 * 1024 * 1024 + 1)
+  const healthy = tempDir(t, 'autopilot-healthy-')
+  initRepo(healthy)
+  writeFiles(join(healthy, 'openspec', 'changes', 'demo'), { 'decisions/autopilot.json': managedRecord() })
+  writeConfig(f.home, { ...f.config, projects: [projectOf(f.repo), projectOf(healthy)] })
+  assert.equal(f.run().code, 0)
+  assert.deepEqual(pendingState(f).entries[key], saved)
+  assert.equal(statSync(historic).size, 32 * 1024 * 1024 + 1)
+  assert.equal(f.claudeCalls().length, 1)
+  assert.ok(f.claudeCalls()[0].env.OPENSPEC_AUTOPILOT_CHANGE_ROOT.startsWith(realpathSync.native(healthy)))
+})
+
+test('32 条未完成核对时保留条目并限制新阶段', t => {
+  const f = schedScenario(t)
+  const { saved } = savedTraceFixture(f)
+  const entry = index => ({ ...saved, name: `other-${index}`, directory: join(saved.root, 'openspec', 'changes', `other-${index}`) })
+  const entries = Object.fromEntries(Array.from({ length: 32 }, (_, index) => {
+    const item = entry(index)
+    return [JSON.stringify([item.root, item.name, item.startedAt]), item]
+  }))
+  const file = join(f.home, 'pending-trace.json')
+  writeFileSync(file, JSON.stringify({ version: 1, entries }) + '\n')
+  const clock = join(f.doublesDir, 'capacity-clock.cjs')
+  writeFileSync(clock, `const fs = require('node:fs')
+if (process.argv[1]?.endsWith('scheduler.mjs')) {
+  const { performance } = require('node:perf_hooks')
+  let expired = false
+  const open = fs.openSync
+  fs.openSync = (file, ...args) => {
+    if (String(file).endsWith('/pending-trace.json')) expired = true
+    return open(file, ...args)
+  }
+  Object.defineProperty(performance, 'now', { value: () => expired ? 120001 : 0 })
+  require('node:module').syncBuiltinESMExports()
+}
+`)
+  assert.equal(f.run(['--once'], { NODE_OPTIONS: `--require ${clock}` }).code, 0)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.deepEqual(pendingState(f).entries, entries)
+  assert.match(f.larkCalls()[0].content, /超过 32 条/)
+})
+
+test('超限的核对告警保留完整证据，摘要只允许回会话', t => {
+  const before = openStandards()
+  const lines = Array.from({ length: 250 }, (_, index) => findingRow(`STD-${100 + index}`, 'Blocker', 'risk-accepted'))
+  const f = schedScenario(t, { files: { 'review/standards.md': before } })
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([
+    { file: join(f.changeDir, 'review', 'standards.md'), content: standardsReport(lines) },
+  ]))
+  assert.equal(f.run().code, 0)
+  const [alert] = f.decisions()
+  assert.equal(alert.request.checkFailures.filter(item => item.note).length, 250)
+  assert.deepEqual(alert.request.options, ['回会话处理'])
+  assert.equal(alert.request.sessionId, undefined)
+  const [{ content }] = f.larkCalls()
+  assert.ok(Buffer.byteLength(content, 'utf8') <= 24 * 1024)
+  assert.match(content, /本地详情/)
+})
+
+test('终态交接的扫描超时保留游标且允许健康变更运行', t => {
+  const f = schedScenario(t, { entries: [] })
+  const names = ['first', 'second']
+  const archived = names.map(name => ({ name, date: '2026-11-20' }))
+  mutableView(f, view({ active: [schedEntry()], archived }))
+  const first = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-20-first')
+  const time = managedRecord().startedAt
+  for (const name of names) {
+    const archive = join(f.repo, 'openspec', 'changes', 'archive', `2026-11-20-${name}`)
+    writeFiles(archive, { 'decisions/autopilot.json': managedRecord({ status: 'void', returnHandoff: 'D-0001' }),
+      'decisions/D-0001.json': { id: 'D-0001', kind: 'alert', status: 'used',
+        answer: { operatorId: 'ou_owner', choice: '回会话处理' } },
+    })
+  }
+  const clock = join(f.doublesDir, 'handoff-clock.cjs')
+  writeFileSync(clock, `const fs = require('node:fs')
+if (process.argv[1]?.endsWith('scheduler.mjs')) {
+  const { performance } = require('node:perf_hooks')
+  let expired = false
+  const open = fs.openSync
+  fs.openSync = (file, ...args) => {
+    if (process.cwd() === ${JSON.stringify(realpathSync.native(join(first, 'decisions')))} && String(file).endsWith('D-0001.json')) expired = true
+    return open(file, ...args)
+  }
+  Object.defineProperty(performance, 'now', { value: () => expired ? 2001 : 0 })
+  require('node:module').syncBuiltinESMExports()
+}
+`)
+  const result = f.run(['--once'], { NODE_OPTIONS: `--require ${clock}` })
+  assert.equal(result.code, 0, result.all)
+  assert.equal(f.claudeCalls().length, 1)
+  const settings = JSON.parse(readFileSync(join(f.home, 'rule-check.json'), 'utf8'))
+  assert.equal(settings.handoffCursor, JSON.stringify([realpathSync.native(f.repo), 'first', time]))
+  for (const name of names) {
+    const file = join(f.repo, 'openspec', 'changes', 'archive', `2026-11-20-${name}`, 'decisions', 'autopilot.json')
+    assert.equal(JSON.parse(readFileSync(file)).returnHandoffCompleted, undefined)
+  }
+})
+
+test('恢复超过本轮预算时只推进到已尝试条目', t => {
+  const f = schedScenario(t)
+  const { key, saved } = savedTraceFixture(f)
+  const secondDir = join(f.repo, 'openspec', 'changes', 'other')
+  writeFiles(secondDir, { 'decisions/autopilot.json': managedRecord() })
+  const secondKey = JSON.stringify([saved.root, 'other', saved.startedAt])
+  const second = { ...saved, name: 'other', directory: realpathSync.native(secondDir) }
+  writeFiles(f.home, { 'pending-trace.json': { version: 1, entries: { [key]: saved, [secondKey]: second } } })
+  const marker = join(f.doublesDir, 'elapsed')
+  const clock = join(f.doublesDir, 'clock.cjs')
+  writeFileSync(clock, `const fs = require('node:fs')
+if (process.argv[1]?.endsWith('scheduler.mjs')) {
+  const { performance } = require('node:perf_hooks')
+  Object.defineProperty(performance, 'now', { value: () => fs.existsSync(${JSON.stringify(marker)}) ? 119001 : 0 })
+}
+`)
+  const gate = join(f.doublesDir, 'gate.mjs')
+  writeFileSync(gate, `import { writeFileSync } from 'node:fs'
+if (process.argv[2] === 'trace') {
+  writeFileSync(${JSON.stringify(marker)}, '')
+  process.stdout.write(${JSON.stringify(JSON.stringify(traceFrom(f)))})
+} else process.stdout.write('usage: trace')
+`)
+  writeConfig(f.home, { ...f.config, gateBin: gate })
+  assert.equal(f.run(['--once'], { NODE_OPTIONS: `--require ${clock}` }).code, 0)
+  assert.equal(pendingState(f).cursor, key)
+  assert.equal(Object.keys(pendingState(f).entries).length, 2)
+  assert.deepEqual(f.decisions(), [])
+})
+
+test('现存最高合法编号占用时调度不会再启动阶段', t => {
+  const f = schedScenario(t, { files: {
+    'decisions/D-9999.json': { id: 'D-9999', kind: 'alert', status: 'used' },
+  } })
+  assert.equal(f.run().code, 0)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.deepEqual(f.decisions().map(item => item.id), ['D-9999'])
+  assert.match(f.larkCalls()[0].content, /决策编号已用尽/)
+})
+
+test('核对在进度视图第二次调用失败时比较同一批次', t => {
+  const f = schedScenario(t, { files: { 'review/standards.md': openStandards() } })
+  writeFileSync(join(f.doublesDir, 'effect.json'), JSON.stringify([
+    { file: f.viewFile, content: '不可读的视图' },
+    { file: join(f.changeDir, 'review', 'standards.md'), content: acceptedStandards() },
+  ]))
+  assert.equal(f.run().code, 0)
+  const [alert] = f.decisions()
+  assert.ok(alert.request.checkFailures.some(item => item.finding === 'STD-02'))
+  assert.doesNotMatch(f.larkCalls()[0].content, /托管不再处理/)
+})
+
+test('没有阶段运行的一轮只读取每个项目一次进度视图', t => {
+  const f = schedScenario(t, { files: { 'decisions/D-0001.json': {
+    id: 'D-0001', status: 'pending', kind: 'question', card: { messageId: 'om_pending' },
+  } } })
+  const calls = join(f.doublesDir, 'progress-calls.jsonl')
+  writeFileSync(f.progressBin, `import { appendFileSync, readFileSync } from 'node:fs'
+appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)) + '\\n')
+process.stdout.write(readFileSync(${JSON.stringify(f.viewFile)}, 'utf8'))
+`)
+  assert.equal(f.run().code, 0)
+  const lines = readFileSync(calls, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  assert.deepEqual(lines, [['--json', '--gate', realpathSync.native(gateBin)]])
+})
+
+test('处理归档候选时使用最新的提前归档阻断', t => {
+  const f = schedScenario(t, { view: view({ active: [], archived: [{ name: 'demo' }, { name: 'previous' }] }) })
+  const archive = join(f.repo, 'openspec', 'changes', 'archive')
+  const demo = join(archive, '2026-11-20-demo')
+  const recordFile = join(demo, 'decisions', 'autopilot.json')
+  const record = managedRecord({ status: 'exiting' })
+  mkdirSync(archive, { recursive: true })
+  renameSync(f.changeDir, demo)
+  writeFiles(demo, { 'decisions/autopilot.json': record })
+  writeFiles(join(archive, '2026-11-20-previous'), {
+    'decisions/autopilot.json': managedRecord({ status: 'void', returnHandoff: 'D-0001' }),
+    'decisions/D-0001.json': { id: 'D-0001', kind: 'alert', status: 'used',
+      answer: { operatorId: 'ou_owner', choice: '回会话处理' } },
+  })
+  const lark = join(f.doublesDir, 'lark-cli.mjs')
+  const updated = { ...record, exitBlock: { reason: 'early-archive', stage: 'apply' } }
+  // 上一批次的结束通知发生在发现候选之后，借替身模拟这段间隔内同一归档批次的记录更新。
+  writeFileSync(lark, `import { writeFileSync } from 'node:fs'\n${readFileSync(lark, 'utf8').replace(
+    'process.stdout.write(JSON.stringify({ message_id:',
+    `writeFileSync(${JSON.stringify(recordFile)}, ${JSON.stringify(JSON.stringify(updated))})\nprocess.stdout.write(JSON.stringify({ message_id:`,
+  )}`)
+
+  const result = f.run()
+  assert.equal(result.code, 0, result.all)
+  assert.equal(f.larkCalls().length, 1)
+  assert.equal(f.claudeCalls().length, 0)
+  assert.deepEqual(JSON.parse(readFileSync(recordFile, 'utf8')), updated)
+})
 
 test('待环境补测新增一行并填了确认人时发告警', t => {
   // spec autopilot-scheduler「Confirmer filled in a pending environment row sends an alert」（quality R1 SPEC-09）。
@@ -2219,6 +3774,41 @@ function bridgeScenario(t, { files = {}, events = [] } = {}) {
   const decision = id => JSON.parse(readFileSync(join(changeDir, 'decisions', `${id}.json`), 'utf8'))
   return { repo, home, changeDir, run, decision, larkCalls }
 }
+
+test('桥接读取失败保留待答决策，同一事件在恢复后可重投', t => {
+  const events = [clickEvent(), clickEvent(), clickEvent({ event_id: 'E2', operator_id: 'ou_other' })]
+  const f = bridgeScenario(t, { events, files: {
+    'decisions/autopilot.json': managedRecord(),
+    'decisions/D-0001.json': { ...answeredQuestion(), status: 'pending', card: { messageId: 'om_card_1' } },
+  } })
+  const directory = join(f.changeDir, 'decisions')
+  const backup = join(f.home, 'decisions-backup')
+  renameSync(directory, backup)
+  writeFileSync(directory, '暂不可读')
+  assert.equal(f.run().code, 1)
+  const log = readFileSync(join(f.home, 'logs', 'bridge.log'), 'utf8')
+  assert.match(log, /event-error/)
+  assert.match(log, /event-other-operator/)
+  assert.equal(readFileSync(join(f.home, 'events.jsonl'), 'utf8'), 'E2\n')
+  rmSync(directory)
+  renameSync(backup, directory)
+  assert.equal(f.run().code, 1)
+  assert.equal(f.decision('D-0001').status, 'answered')
+  assert.equal(readFileSync(join(f.home, 'events.jsonl'), 'utf8'), 'E2\nE1\n')
+})
+
+test('桥接遇到相同消息号的多个已知批次时保持决策与卡片', t => {
+  const pending = { ...answeredQuestion(), status: 'pending', card: { messageId: 'om_card_1' } }
+  const f = bridgeScenario(t, { files: { 'decisions/autopilot.json': managedRecord(), 'decisions/D-0001.json': pending },
+    events: [clickEvent()] })
+  const other = join(f.repo, 'openspec', 'changes', 'archive', '2026-11-19-demo')
+  writeFiles(other, { 'decisions/autopilot.json': managedRecord({ status: 'void', startedAt: '2026-11-05T10:00:00Z' }),
+    'decisions/D-0001.json': pending })
+  assert.equal(f.run().code, 1)
+  assert.deepEqual(f.decision('D-0001'), pending)
+  assert.deepEqual(updatedCards(f), [])
+  assert.match(readFileSync(join(f.home, 'logs', 'bridge.log'), 'utf8'), /event-error/)
+})
 
 test('本人的点选被记录为已回复并启动调度', t => {
   const f = bridgeScenario(t, {
@@ -2525,7 +4115,7 @@ function exitScenario(t, { files = {}, plan, record: recordValue, snapshot, arch
   const { claudeBin, claudeCalls } = claudeDouble(doublesDir, { output: textResult(plan) })
   const { larkBin, larkCalls } = larkDouble(doublesDir, { messageId: 'om_card' })
   writeConfig(home, {
-    claudeBin, larkBin, progressBin,
+    claudeBin, larkBin, progressBin, gateBin,
     projects: [projectOf(repo, { allowedCommands: ['Bash(git status:*)', 'Bash(git diff:*)', 'Bash(git log:*)', 'Bash(git show:*)'] })],
   })
 
@@ -2678,6 +4268,9 @@ test('归档后留下的会话告警选补充说明后继续时恢复会话，�
   assert.equal(calls.length, 1, JSON.stringify(calls))
   assert.ok(calls[0].args.includes('--resume') && calls[0].args.includes('sess-archive'), JSON.stringify(calls[0].args))
   assert.equal(f.decisions().filter(item => item.kind === 'exit').length, 0)
+  const alert = f.decisions().find(item => item.kind === 'alert' && item.status === 'pending')
+  assert.ok(alert, '已归档的继续会话仍检查有无进展')
+  assert.equal(alert.request.comparisonState, 'stage')
 })
 
 /** 准备一次提交与合并的起草：README.md 已改动并写入实现快照，起草替身输出 result 文本。 */
@@ -2873,6 +4466,17 @@ test('只提交到分支时检出停在该分支', t => {
   f.run()
   assert.equal(f.branch(), 'fix/x')
   assert.ok(f.logCommits().includes('提交说明'))
+  assert.equal(f.run().code, 0)
+  const push = f.decisions().find(item => item.request.action === 'push')
+  assert.ok(push)
+  writeFiles(f.changeDir, { [`decisions/${push.id}.json`]: {
+    ...push, status: 'answered', answer: { operatorId: 'ou_owner', choice: '推送' },
+  } })
+  assert.equal(f.run().code, 0)
+  assert.equal(f.run().code, 0)
+  assert.equal(f.record().status, 'closed')
+  assert.equal(f.branch(), 'fix/x')
+  assert.match(f.larkCalls().at(-1).content, /当前分支为 fix\/x.*切回 main/)
 })
 
 test('推送清单列出将推送的提交', t => {
@@ -3132,6 +4736,26 @@ test('openspec 进 git 时本变更 decisions/ 的文件不进入提交，卡片
   assert.ok(!f.git('show', '--name-only', '--format=', 'fix/x').includes('decisions/'))
 })
 
+test('推送重试重新计算推送清单且不复用提交卡片字段', t => {
+  const f = exitScenario(t)
+  writeFileSync(join(f.repo, 'README.md'), '# 改动\n')
+  writeExitRecord(f)
+  answeredCommit(f)
+  assert.equal(f.run().code, 0)
+  const prior = { id: 'D-0002', kind: 'exit-alert', status: 'answered', stage: 'exit',
+    request: { exitAction: 'push', options: ['重试本项', '暂不处理'] },
+    answer: { operatorId: 'ou_owner', choice: '重试本项' } }
+  writeFiles(f.changeDir, { 'decisions/D-0002.json': prior })
+  assert.equal(f.run().code, 0)
+  assert.equal(f.run().code, 0)
+  const fresh = f.decisions().at(-1)
+  assert.equal(fresh.id, 'D-0003')
+  assert.equal(fresh.request.action, 'push')
+  assert.ok(fresh.request.commits.length > 0)
+  for (const field of ['files', 'message', 'contentDigest']) assert.equal(fresh.request[field], undefined)
+  assert.equal(f.claudeCalls().length, 0)
+})
+
 test('推送卡片列出本地未推送的提交，推送后远端主分支指向合并提交', t => {
   const f = exitScenario(t)
   writeFileSync(join(f.repo, 'local.txt'), 'L\n')
@@ -3157,6 +4781,25 @@ test('推送卡片列出本地未推送的提交，推送后远端主分支指�
   assert.ok(spawnSync('git', ['--git-dir', f.origin, 'rev-parse', 'refs/heads/fix/x'], { encoding: 'utf8' }).status === 0)
   f.run()
   assert.equal(f.record().status, 'closed')
+})
+
+test('提交后撤回时记录已经完成的步骤和提交号', t => {
+  const f = exitScenario(t)
+  writeExitRecord(f)
+  writeFileSync(join(f.repo, 'README.md'), '# 改动\n')
+  answeredCommit(f)
+  const gitHook = join(f.repo, '.git', 'hooks', 'post-commit')
+  const recordFile = join(f.changeDir, 'decisions', 'autopilot.json')
+  const writeVoid = `const fs=require('node:fs');const file=${JSON.stringify(recordFile)};const record=JSON.parse(fs.readFileSync(file));fs.writeFileSync(file,JSON.stringify({...record,status:'void'}));`
+  writeFileSync(gitHook, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} -e '${writeVoid.replaceAll("'", "'\"'\"'")}'\n`)
+  chmodSync(gitHook, 0o755)
+  assert.equal(f.run().code, 0)
+  const log = readFileSync(join(f.home, 'logs', 'scheduler.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  const event = log.find(item => item.event === 'commit-merge-stopped')
+  assert.ok(event)
+  assert.ok(event.steps.includes('commit'))
+  assert.equal(event.commit, f.git('rev-parse', 'fix/x'))
+  assert.equal(f.record().status, 'void')
 })
 
 test('推送期间撤回时，撤回等调度释放锁后才退出，远端不变', async t => {
@@ -3198,6 +4841,12 @@ test('推送期间撤回时，撤回等调度释放锁后才退出，远端不�
   const remoteAfter = spawnSync('git', ['--git-dir', f.origin, 'rev-parse', 'refs/heads/main'], { encoding: 'utf8' }).stdout.trim()
   assert.equal(remoteAfter, remoteBefore)
   assert.equal(f.record().status, 'void')
+  const log = readFileSync(join(f.home, 'logs', 'scheduler.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  const stopped = log.find(item => item.event === 'push-stopped')
+  assert.ok(stopped)
+  assert.ok(Array.isArray(stopped.steps))
+  assert.equal(stopped.before, remoteBefore)
+  assert.equal(stopped.after, remoteAfter)
 })
 
 test('远端主分支前进时不推送，出口决策失败并发出口告警', t => {

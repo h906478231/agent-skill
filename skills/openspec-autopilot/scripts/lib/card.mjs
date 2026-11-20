@@ -7,9 +7,10 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { runBounded } from './bounded-process.mjs'
 
 /** 卡片协议版本（design D9）。 */
 const SCHEMA = '2.0'
@@ -249,47 +250,35 @@ export function expiredCard({ title, text }) {
  *   idempotencyKey 为幂等键；home 为托管目录（草稿文件写在那里）。
  * @returns {{ ok: boolean, messageId: string|null, reason: string|null }} 发送结果。
  */
-export function sendCard({ larkBin, ownerOpenId, card, idempotencyKey, home }) {
+function sendArguments({ ownerOpenId, idempotencyKey }, file) {
+  return ['im', '+messages-send', '--as', 'bot', '--user-id', ownerOpenId,
+    '--msg-type', 'interactive', '--content', `@${file}`, '--idempotency-key', idempotencyKey]
+}
+
+function sendResult(result) {
+  if (result.status !== 0) return { ok: false, messageId: null, reason: result.error?.code || `lark-cli 退出码 ${result.status}` }
+  let parsed
+  try { parsed = JSON.parse(result.stdout) } catch { parsed = null }
+  return { ok: true, messageId: parsed?.message_id || parsed?.data?.message_id || null, reason: null }
+}
+
+export function sendCard(options) {
+  const { larkBin, card, timeout = 60_000 } = options
   const file = writeCardFile(card)
   try {
-    const result = spawnSync(larkBin, [
-      'im', '+messages-send', '--as', 'bot', '--user-id', ownerOpenId,
-      '--msg-type', 'interactive', '--content', `@${file}`, '--idempotency-key', idempotencyKey,
-    ], { encoding: 'utf8' })
-    if (result.status !== 0) {
-      return { ok: false, messageId: null, reason: `lark-cli 退出码 ${result.status}：${(result.stderr || '').trim().slice(0, 200)}` }
-    }
-    let parsed = null
-    try {
-      parsed = JSON.parse(result.stdout)
-    } catch {
-      parsed = null
-    }
-    const messageId = parsed && (parsed.message_id || parsed.data && parsed.data.message_id)
-    return { ok: true, messageId: messageId || null, reason: null }
+    return sendResult(spawnSync(larkBin, sendArguments(options, file), { encoding: 'utf8', timeout, killSignal: 'SIGKILL' }))
   } finally {
     rmSync(path.dirname(file), { recursive: true, force: true })
   }
 }
 
-/**
- * 读回一次发送后 lark-cli 返回的内容（测试替身写出的 JSON）。
- * @param {string} stdout lark-cli 的标准输出。
- * @returns {object|null} 解析出的对象。
- */
-export function parseSendResult(stdout) {
+/** 恢复时不等待超时的发送进程退出。调用方在预算到期后不写 messageId。 */
+export async function sendRecoveryCard(options) {
+  const { larkBin, card, timeout = 60_000 } = options
+  const file = writeCardFile(card)
   try {
-    return JSON.parse(stdout)
-  } catch {
-    return null
+    return sendResult(await runBounded(larkBin, sendArguments(options, file), { timeout, maxBuffer: 1024 * 1024 }))
+  } finally {
+    rmSync(path.dirname(file), { recursive: true, force: true })
   }
-}
-
-/**
- * 读一个卡片文件的内容（bridge.mjs 与测试用）。
- * @param {string} file 卡片文件路径。
- * @returns {object} 卡片对象。
- */
-export function readCardFile(file) {
-  return JSON.parse(readFileSync(file, 'utf8'))
 }

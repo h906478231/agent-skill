@@ -7,10 +7,12 @@
 
 ### Requirement: The scheduler SHALL run exit actions in a fixed order after archive
 
-When a change with an `active` autopilot record is in the `archived` list of the progress view, the scheduler SHALL read `decisions/autopilot.json` in its archive directory and set `status` to `exiting`. It SHALL run the exit actions in this order: `commit-merge`, `push`. Each action SHALL need one exit decision, and one round SHALL run at most one action. When an exit decision or an exit alert is answered with `暂不处理`, the scheduler SHALL skip the remaining actions. After the last action or a skip, it SHALL set `status` to `closed` and send a notice card that lists the actions done and the actions skipped. When the change is linked to a yunzhou task by the rule of `yunzhou-task-completion.md` (the change name is `yunzhou-<taskId>`, or `proposal.md` has the line `云舟任务：<taskId>`), the notice card SHALL show the task id and tell the user to complete the task in a session. The notice card SHALL also say that the files under `decisions/` of the change are not committed, and that they contain the `operator_id` of the owner.
+After the same-batch guard has passed and a change with an `active` autopilot record is in the `archived` list of the progress view, the scheduler SHALL read `decisions/autopilot.json` in its archive directory and set `status` to `exiting`. It SHALL run the exit actions in this order: `commit-merge`, `push`. Each action SHALL need one exit decision, and one round SHALL run at most one action. When an exit decision or an exit alert is answered with `暂不处理`, the scheduler SHALL skip the remaining actions. After the last action or a skip, it SHALL set `status` to `closed` and send a notice card that lists the actions done and the actions skipped. When the change is linked to a yunzhou task by the rule of `yunzhou-task-completion.md` (the change name is `yunzhou-<taskId>`, or `proposal.md` has the line `云舟任务：<taskId>`), the notice card SHALL show the task id and tell the user to complete the task in a session. The notice card SHALL also say that the files under `decisions/` of the change are not committed, and that they contain the `operator_id` of the owner.
+
+Before drafting, executing a previously answered exit decision, retrying or sending an exit completion notice, the scheduler SHALL check the same batch, its unresolved trace and its early-archive block under spec `autopilot-scheduler`. Presence in the archived list SHALL NOT clear either check. A blocked or unverified batch SHALL NOT advance any exit action even when it has an answered decision. Ending the blocked batch by withdrawal or return to the session SHALL NOT run its exit actions.
 
 #### Scenario: Archived change starts the exit actions
-- **WHEN** a change under autopilot moves to the archive directory
+- **WHEN** the archive stage moves a change under autopilot to the archive directory and both guards pass
 - **THEN** the next round sets the autopilot record to `exiting` and starts the draft of `commit-merge`
 
 #### Scenario: Closing card names the yunzhou task
@@ -22,6 +24,10 @@ When a change with an `active` autopilot record is in the `archived` list of the
 - **WHEN** the exit decision of `commit-merge` is answered with `暂不处理`
 - **THEN** the autopilot record has `status` `closed`
 - **AND** the notice card lists `commit-merge` and `push` as skipped
+
+#### Scenario: An answered exit does not clear the early-archive block
+- **WHEN** an earlier non-archive run moved the batch into the archive and the persisted block remains, even after its trace entry has been transferred
+- **THEN** no answered exit decision, retry, draft or completion notice advances that batch
 
 ### Requirement: Exit actions SHALL run only after an answered exit decision
 
@@ -70,7 +76,7 @@ When a check fails, it SHALL handle the action as failed, and the error SHALL na
 6. with `提交并合并`, switch to `baseBranch` and run `git merge --no-ff <branch>`, unless `git merge-base --is-ancestor <branch> <baseBranch>` succeeds;
 7. remove the message file.
 
-After each step that creates the branch, the commit or the merge commit, the scheduler SHALL write the branch, the commit id or the merge commit id to `exit.commit-merge` of the autopilot record, with the expected status `exiting` and the `startedAt` read before the round, and SHALL write the step to `result.steps` of the decision. When such a write returns `false`, the scheduler SHALL stop the remaining steps, run `git merge --abort` when a merge is in progress, and write a log line with the steps done. With `只提交到分支`, the checkout SHALL stay on `branch`, and the closing notice card SHALL show the branch and tell the user to switch to `baseBranch` before the next handover.
+After each step that creates the branch, the commit or the merge commit, the scheduler SHALL write the branch, the commit id or the merge commit id to `exit.commit-merge` of the autopilot record, with the expected status `exiting` and the `startedAt` read before the round. The scheduler SHALL keep the steps done in memory and SHALL write them to `result.steps` of the decision when the decision becomes `used`. When such a write returns `false`, the scheduler SHALL stop the remaining steps, run `git merge --abort` when a merge is in progress, and write a log line with the steps done. With `只提交到分支`, the checkout SHALL stay on `branch`, and the closing notice card SHALL show the branch and tell the user to switch to `baseBranch` before the next handover.
 
 All git commands SHALL run with argument arrays and without a shell.
 
@@ -168,9 +174,11 @@ An exit action SHALL be handled as failed when the plan check fails, the draft c
 2. set `exit.<action>` of the autopilot record to `failed`;
 3. create an exit alert decision with `request.exitAction` and without `request.sessionId`, whose card has the options `重试本项`, `暂不处理` and `回会话处理`.
 
-When the exit alert is answered with `重试本项` and `result.steps` of the previous exit decision has no commit, the next round SHALL draft the action again, with the previous branch name in the prompt. When it has a commit, the next round SHALL NOT draft and SHALL NOT check the plan against `git status`: it SHALL create a new exit decision with the `branch`, `files`, `message`, `request.contentDigest` and commit id of the previous one, whose card says that the commit is already on the branch. `暂不处理` SHALL skip the remaining actions and close the autopilot. `回会话处理` SHALL set the autopilot record to `void`.
+When a `commit-merge` alert is answered with `重试本项` and `exit.commit-merge.commit` of the autopilot record has no value, the next round SHALL draft that action again, with the previous branch name in the prompt. When it has a value, the next round SHALL NOT draft and SHALL NOT check the plan against `git status`: it SHALL create a new exit decision with the `branch`, `files`, `message`, `request.contentDigest` and commit id of the previous one, whose card says that the commit is already on the branch. A `push` alert answered with `重试本项` SHALL instead recompute the remote and commit list under Requirement «The push action SHALL only fast-forward the remote base branch» and request a new push confirmation. It SHALL NOT reuse the commit-and-merge card or its fields. `暂不处理` SHALL skip the remaining actions and close the autopilot. `回会话处理` SHALL set the autopilot record to `void`.
 
-Before each step of an answered exit decision, the scheduler SHALL read back the steps already done (Requirement «The commit and merge action SHALL commit only the approved files», step 1 and step 6); when the remote base branch points to the merge commit, it SHALL skip the push. It SHALL write each finished step to `result.steps`. At any time a change SHALL have at most one decision with `status` `pending` or `answered`.
+Before an exit draft, retry, or new exit decision, the scheduler SHALL check capacity for a new decision ID under spec `autopilot-scheduler`. At exhaustion it SHALL NOT start the draft, overwrite history, or skip the required approval. Existing verified approvals MAY still execute under all original checks. If such an execution fails and cannot allocate an alert, it SHALL retain the failure and completed steps, stop the batch's exit actions, and issue the no-ID notice for manual handling. It SHALL NOT draft or repeat the failed action without another approval.
+
+Before each step of an answered exit decision, the scheduler SHALL read back the steps already done (Requirement «The commit and merge action SHALL commit only the approved files», step 1 and step 6); when the remote base branch points to the merge commit, it SHALL skip the push. It SHALL write the steps done to `result.steps` when the decision becomes `used`, whether the action succeeds or fails. At any time a change SHALL have at most one decision with `status` `pending` or `answered`.
 
 #### Scenario: Merge conflict ends the exit decision
 - **WHEN** `baseBranch` changed the same line after the branch was created, and the answer is `提交并合并`
@@ -178,7 +186,7 @@ Before each step of an answered exit decision, the scheduler SHALL read back the
 - **AND** one exit alert with `status` `pending` exists, and it is the only decision of the change with `status` `pending` or `answered`
 
 #### Scenario: Retry drafts the action again
-- **WHEN** the exit alert of `commit-merge` is answered with `重试本项`, and `result.steps` of the failed exit decision has no commit
+- **WHEN** the exit alert of `commit-merge` is answered with `重试本项`, and `exit.commit-merge.commit` of the autopilot record has no value
 - **THEN** the next round starts a draft run of `commit-merge` whose prompt contains the previous branch name
 - **AND** the exit alert has `status` `used`
 

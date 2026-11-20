@@ -1,369 +1,244 @@
 /**
- * 运行前后核对：比较处理记录与签署字段（add-autopilot-loop design D5「运行前后核对」）。
- *
- * 所属：skill openspec-autopilot。调用方：scheduler.mjs。
- * 职责：拍快照、比较两次快照、给出不通过的项（文件、finding ID 或字段、运行前后的值）。
- * 边界：只读变更目录；不改任何文件，也不代替用户决定（评审 SEC-15、SEC-16）。
+ * 托管运行前后核对（fix-autopilot-minor-findings D2、D3）。
+ * 门禁负责读取规划产物。调度脚本通过本模块比较两份快照并定位需要用户处理的差异。
  */
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { runBounded } from './bounded-process.mjs'
 
-/** 台账与 Findings 表的列名。 */
-const LEDGER_STATUS = '状态'
-const FINDINGS_STATUS = '闭环状态'
-const FINDINGS_SEVERITY = '严重级别'
+export const TRACE_VERSION = 1
+const TRACE_TIMEOUT_MS = 60_000
+const TRACE_MAX_BUFFER = 64 * 1024 * 1024
+const ACCEPTED_OPTION = new Map([
+  ['risk-accepted', 'risk accepted'], ['false-positive', '误报'], ['接受', '接受'], ['误报', '误报'],
+])
+const SEVERITY = ['', 'Minor', 'Major', 'Blocker']
+const REVIEW_FILES = ['review/standards.md', 'review/spec-fidelity.md']
+const SIGN_OFF_KEYS = ['approval', 'storyboard', 'changeHead', 'pendingEnvironment']
 
-/** 视为「已接受」的闭环状态：新变成这些值时必须有对应的用户回复（design D5）。 */
-const ACCEPTED_STATUS = new Set(['risk-accepted', 'false-positive'])
+const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+const isString = value => typeof value === 'string'
+const stringList = value => Array.isArray(value) && value.every(isString)
+const stringMap = value => isObject(value) && Object.values(value).every(isString)
+const isCount = value => Number.isSafeInteger(value) && value >= 0
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key)
 
-/** 视为「已接受」的 Sonar 处理值。 */
-const ACCEPTED_SONAR = new Set(['误报', '接受'])
-
-/** 严重级别的排序：降低时是不通过项（design D5）。 */
-const SEVERITY_ORDER = ['Blocker', 'Major', 'Minor', 'Info']
+/** 校验门禁输出的版本与字段。已保存的当前版本快照沿用同一个读法。 */
+export function validTrace(value) {
+  if (!isObject(value) || value.traceVersion !== TRACE_VERSION) return false
+  if (value.resumedDecisionIds !== undefined && !stringList(value.resumedDecisionIds)) return false
+  const { findings, sonar, slices, rulesVersion, signOff } = value
+  if (!Array.isArray(findings) || !findings.every(row => isObject(row) && REVIEW_FILES.includes(row.file)
+    && isString(row.id) && isString(row.status) && (row.source === 'ledger'
+      || (row.source === 'findings' && isString(row.severity) && typeof row.openBlocker === 'boolean')))) return false
+  if (!Array.isArray(sonar) || !sonar.every(row => isObject(row)
+    && [row.table, row.key, row.location, row.handling].every(isString))) return false
+  if (!Array.isArray(slices) || !slices.every(row => isObject(row)
+    && isString(row.id) && isString(row.environment) && isCount(row.done) && isCount(row.total)
+    && (row.deferred === undefined || (isObject(row.deferred) && isString(row.evidence)
+      && typeof row.deferred.confirmed === 'boolean' && typeof row.deferred.unconfirmed === 'boolean')))) return false
+  return isObject(rulesVersion) && REVIEW_FILES.every(file => rulesVersion[file] === null || isString(rulesVersion[file]))
+    && isObject(signOff) && SIGN_OFF_KEYS.every(key => hasOwn(signOff, key))
+    && stringMap(signOff.approval) && stringMap(signOff.storyboard)
+    && (signOff.changeHead === null || isString(signOff.changeHead))
+    && isObject(signOff.pendingEnvironment) && Object.values(signOff.pendingEnvironment).every(groups =>
+      isObject(groups) && Object.values(groups).every(stringList))
+}
 
 /**
- * 读一个变更目录中的 Markdown 文件内容。
- * @param {string} file 文件路径。
- * @returns {string} 内容；文件不存在时为空串。
+ * 调用门禁并返回核对快照或可发通知的失败类别。
+ * @param {string} gateBin 已校验的门禁路径。
+ * @param {string} changeDir 本次托管的变更目录。
+ * @param {number} [timeout] 外部等待的剩余预算。
+ * @returns {{ value: object|null, error: string|null }} 快照及失败类别。
  */
-function read(file) {
+export function traceSnapshot(gateBin, changeDir, timeout = TRACE_TIMEOUT_MS) {
+  return parseTrace(spawnSync(process.execPath, [gateBin, 'trace', changeDir], {
+    encoding: 'utf8', timeout: Math.min(TRACE_TIMEOUT_MS, timeout), maxBuffer: TRACE_MAX_BUFFER, killSignal: 'SIGKILL',
+  }))
+}
+
+/** 恢复必须在预算到期时交还调度，不等待门禁退出。 */
+export async function recoveryTraceSnapshot(gateBin, changeDir, timeout) {
+  return parseTrace(await runBounded(process.execPath, [gateBin, 'trace', changeDir], {
+    timeout: Math.min(TRACE_TIMEOUT_MS, timeout), maxBuffer: TRACE_MAX_BUFFER,
+  }))
+}
+
+function parseTrace(result) {
+  const fail = error => ({ value: null, error })
+  // 只报告失败类别。门禁子进程的输出可能包含未能核验归属的资料。
+  if (result.error) return fail(result.error.code === 'ETIMEDOUT' ? '门禁读取超时' : '门禁无法运行或输出超限')
+  if (result.status !== 0) {
+    const diagnostic = /^trace：(任务|评审报告|切片证据|签署资料|变更目录)：(读取失败|对象已改变|类型无效|类型或链接无效|目录类型无效|读取失败或对象已改变|链接无效|类型或归属无效|切片引用无效)$/.exec(result.stderr.trim())
+    return fail(diagnostic ? `${diagnostic[1]}：${diagnostic[2]}` : `门禁读取失败（退出码 ${result.status ?? '未知'}）`)
+  }
+  let value
   try {
-    return readFileSync(file, 'utf8')
+    value = JSON.parse(result.stdout)
   } catch {
-    return ''
+    return fail('门禁输出不是 JSON')
   }
+  if (value?.traceVersion !== TRACE_VERSION) return fail('门禁核对快照版本不匹配')
+  if (!validTrace(value)) return fail('门禁核对快照字段无效')
+  return { value, error: null }
 }
 
-/**
- * 解析 Markdown 表格：返回每个表格的行（数组）与表头。
- * @param {string} text 文本。
- * @returns {{ header: string[], rows: string[][] }[]} 表格列表。
- */
-export function parseTables(text) {
-  const tables = []
-  const lines = text.split('\n')
-  let header = null
-  let rows = []
-  const flush = () => {
-    if (header && rows.length) tables.push({ header, rows })
-    header = null
-    rows = []
+/** 以规范元组分组，避免文件或规则键中出现分隔字符时误合并。 */
+function groupsOf(rows, keyOf, valueOf) {
+  const groups = new Map()
+  for (const row of rows) {
+    const key = keyOf(row)
+    if (!groups.has(key)) groups.set(key, { row, values: [], openBlockers: 0, severity: 0 })
+    const group = groups.get(key)
+    group.values.push(valueOf(row))
+    if (row.openBlocker) group.openBlockers += 1
+    group.severity = Math.max(group.severity, SEVERITY.indexOf(row.severity))
   }
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed.startsWith('|')) {
-      flush()
-      continue
-    }
-    const cells = trimmed.replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim())
-    if (cells.every(cell => /^:?-{2,}:?$/.test(cell))) continue
-    if (!header) {
-      header = cells
-      continue
-    }
-    rows.push(cells)
-  }
-  flush()
-  return tables
+  for (const group of groups.values()) group.values.sort()
+  return groups
 }
 
-/**
- * 取一个区块的正文：从标题行到下一个同级或更高级标题。
- * @param {string} text 文本。
- * @param {string} title 标题文字。
- * @returns {string} 区块正文。
- */
-function section(text, title) {
-  const lines = text.split('\n')
-  const start = lines.findIndex(line => line.trim() === title)
-  if (start < 0) return ''
-  const body = []
-  for (const line of lines.slice(start + 1)) {
-    if (/^#{1,6}\s/.test(line)) break
-    body.push(line)
-  }
-  return body.join('\n')
+const findingKey = ({ file, id, source }) => JSON.stringify([file, id, source])
+const sonarKey = ({ table, key, location }) => JSON.stringify([table, key, location])
+const valuesOf = group => group?.values ?? []
+const equal = (before, after) => JSON.stringify(before) === JSON.stringify(after)
+const statuses = group => [...new Set((group?.values ?? ['open']).map(value => value || 'open'))].sort()
+
+/** 从本次比较已恢复的决策中取最近对应该问题的回复。 */
+function matchedAnswer(decisions, ownerOpenId, key, option, location = '') {
+  const decision = decisions.find(item => item.kind === 'question'
+    && ['answered', 'used'].includes(item.status) && item.answer?.operatorId === ownerOpenId
+    && Array.isArray(item.request?.questions) && item.request.questions.some(question => question?.header === key
+      && (!location || String(question.question || '').includes(location))))
+  const freeText = decision?.answer?.text?.[key] || null
+  return { matched: !freeText && Boolean(option) && decision?.answer?.selected?.[key] === option,
+    freeText, answeredAt: decision?.answer?.answeredAt }
 }
 
-/**
- * 拍处理记录快照（design D5「处理记录快照」，评审 ARCH-16、SEC-15）。
- * @param {string} changeDir 变更目录。
- * @returns {object} finding 状态映射与 Sonar 行映射。
- */
-export function traceSnapshot(changeDir) {
-  const findings = {}
-  for (const file of ['review/standards.md', 'review/spec-fidelity.md']) {
-    const text = read(path.join(changeDir, file))
-    // 台账的状态与 Findings 表的闭环状态、严重级别都要记录：只看台账时 agent 改 Findings 表就能关掉一条 Blocker。
-    for (const table of parseTables(section(text, '## Finding 台账'))) {
-      const idAt = table.header.indexOf('ID')
-      const statusAt = table.header.indexOf(LEDGER_STATUS)
-      if (idAt < 0 || statusAt < 0) continue
-      for (const row of table.rows) {
-        const id = row[idAt]
-        if (!id || !/^[A-Z]+-\d+$/.test(id)) continue
-        findings[id] = { ...(findings[id] || {}), file, ledgerStatus: row[statusAt] }
-      }
-    }
-    for (const table of parseTables(section(text, '## Findings'))) {
-      const idAt = table.header.indexOf('ID')
-      const statusAt = table.header.indexOf(FINDINGS_STATUS)
-      const severityAt = table.header.indexOf(FINDINGS_SEVERITY)
-      if (idAt < 0) continue
-      for (const row of table.rows) {
-        const id = row[idAt]
-        if (!id || !/^[A-Z]+-\d+$/.test(id)) continue
-        findings[id] = {
-          ...(findings[id] || {}), file,
-          findingsStatus: statusAt >= 0 ? row[statusAt] : null,
-          severity: severityAt >= 0 ? row[severityAt] : null,
-        }
-      }
-    }
-  }
-  const sonar = {}
-  const sonarText = read(path.join(changeDir, 'review', 'sonar.md'))
-  for (const [title, key] of [['## 本次修改行上的问题', 'rule'], ['## 质量门', 'condition']]) {
-    for (const table of parseTables(section(sonarText, title))) {
-      const keyAt = table.header.indexOf(key === 'rule' ? '规则' : '条件')
-      const handleAt = table.header.indexOf('处理')
-      const locationAt = table.header.indexOf('位置')
-      if (keyAt < 0) continue
-      for (const row of table.rows) {
-        const name = row[keyAt]
-        if (!name) continue
-        // 问题行按「规则 + 位置」作键：只按规则作键时，同一规则的多行互相覆盖，共用一个回复（quality R1 SPEC-09）。
-        const location = locationAt >= 0 ? row[locationAt] || '' : ''
-        sonar[`${title}:${name}${location ? `@${location}` : ''}`] = {
-          file: 'review/sonar.md',
-          key: name,
-          location,
-          handling: handleAt >= 0 ? row[handleAt] : null,
-        }
-      }
-    }
-  }
-  return { findings, sonar }
+/** 核对接受状态的数量和授权。一个选项只覆盖它对应的接受状态。 */
+function acceptedChange(old, current, decisions, owner, key, location) {
+  const before = valuesOf(old)
+  const after = current.values
+  const added = [...ACCEPTED_OPTION.keys()].map(status => ({
+    status, count: after.filter(value => value === status).length - before.filter(value => value === status).length,
+  })).filter(item => item.count > 0)
+  const accepted = [...new Set(after.filter(value => ACCEPTED_OPTION.has(value)))]
+  const option = ACCEPTED_OPTION.get(added.length === 1 ? added[0].status : accepted.length === 1 ? accepted[0] : '')
+  return { ...matchedAnswer(decisions, owner, key, option, location),
+    required: accepted.length > 0 && !equal(before, after),
+    added: added.length === 1 ? added[0].count : 0 }
 }
 
-/**
- * 拍签署字段快照（design D5「签署字段快照」，评审 ARCH-17、SEC-16）。
- * @param {string} changeDir 变更目录。
- * @returns {object} 签字行、分镜签署行、变更终点区块与待环境补测确认人。
- */
-export function signOffSnapshot(changeDir) {
-  const signatures = {}
-  const stories = {}
-  const files = listMarkdown(changeDir)
-  for (const rel of files) {
-    const text = read(path.join(changeDir, rel))
-    const lines = text.split('\n')
-    for (const line of lines) {
-      if (/^[-*>\s]*Technical Review Approved:/.test(line)) signatures[rel] = line.trim()
-      if (/^[-*>\s]*Storyboard Approved:/.test(line)) stories[rel] = line.trim()
-    }
-  }
-  const tasks = read(path.join(changeDir, 'tasks.md'))
-  const changeHead = section(tasks, '## 变更终点')
-  const confirmations = {}
-  for (const rel of files.filter(item => item.startsWith('evidence/'))) {
-    const text = read(path.join(changeDir, rel))
-    for (const table of parseTables(section(text, '## 待环境补测'))) {
-      const fingerprintAt = table.header.indexOf('登记指纹')
-      const confirmerAt = table.header.indexOf('确认人')
-      if (fingerprintAt < 0 || confirmerAt < 0) continue
-      for (const row of table.rows) {
-        const fingerprint = row[fingerprintAt]
-        if (!fingerprint || !fingerprint.trim()) continue
-        confirmations[`${rel}:${fingerprint}`] = { file: rel, fingerprint, confirmer: row[confirmerAt] }
-      }
-    }
-  }
-  return { signatures, stories, changeHead, confirmations }
-}
-
-/**
- * 列出变更目录中的 Markdown 文件（相对路径）。
- * @param {string} dir 目录。
- * @param {string} prefix 相对前缀。
- * @returns {string[]} 相对路径。
- */
-function listMarkdown(dir, prefix = '') {
-  if (!existsSync(dir)) return []
-  const files = []
-  for (const item of readdirSync(dir, { withFileTypes: true })) {
-    const child = path.join(dir, item.name)
-    const rel = prefix ? `${prefix}/${item.name}` : item.name
-    if (item.isDirectory()) files.push(...listMarkdown(child, rel))
-    else if (item.name.endsWith('.md')) files.push(rel)
-  }
-  return files
-}
-
-/**
- * 找出与某个 finding 或 Sonar 行对应的提问决策回复（design D5「对上提问决策」，评审 SEC-18）。
- * @param {object} before 运行前的快照。
- * @param {object} decisions 决策列表。
- * @param {string} ownerOpenId 本人标识。
- * @param {string} key finding ID 或 Sonar 行名。
- * @param {string} option 对应的选项标签。
- * @param {string} [location] Sonar 问题行的位置（`文件:行号`）；给出时问题文本必须写出这个位置（quality R1 SPEC-09）。
- * @returns {{ matched: boolean, freeText: string|null }} 匹配结果与自填文本。
- */
-function matchedAnswer(before, decisions, ownerOpenId, key, option, location = '') {
-  for (const decision of decisions) {
-    if (decision.status !== 'answered' && decision.status !== 'used') continue
-    const answer = decision.answer || {}
-    if (answer.operatorId !== ownerOpenId) continue
-    const questions = (decision.request && decision.request.questions) || []
-    for (const question of questions) {
-      if (question.header !== key) continue
-      if (location && !String(question.question || '').includes(location)) continue
-      const selected = (answer.selected || {})[question.header]
-      if (selected === option) return { matched: true, freeText: null }
-      const text = (answer.text || {})[question.header]
-      if (!selected && text) return { matched: false, freeText: text }
-    }
-  }
-  return { matched: false, freeText: null }
-}
-
-/**
- * 比较处理记录的两次快照，给出不通过的项（design D5「处理记录快照」，评审 ARCH-16、SEC-15）。
- * @param {object} options before 与 after 的处理记录快照、decisions 决策列表、ownerOpenId 本人标识。
- * @returns {object[]} 不通过项。
- */
+/** 比较门禁看到的处理记录。门禁对未关闭 Blocker 的判断按原值使用。 */
 export function compareTrace({ before, after, decisions = [], ownerOpenId = '' }) {
   const failures = []
-
-  // 新变成接受或误报时必须有对应的用户回复（design D5 情况 1）。
-  for (const [id, item] of Object.entries(after.findings)) {
-    const old = before.findings[id] || { file: item.file }
-    const becameAccepted = (ACCEPTED_STATUS.has(item.ledgerStatus) && !ACCEPTED_STATUS.has(old.ledgerStatus))
-      || (ACCEPTED_STATUS.has(item.findingsStatus) && !ACCEPTED_STATUS.has(old.findingsStatus))
-    if (becameAccepted) {
-      const matched = matchedAnswer(before, decisions, ownerOpenId, id, 'risk accepted')
-      const matchedFp = matchedAnswer(before, decisions, ownerOpenId, id, '误报')
-      if (!matched.matched && !matchedFp.matched) {
-        failures.push({
-          file: item.file,
-          finding: id,
-          field: LEDGER_STATUS,
-          before: old.ledgerStatus || old.findingsStatus || 'open',
-          after: item.ledgerStatus || item.findingsStatus,
-          note: matched.freeText ? `只有自填文本：${matched.freeText}` : '没有对应的用户回复',
-        })
+  const ids = new Set(before.resumedDecisionIds || [])
+  const resumed = decisions.filter(item => ids.has(item.id)).sort((a, b) => b.id.localeCompare(a.id))
+  const oldFindings = groupsOf(before.findings, findingKey, row => row.status)
+  const newFindings = groupsOf(after.findings, findingKey, row => row.status)
+  const oldSonar = groupsOf(before.sonar, sonarKey, row => row.handling)
+  const newSonar = groupsOf(after.sonar, sonarKey, row => row.handling)
+  const acceptance = new Map()
+  for (const [previous, current, isSonar] of [[oldFindings, newFindings, false], [oldSonar, newSonar, true]]) {
+    for (const [key, group] of current) {
+      const { file, id, source, key: rule, location } = group.row
+      const old = previous.get(key)
+      const result = acceptedChange(old, group, resumed, ownerOpenId, isSonar ? rule : id, location)
+      if (!isSonar) acceptance.set(key, result)
+      if (result.required && !result.matched) {
+        failures.push({ file: file || 'review/sonar.md', finding: isSonar && location ? `${rule} ${location}` : id || rule,
+          field: isSonar ? '处理' : source === 'ledger' ? '状态' : '闭环状态',
+          before: valuesOf(old).join(' / ') || 'open', after: group.values.join(' / '),
+          ...(result.answeredAt ? { answeredAt: result.answeredAt } : {}),
+          note: result.freeText ? `用户自填文本：${result.freeText}` : '没有对应的用户回复' })
       }
-    }
-    // 台账状态与 Findings 表闭环状态不同（design D5 情况 2）。
-    if (item.ledgerStatus && item.findingsStatus && item.ledgerStatus !== item.findingsStatus) {
-      failures.push({
-        file: item.file,
-        finding: id,
-        field: '台账状态与闭环状态',
-        before: old.ledgerStatus || '（无）',
-        after: `${item.ledgerStatus} / ${item.findingsStatus}`,
-      })
-    }
-    // 严重级别降低（design D5 情况 3）。
-    if (item.severity && old.severity && old.severity !== item.severity) {
-      const beforeAt = SEVERITY_ORDER.indexOf(old.severity)
-      const afterAt = SEVERITY_ORDER.indexOf(item.severity)
-      if (beforeAt >= 0 && afterAt > beforeAt) {
-        failures.push({ file: item.file, finding: id, field: FINDINGS_SEVERITY, before: old.severity, after: item.severity })
+      if (source === 'findings') {
+        const ledgerKey = findingKey({ file, id, source: 'ledger' })
+        const ledger = newFindings.get(ledgerKey)
+        if (ledger && !equal(statuses(group), statuses(ledger))
+          && (!equal(group.values, old?.values ?? ['open'])
+            || !equal(ledger.values, oldFindings.get(ledgerKey)?.values ?? ['open']))) {
+          failures.push({ file, finding: id, field: '台账状态与闭环状态',
+            before: `${statuses(oldFindings.get(ledgerKey)).join(' / ')}；${statuses(old).join(' / ')}`,
+            after: `${statuses(ledger).join(' / ')}；${statuses(group).join(' / ')}` })
+        }
+        if (old?.severity >= SEVERITY.indexOf('Major') && group.severity < old.severity) {
+          failures.push({ file, finding: id, field: '严重级别', before: SEVERITY[old.severity], after: SEVERITY[group.severity] || '其他' })
+        }
       }
     }
   }
-  // 运行前存在的 finding 消失（design D5 情况 4）：遍历运行前快照。被整行删除的 finding 不在运行后快照中，
-  // 写在遍历运行后快照的循环里时这条判断永远不成立（quality R1 SPEC-09、STD-05）。
-  for (const [id, old] of Object.entries(before.findings)) {
-    const item = after.findings[id]
-    if (!item || (!item.findingsStatus && !item.ledgerStatus)) {
-      failures.push({ file: old.file, finding: id, field: 'finding', before: '存在', after: '消失' })
+  for (const [key, old] of oldFindings) {
+    const { file, id, source } = old.row
+    const current = newFindings.get(key)
+    const decrease = old.openBlockers - (current?.openBlockers ?? 0)
+    if (current && decrease <= 0) continue
+    if (source === 'findings') {
+      const ledgerKey = findingKey({ file, id, source: 'ledger' })
+      const ledger = newFindings.get(ledgerKey)
+      const reply = acceptance.get(current ? key : ledgerKey)
+      // 正常关闭可移出 Findings。接受状态的新增仍须有这次核对的授权。
+      if (ledger?.values.every(value => value === 'closed')
+        || (reply?.matched && reply.added >= Math.max(decrease, 1))
+        || (!current && !statuses(old).includes('open') && ledger
+          && equal(ledger.values, oldFindings.get(ledgerKey)?.values))) continue
     }
+    failures.push({ file, finding: id, field: current ? '未关闭 Blocker 行数' : source,
+      before: current ? String(old.openBlockers) : '存在', after: current ? String(current.openBlockers) : '消失' })
   }
-
-  // Sonar 行：新变成误报或接受时必须有对应的用户回复。
-  for (const [key, item] of Object.entries(after.sonar)) {
-    const old = before.sonar[key] || {}
-    if (ACCEPTED_SONAR.has(item.handling) && !ACCEPTED_SONAR.has(old.handling)) {
-      const matched = matchedAnswer(before, decisions, ownerOpenId, item.key, '接受', item.location)
-      const matchedFp = matchedAnswer(before, decisions, ownerOpenId, item.key, '误报', item.location)
-      if (!matched.matched && !matchedFp.matched) {
-        failures.push({
-          file: item.file,
-          finding: sonarLabel(item),
-          field: '处理',
-          before: old.handling || '（无）',
-          after: item.handling,
-          note: matched.freeText ? `只有自填文本：${matched.freeText}` : '没有对应的用户回复',
-        })
-      }
-    }
+  for (const [key, { row }] of oldSonar) {
+    if (!newSonar.has(key)) failures.push({ file: 'review/sonar.md', finding: [row.key, row.location].filter(Boolean).join(' '),
+      field: 'Sonar 行', before: '存在', after: '消失' })
   }
-  // 运行前存在的 Sonar 行消失：同样遍历运行前快照。
-  for (const [key, old] of Object.entries(before.sonar)) {
-    if (!after.sonar[key]) {
-      failures.push({ file: old.file, finding: sonarLabel(old), field: 'Sonar 行', before: '存在', after: '消失' })
+  for (const [file, version] of Object.entries(before.rulesVersion)) {
+    if (version !== null && version !== after.rulesVersion[file]) {
+      failures.push({ file, field: 'Rules Version', before: version, after: after.rulesVersion[file] ?? '（已删除）' })
     }
   }
   return failures
 }
 
-/**
- * Sonar 行在不通过项中的名称：规则与位置，让用户能分出同一规则的多行。
- * @param {object} item Sonar 行快照。
- * @returns {string} 名称。
- */
-function sonarLabel(item) {
-  return item.location ? `${item.key} ${item.location}` : item.key
-}
-
-/**
- * 比较签署字段的两次快照，给出不通过的项（design D5「签署字段快照」，评审 ARCH-17、SEC-16）。
- * @param {object} options before 与 after 的签署字段快照。
- * @returns {object[]} 不通过项。
- */
+/** 比较签署字段与待环境补测的切片状态。 */
 export function compareSignOff({ before, after }) {
   const failures = []
-  // 签字行、分镜签署行与变更终点区块变化时都不通过（design D5）。比较两侧键的并集：
-  // 只遍历运行后快照时，被删除的签字行查不出来（quality R1 SPEC-09）。
-  for (const [map, field] of [['signatures', 'Technical Review Approved'], ['stories', 'Storyboard Approved']]) {
-    const beforeLines = before[map] || {}
-    const afterLines = after[map] || {}
-    for (const file of new Set([...Object.keys(beforeLines), ...Object.keys(afterLines)])) {
-      if (beforeLines[file] !== afterLines[file]) {
-        failures.push({ file, field, before: beforeLines[file] || '（无）', after: afterLines[file] || '（已删除）' })
-      }
+  for (const [key, field] of [['approval', 'Technical Review Approved'], ['storyboard', 'Storyboard Approved']]) {
+    const old = before.signOff[key]
+    const current = after.signOff[key]
+    for (const file of new Set([...Object.keys(old), ...Object.keys(current)])) {
+      if (old[file] !== current[file]) failures.push({ file, field, before: old[file] ?? '（无）', after: current[file] ?? '（已删除）' })
     }
   }
-  if ((before.changeHead || '') !== (after.changeHead || '')) {
+  if (before.signOff.changeHead !== after.signOff.changeHead) {
     failures.push({ file: 'tasks.md', field: '变更终点', before: '（原内容）', after: '（已变化）' })
   }
-  // 待环境补测：确认人由空变成有值、已有值被修改、行被删除，或新增的行填了确认人时不通过；
-  // 新增空确认人的行通过（design D5，quality R1 SPEC-09）。确认人是签署字段，只能由用户写。
-  for (const [key, item] of Object.entries(after.confirmations || {})) {
-    const old = (before.confirmations || {})[key]
-    if (!old) {
-      if ((item.confirmer || '').trim()) {
-        failures.push({ file: item.file, finding: item.fingerprint, field: '确认人', before: '（新增行）', after: item.confirmer })
+  const oldRows = before.signOff.pendingEnvironment
+  const newRows = after.signOff.pendingEnvironment
+  for (const file of new Set([...Object.keys(oldRows), ...Object.keys(newRows)])) {
+    const old = oldRows[file] || {}
+    const current = newRows[file] || {}
+    for (const finding of new Set([...Object.keys(old), ...Object.keys(current)])) {
+      const previous = [...new Set(hasOwn(old, finding) ? old[finding].filter(Boolean) : [])].sort()
+      const next = [...new Set(hasOwn(current, finding) ? current[finding].filter(Boolean) : [])].sort()
+      if (!equal(previous, next) || !hasOwn(current, finding)) {
+        failures.push({ file, finding, field: '确认人', before: previous.join(' / ') || '（空）',
+          after: hasOwn(current, finding) ? next.join(' / ') || '（空）' : '（登记已删除）' })
       }
-      continue
-    }
-    if ((old.confirmer || '') !== (item.confirmer || '')) {
-      failures.push({
-        file: item.file, finding: item.fingerprint, field: '确认人',
-        before: old.confirmer || '（空）', after: item.confirmer || '（空）',
-      })
     }
   }
-  for (const [key, item] of Object.entries(before.confirmations || {})) {
-    if (!(after.confirmations || {})[key] && (item.confirmer || '').trim()) {
-      failures.push({
-        file: item.file, finding: item.fingerprint, field: '确认人', before: item.confirmer, after: '（行被删除）',
-      })
+  const newSlices = new Map(after.slices.map(slice => [slice.id, slice]))
+  for (const old of before.slices) {
+    if (!old.environment) continue
+    const current = newSlices.get(old.id)
+    if (!current || current.environment !== old.environment || current.total < old.total
+      || (old.done > 0 && current.done === 0) || (old.total > 0 && old.done === old.total && current.done < current.total)) {
+      failures.push({ file: 'tasks.md', finding: old.id, field: '待环境补测切片',
+        before: `${old.environment} ${old.done}/${old.total}`,
+        after: current ? `${current.environment || '（无环境）'} ${current.done}/${current.total}` : '消失' })
+    }
+    if (old.deferred?.unconfirmed && !current?.deferred?.unconfirmed && !current?.deferred?.confirmed) {
+      failures.push({ file: current?.evidence || old.evidence, finding: old.id, field: '待环境补测登记',
+        before: old.fingerprint, after: current?.fingerprint || '（登记已删除）' })
     }
   }
   return failures

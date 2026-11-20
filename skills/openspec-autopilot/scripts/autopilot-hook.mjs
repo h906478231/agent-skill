@@ -7,11 +7,15 @@
  * 边界：只读变更目录的 decisions/ 与托管配置；不写任何文件（design D7）。
  */
 
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { DECISIONS_DIR, fingerprintOf, listDecisionsIn } from './lib/decisions.mjs'
+import { DECISIONS_DIR, fingerprintOf, readDecision } from './lib/decisions.mjs'
 import { homeDir, readConfig } from './lib/home.mjs'
-import { archivedDirNames, inside } from './lib/project.mjs'
+import { archivedDirNames, inside, realPath } from './lib/project.mjs'
+import { locateBatch } from './lib/batch.mjs'
+import { readLockFile } from './lib/lock.mjs'
+import { batchKey, readPendingTrace } from './lib/pending-trace.mjs'
+import { writerStatus } from './lib/writer-instance.mjs'
 
 
 /** 写入类工具名：这些工具的目标路径受写入保护（design D7）。 */
@@ -40,47 +44,58 @@ function candidateDirs(changeRoot) {
   const archiveRoot = path.join(path.dirname(changeRoot), 'archive')
   return [path.join(changeRoot, DECISIONS_DIR),
     ...archivedDirNames(archiveRoot, path.basename(changeRoot)).map(item => path.join(archiveRoot, item, DECISIONS_DIR))]
+    .map(normalizeTarget)
+}
+
+/** 仅接受当前运行锁与核对条目共同绑定的回复。 */
+function boundReply(changeRoot) {
+  const lock = readLockFile(path.join(homeDir(), 'run.lock')).value
+  if (!lock?.projectRoot || !lock.runId || !lock.startedAt || !lock.change) return null
+  const key = batchKey({ root: lock.projectRoot, name: lock.change, startedAt: lock.startedAt })
+  const saved = readPendingTrace().entries[key]
+  if (saved?.mode !== 'stage' || saved.runId !== lock.runId || !saved.consumedDecisionId
+    || saved.directory !== normalizeTarget(changeRoot) || writerStatus(saved.writer) !== 'yes'
+    || saved.writer.pid !== lock.writer?.pid || saved.writer.instance !== lock.writer?.instance) return null
+  const target = locateBatch(saved)
+  if (target.superseded || !['active', 'exiting'].includes(target.record.status)) return null
+  const read = readDecision(target.directory, saved.consumedDecisionId)
+  return read.value && (!read.value.batchStartedAt || read.value.batchStartedAt === saved.startedAt) ? read.value : null
 }
 
 /**
- * 找出可以读取的决策目录：优先用变更目录下的 decisions/，不存在时回退查找归档目录（design D7）。
- * @param {string} changeRoot 变更目录。
- * @returns {string|null} 决策目录路径；找不到时为 null。
- */
-function decisionsDirOf(changeRoot) {
-  return candidateDirs(changeRoot).find(dir => existsSync(dir) && statSync(dir).isDirectory()) || null
-}
-
-/**
- * 归一化写入目标路径：先 resolve，再把父目录用 realpath 解析（design D7，评审 SEC-06）。
+ * 归一化路径。新文件尚无磁盘路径时，从最深的已存在父级接上未创建的部分。
  * @param {string} target 目标路径。
  * @returns {string|null} 归一化后的绝对路径；输入为空时为 null。
  */
 function normalizeTarget(target) {
   if (!target) return null
-  const resolved = path.resolve(target)
-  const parent = path.dirname(resolved)
-  try {
-    return path.join(realpathSync(parent), path.basename(resolved))
-  } catch {
-    // 父目录不存在时按解析后的路径比较：新建文件也要受写入保护。
-    return resolved
+  let current = path.resolve(target)
+  const suffix = []
+  for (;;) {
+    try {
+      return path.join(realPath(current), ...suffix)
+    } catch (error) {
+      const parent = path.dirname(current)
+      if (error.code !== 'ENOENT' || parent === current) throw error
+      suffix.unshift(path.basename(current))
+      current = parent
+    }
   }
 }
 
 /**
  * 处理 AskUserQuestion：找到对应调用号的决策，条件全成立时填回答案，否则 defer（design D7）。
  * @param {object} input hook 输入。
- * @param {string} dir 决策目录。
+ * @param {object|null} decision 已核验的决策，只在归属确定时传入。
  * @returns {object} 决策 JSON。
  */
-function answerQuestion(input, dir) {
-  const { decisions } = listDecisionsIn(dir)
+function answerQuestion(input, decision) {
+  if (!decision) return { permissionDecision: 'defer' }
   const toolUseId = input.tool_use_id
   const owner = ownerOpenId()
   // 例外先于普通匹配：会话告警的说明经 deny 送回模型，保证用户说明一定到达 agent（design D7，评审 CONC-14）。
-  const alert = decisions.find(item => item.kind === 'alert' && item.request
-    && item.request.deferredToolUseId === toolUseId && item.status === 'answered')
+  const alert = decision.kind === 'alert' && decision.request?.deferredToolUseId === toolUseId
+    && decision.status === 'answered' ? decision : null
   if (alert) {
     const alertAnswer = alert.answer || {}
     if (alertAnswer.operatorId === owner && alertAnswer.choice === '补充说明后继续') {
@@ -91,8 +106,9 @@ function answerQuestion(input, dir) {
     }
     return { permissionDecision: 'defer' }
   }
-  const decision = decisions.find(item => item.request && item.request.toolUseId === toolUseId)
-  if (!decision || decision.status !== 'answered') return { permissionDecision: 'defer' }
+  if (decision.kind !== 'question' || decision.request?.toolUseId !== toolUseId || decision.status !== 'answered') {
+    return { permissionDecision: 'defer' }
+  }
   const answer = decision.answer || {}
   // 回复人必须是本人（design D7）。
   if (answer.operatorId !== owner) return { permissionDecision: 'defer' }
@@ -111,12 +127,13 @@ function answerQuestion(input, dir) {
  * @returns {object|null} 拒绝决策；放行时为 null（不输出任何内容）。
  */
 function denyWrites(input, dirs) {
-  const target = normalizeTarget(input.tool_input && (input.tool_input.file_path || input.tool_input.notebook_path))
-  if (!target) return null
-  if (dirs.some(dir => inside(target, dir)) || inside(target, homeDir())) {
-    return { permissionDecision: 'deny', permissionDecisionReason: `托管不允许写入托管文件：${target}` }
-  }
-  return null
+  const requested = input.tool_input?.file_path || input.tool_input?.notebook_path
+  if (!requested) return null
+  // 同时检查父目录和打开后的目标。替换一个路径与沿链接打开目标都可能写到托管资料。
+  const target = path.join(normalizeTarget(path.dirname(requested)), path.basename(requested))
+  const resolved = normalizeTarget(requested)
+  if (![...dirs, homeDir()].some(dir => inside(target, dir) || inside(resolved, dir))) return null
+  return { permissionDecision: 'deny', permissionDecisionReason: `托管不允许写入托管文件：${target}` }
 }
 
 /** 主流程：按工具名分派。 */
@@ -131,12 +148,9 @@ function main() {
       })}\n`)
       return
     }
-    const dir = decisionsDirOf(changeRoot)
-    if (!dir) {
-      process.stdout.write(`${JSON.stringify({ permissionDecision: 'defer' })}\n`)
-      return
-    }
-    process.stdout.write(`${JSON.stringify(answerQuestion(input, dir))}\n`)
+    let decision = null
+    try { decision = boundReply(changeRoot) } catch { /* 无法核验时继续挂起。 */ }
+    process.stdout.write(`${JSON.stringify(answerQuestion(input, decision))}\n`)
     return
   }
   if (WRITE_TOOLS.includes(input.tool_name)) {

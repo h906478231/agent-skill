@@ -177,7 +177,7 @@ function headerFiles(home, projectRoot) {
   const project = path.join(projectRoot, '.claude')
   for (const sub of ['skills', 'commands', 'agents']) {
     for (const file of listFiles(path.join(project, sub))) {
-      if (file.endsWith('.md') && path.basename(file) === 'SKILL.md' || file.endsWith('.md')) files.push(file)
+      if (file.endsWith('.md')) files.push(file)
     }
   }
   // 项目根下嵌套的 skills 目录，跳过 node_modules、.git 与 .claude/worktrees（design D4）。
