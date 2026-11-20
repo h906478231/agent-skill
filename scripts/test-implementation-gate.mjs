@@ -1,11 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, linkSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { snapshot } from './lib/fs-snapshot.mjs'
+import { GATE_TRACE_SAMPLES, STANDARD_TRACE_REPORT } from './lib/gate-trace-samples.mjs'
+import { STORYBOARD_SIGNATURE_SAMPLES } from './lib/storyboard-signature-samples.mjs'
 import { FULL_WIDTH_LINES, SIGNATURE_LINES, SUMMARY_SAMPLES, UNICODE_SPACE_LINES, VERDICT_LINES } from './lib/review-approval-samples.mjs'
 
 // 通过 /opsx:quality、/opsx:apply、/opsx:verify、/opsx:archive 实际调用的确定性校验入口验证行为；
@@ -99,7 +101,150 @@ function writeReview(f, baseline, { standards = [], spec = [], declared, skip = 
 }
 
 // ---------------------------------------------------------------------------
+test('trace：在 Git 之外读取变更，并保留缺失报告的默认值', t => {
+  const root = mkdtempSync(join(tmpdir(), 'gate-trace-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const result = spawnSync(process.execPath, [gate, 'trace', root], { cwd: root, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout), {
+    command: 'trace', change: root.split('/').at(-1), traceVersion: 1,
+    findings: [], rulesVersion: { 'review/standards.md': null, 'review/spec-fidelity.md': null },
+    sonar: [], slices: [], signOff: { approval: {}, storyboard: {}, changeHead: null, pendingEnvironment: {} },
+  })
+})
+
+test('trace：分镜签署行与视频 CLI 使用同一组围栏样本', async t => {
+  const f = fixture(t)
+  const file = 'video/storyboard.md'
+  for (const sample of STORYBOARD_SIGNATURE_SAMPLES) {
+    await t.test(sample.name, () => {
+      f.write(`openspec/changes/demo/${file}`, sample.lines.join('\n'))
+      const trace = f.run('trace', f.changeRoot).json()
+      assert.equal(trace.signOff.storyboard[file], sample.value)
+    })
+  }
+})
+
+test('trace：取门禁识别的最后一条签字行，忽略正文示例', t => {
+  const f = fixture(t)
+  const file = 'review-summary.md'
+  for (const sample of SUMMARY_SAMPLES) {
+    const expected = sample.lines.filter(line => line.startsWith('Technical Review Approved:')).at(-1)
+    f.write(`openspec/changes/demo/${file}`, sample.lines.join('\n'))
+    assert.equal(f.run('trace', f.changeRoot).json().signOff.approval[file], expected, sample.name)
+  }
+  for (const line of [...SIGNATURE_LINES.signed, ...FULL_WIDTH_LINES.blankSignature, ...UNICODE_SPACE_LINES.signedSignature]) {
+    f.write(`openspec/changes/demo/${file}`, `${line}\n${SIGNATURE_LINES.notKeyLine.join('\n')}\n`)
+    assert.equal(f.run('trace', f.changeRoot).json().signOff.approval[file], line)
+  }
+})
+
+test('trace：读取变更终点原文和两张 Sonar 表，不解析 Git 提交', t => {
+  const f = fixture(t)
+  const head = '##  变更终点\n- 提交：尚未校验\n- 判定人：用户\n'
+  f.write('openspec/changes/demo/tasks.md', `# 任务\n\n${head}\n## 其他\n`)
+  f.write('openspec/changes/demo/review/sonar.md', [
+    '## 本次修改行上的问题', '| 规则 | 位置 | 处理 |', '|---|---|---|', '| `js:S1` | `src/order.js:1` | 接受 |', '',
+    '## 质量门', '| 条件 | 处理 |', '|---|---|', '| 新代码覆盖率 | `误报` |', '',
+  ].join('\n'))
+  const result = f.run('trace', f.changeRoot)
+  assert.equal(result.code, 0, result.err)
+  const trace = result.json()
+  assert.equal(trace.signOff.changeHead, head)
+  assert.deepEqual(trace.sonar, [
+    { table: '本次修改行上的问题', key: 'js:S1', location: 'src/order.js:1', handling: '接受' },
+    { table: '质量门', key: '新代码覆盖率', location: '', handling: '误报' },
+  ])
+})
+
+test('trace：拒绝无法确认归属的资料，不输出快照或外部内容', async t => {
+  const cases = [
+    { file: 'review/standards.md', category: '评审报告', prepare: symlinkSync },
+    { file: 'storyboard.md', category: '签署资料', prepare: linkSync },
+    { file: 'evidence/slice-02.md', category: '切片证据', prepare: symlinkSync },
+    { file: 'review/sonar.md', category: '评审报告', prepare: (_, file) => mkdirSync(file) },
+    { file: 'review', category: '评审报告', prepare: (target, file) => symlinkSync(dirname(target), file) },
+    { file: 'evidence', category: '切片证据', prepare: (target, file) => symlinkSync(dirname(target), file) },
+  ]
+  for (const { file, category, prepare } of cases) {
+    await t.test(file, subtest => {
+      const f = fixture(subtest)
+      const target = join(f.repo, 'external', 'external-marker.md')
+      f.write('external/external-marker.md', 'Technical Review Approved: untrusted-marker\n')
+      const input = join(f.changeRoot, file)
+      mkdirSync(dirname(input), { recursive: true })
+      prepare(target, input)
+      const result = f.run('trace', f.changeRoot)
+      assert.equal(result.code, 2)
+      assert.equal(result.out, '')
+      assert.ok(result.err.includes(category), result.err)
+      assert.doesNotMatch(result.err, /untrusted-marker|external-marker|impl-gate-/)
+    })
+  }
+})
+
+test('trace：拒绝跨切片的证据引用，并允许缺失的可选证据', t => {
+  const f = fixture(t)
+  const tasksFile = 'openspec/changes/demo/tasks.md'
+  const tasks = '## Slice 02: 订单\nEnvironment: MQ\nEvidence: evidence/slice-02.md\n- [ ] 2.1 订单\n'
+  f.write(tasksFile, tasks)
+  assert.deepEqual(f.run('trace', f.changeRoot).json().slices, [{ id: '02', environment: 'MQ', done: 0, total: 1 }])
+  f.write(tasksFile, tasks.replace('slice-02.md', 'slice-01.md'))
+  const result = f.run('trace', f.changeRoot)
+  assert.equal(result.code, 2)
+  assert.equal(result.out, '')
+  assert.match(result.err, /切片证据.*引用无效/)
+})
+
+test('trace：变更目录不存在时退出码为 2', t => {
+  const f = fixture(t)
+  const result = f.run('trace', join(f.repo, 'missing-change'))
+  assert.equal(result.code, 2)
+  assert.equal(result.out, '')
+  assert.match(result.err, /变更目录不存在.*missing-change/)
+})
+
+test('trace：不区分大小写的检出与 review 读取同一报告', t => {
+  const f = fixture(t)
+  f.write('openspec/changes/demo/Review/STANDARDS.MD', STANDARD_TRACE_REPORT)
+  const file = 'review/standards.md'
+  if (!existsSync(join(f.changeRoot, file))) return t.skip('文件系统区分大小写')
+  const review = f.run('review', f.changeRoot).json()
+  const result = f.run('trace', f.changeRoot)
+  assert.equal(result.code, 0, result.err)
+  assert.deepEqual(result.json().findings.filter(row => row.file === file && row.openBlocker).map(row => row.id),
+    review.axes.find(axis => axis.file === file).openBlockers)
+})
+
 // Slice 01：双轴独立 Review 报告（Seam：/opsx:quality → baseline / review 校验）
+
+test('trace：报告行和每行的 Blocker 判定与 review 一致', async t => {
+  const f = fixture(t)
+  const file = 'review/standards.md'
+  for (const sample of [
+    { name: '未关闭 Blocker', file, text: STANDARD_TRACE_REPORT, status: 'open', severity: 'Blocker', openBlocker: true },
+    ...GATE_TRACE_SAMPLES.filter(item => item.file === file),
+  ]) {
+    await t.test(sample.name, () => {
+      f.write(`openspec/changes/demo/${file}`, sample.text)
+      const review = f.run('review', f.changeRoot).json()
+      const result = f.run('trace', f.changeRoot)
+      assert.equal(result.code, 0, result.err)
+      const trace = result.json()
+      const findings = trace.findings.filter(row => row.file === file && row.source === 'findings')
+      assert.deepEqual(findings.filter(row => row.openBlocker).map(row => row.id),
+        review.axes.find(axis => axis.file === file).openBlockers)
+      if (sample.status === undefined) assert.deepEqual(findings, [])
+      else {
+        assert.equal(findings[0]?.status, sample.status)
+        assert.equal(findings[0]?.severity, sample.severity ?? 'Blocker')
+        if (sample.openBlocker !== undefined) assert.equal(findings[0]?.openBlocker, sample.openBlocker)
+      }
+      assert.equal(trace.rulesVersion[file], '2')
+      assert.ok(trace.findings.some(row => row.file === file && row.source === 'ledger' && row.status === 'open'))
+    })
+  }
+})
 // ---------------------------------------------------------------------------
 
 test('baseline 为两轴生成同一基线身份，并包含 git-tree 指纹', t => {
@@ -1411,6 +1556,45 @@ function deferredAtRecording(f, { environment = '测试环境', confirmer = '用
   f.write('openspec/changes/demo/evidence/slice-07.md', evidence('07', recorded, { pending: [pendingRow(recorded, confirmer)] }))
   return f.run('evidence', f.changeRoot)
 }
+
+test('trace：切片计数和登记确认人与 evidence 一致', async t => {
+  const file = 'evidence/slice-02.md'
+  for (const sample of GATE_TRACE_SAMPLES.filter(item => item.file === file)) {
+    await t.test(sample.name, subtest => {
+      const f = fixture(subtest)
+      writeTasks(f, [{ id: '02', done: [true, false, true], environment: 'MQ' }])
+      const fingerprint = fingerprintOf(f)
+      const text = evidence('02', fingerprint).replace(/^## 待环境补测[\s\S]*$/m, '')
+      f.write(`openspec/changes/demo/${file}`, `${text}\n${sample.text.replaceAll('@FINGERPRINT@', fingerprint)}`)
+      f.write('openspec/changes/demo/review/standards.md', STANDARD_TRACE_REPORT)
+      const checked = f.run('evidence', f.changeRoot).json().slices[0]
+      const review = f.run('review', f.changeRoot).json()
+      const trace = f.run('trace', f.changeRoot).json()
+      assert.deepEqual(trace.findings.filter(row => row.openBlocker).map(row => row.id),
+        review.axes.flatMap(axis => axis.openBlockers))
+      assert.deepEqual(trace.slices, [{ id: '02', environment: 'MQ', done: 2, total: 3,
+        evidence: file, fingerprint, deferred: { confirmed: true, unconfirmed: Boolean(sample.twoRows) } }])
+      assert.equal(checked.status, 'pending-environment')
+      assert.deepEqual(trace.signOff.pendingEnvironment[file][fingerprint], sample.twoRows ? ['测试用户', ''] : ['测试用户'])
+      assert.ok(trace.signOff.pendingEnvironment[file][fingerprint].includes(checked.pendingEnvironment.confirmer))
+    })
+  }
+})
+
+test('trace：只读取证据头部的指纹，也保留仅有空确认人的登记', t => {
+  const f = fixture(t)
+  writeTasks(f, [{ id: '02', done: [true], environment: 'MQ' }])
+  const file = 'evidence/slice-02.md'
+  const fingerprint = 'git-tree:abc'
+  f.write(`openspec/changes/demo/${file}`, [
+    '- Fingerprint: git-tree:abc', '## 验证命令', '- Fingerprint: git-tree:other',
+    '## 待环境补测', '| 登记指纹 | 确认人 |', '|---|---|', '| git-tree:abc | |', '',
+  ].join('\n'))
+  const trace = f.run('trace', f.changeRoot).json()
+  assert.equal(trace.slices[0].fingerprint, fingerprint)
+  assert.deepEqual(trace.slices[0].deferred, { confirmed: false, unconfirmed: true })
+  assert.deepEqual(trace.signOff.pendingEnvironment[file], { [fingerprint]: [''] })
+})
 
 test('evidence：Environment 切片证据新鲜，记录证据时的登记已确认时为 pending-environment，问题写入 warnings', t => {
   const result = deferredAtRecording(fixture(t))

@@ -13,8 +13,10 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, write
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FORM_FIELDS, expiredCard, recordedCard } from './lib/card.mjs'
-import { decisionsDir, listDecisionsIn, readRecord, recordFile, transition } from './lib/decisions.mjs'
-import { appendLog, homeDir, readConfig } from './lib/home.mjs'
+import { decisionFile, decisionsDir, readDecision, scanDecisions, transition } from './lib/decisions.mjs'
+import { batchOf, enumerateBatches, withVerifiedBatch } from './lib/batch.mjs'
+import { canonicalJson } from './lib/pending-trace.mjs'
+import { appendLog, ensureHomeDir, homeDir, readConfig } from './lib/home.mjs'
 import { acquireLock, currentBootTime, releaseLock } from './lib/lock.mjs'
 
 /** 退出码：正常结束 / 事件流停止或锁被占用 / 命令不能运行。 */
@@ -44,9 +46,7 @@ function processedEvents() {
  * @param {string} eventId 事件编号。
  */
 function markEvent(eventId) {
-  const dir = path.join(homeDir(), 'logs')
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
-  appendFileSync(path.join(homeDir(), 'events.jsonl'), `${eventId}\n`, { mode: 0o600 })
+  appendFileSync(path.join(ensureHomeDir(), 'events.jsonl'), `${eventId}\n`, { mode: 0o600 })
 }
 
 /**
@@ -56,29 +56,34 @@ function markEvent(eventId) {
  * @returns {{ decision: object, changeDir: string }|null} 决策与变更目录。
  */
 function findDecision(config, messageId) {
+  if (typeof messageId !== 'string' || !messageId) return null
+  let found = null
   for (const project of config.projects) {
     const changesDir = path.join(project.root, 'openspec', 'changes')
-    const dirs = []
-    // 归档目录也在范围内：出口阶段的决策写在归档目录中。
+    const names = new Set(readdirSync(changesDir, { withFileTypes: true })
+      .filter(item => item.name !== 'archive' && (item.isDirectory() || item.isSymbolicLink())).map(item => item.name))
     const archive = path.join(changesDir, 'archive')
     if (existsSync(archive)) {
-      for (const item of readdirSync(archive)) dirs.push(path.join(archive, item))
-    }
-    if (existsSync(changesDir)) {
-      for (const item of readdirSync(changesDir)) {
-        if (item === 'archive') continue
-        dirs.push(path.join(changesDir, item))
+      for (const item of readdirSync(archive)) {
+        if (/^\d{4}-\d{2}-\d{2}-.+/.test(item)) names.add(item.slice(11))
       }
     }
-    for (const dir of dirs) {
-      const decisionDir = decisionsDir(dir)
-      if (!existsSync(decisionDir)) continue
-      const { decisions } = listDecisionsIn(decisionDir)
-      const hit = decisions.find(item => item.card && item.card.messageId === messageId)
-      if (hit) return { decision: hit, changeDir: dir }
+    for (const name of names) {
+      const { candidates } = enumerateBatches(project.root, name)
+      for (const { directory, record, location } of candidates) {
+        if (!record) continue
+        const error = scanDecisions(decisionsDir(directory), decision => {
+          if (decision.card?.messageId !== messageId) return
+          if (found || (decision.batchStartedAt && decision.batchStartedAt !== record.startedAt)) {
+            throw new Error('卡片决策归属不唯一或无法核验')
+          }
+          found = { decision, batch: batchOf(project, { change: name }, directory, record, location) }
+        })
+        if (error) throw new Error('无法完成卡片决策归属扫描')
+      }
     }
   }
-  return null
+  return found
 }
 
 /**
@@ -113,10 +118,9 @@ function formValue(event, name) {
  * 写决策的回复：按问题保存选中选项与自填文本（design D9、D10，评审 SEC-18）。
  * @param {object} decision 决策。
  * @param {object} event 事件。
- * @param {string} ownerOpenId 本人标识。
  * @returns {{ ok: boolean, reason: string|null, answer: object|null }} 核对结果。
  */
-function buildAnswer(decision, event, ownerOpenId) {
+function buildAnswer(decision, event) {
   const request = decision.request || {}
   const selection = selectionOf(event)
   if (decision.kind === 'alert') {
@@ -213,92 +217,67 @@ function updateCard(config, token, card) {
  * @param {object} event 事件。
  * @param {Set<string>} processed 已处理的事件编号。
  */
-function handleEvent(config, event, processed) {
+function processEvent(config, event, processed) {
   const eventId = event.event_id
-  // 第 2 项：事件编号没有处理过。
+  if (typeof eventId !== 'string' || !eventId || /[\r\n]/.test(eventId)) throw new Error('事件编号无效')
   if (processed.has(eventId)) {
     log('event-repeated', { eventId })
-    return
+    return false
   }
-  // 第 1 项：操作人是本人。
   if (event.operator_id !== config.ownerOpenId) {
-    log('event-other-operator', { eventId, operator: String(event.operator_id || '').slice(0, 8) })
-    processed.add(eventId)
-    markEvent(eventId)
-    return
+    log('event-other-operator', { eventId })
+    return true
   }
   const found = findDecision(config, event.message_id)
   if (!found) {
     log('event-unknown-decision', { eventId })
-    processed.add(eventId)
-    markEvent(eventId)
-    return
+    return true
   }
-  const { decision, changeDir } = found
-  // 决策已作废时卡片变为已失效（design D10）。
-  if (decision.status === 'void') {
-    updateCard(config, event.token, expiredCard({ title: '已失效', text: '这条决策已失效。' }))
-    log('event-void-decision', { eventId, decision: decision.id })
-    processed.add(eventId)
-    markEvent(eventId)
-    return
-  }
-  // 已回复或已使用时卡片保持已记录，不改决策文件（design D10，评审 CONC-05）。
-  if (decision.status === 'answered' || decision.status === 'used') {
-    updateCard(config, event.token, recordedCard({ title: '已记录', lines: ['这条决策已经记录。'] }))
-    log('event-already-answered', { eventId, decision: decision.id })
-    processed.add(eventId)
-    markEvent(eventId)
-    return
-  }
-  // 第 3 项：决策所属变更的托管记录为 active 或 exiting。
-  const record = readRecord(changeDir)
-  if (record.error || !record.value || !['active', 'exiting'].includes(record.value.status)) {
-    log('event-inactive-change', { eventId, decision: decision.id })
-    processed.add(eventId)
-    markEvent(eventId)
-    return
-  }
-  // 第 4 项：回调值中的决策号与决策一致。
+  const { decision, batch } = found
   let callback = {}
-  try {
-    callback = JSON.parse(event.action_value || '{}')
-  } catch {
-    callback = {}
-  }
-  if (callback.d && callback.d !== decision.id) {
+  try { callback = JSON.parse(event.action_value || '{}') } catch { /* 继续按表单字段核对。 */ }
+  if ((callback?.d && callback.d !== decision.id) || (callback?.change && callback.change !== batch.name)) {
     log('event-decision-mismatch', { eventId, decision: decision.id })
-    processed.add(eventId)
-    markEvent(eventId)
-    return
+    return true
   }
-  // 第 5 项：选择在选项中，或自填文本不为空。
-  const answer = buildAnswer(decision, event, config.ownerOpenId)
-  if (!answer.ok) {
-    log('event-invalid-selection', { eventId, decision: decision.id, reason: answer.reason })
-    processed.add(eventId)
-    markEvent(eventId)
-    return
+  const disposition = withVerifiedBatch(batch, target => {
+    const read = readDecision(target.directory, decision.id)
+    if (!read.value || canonicalJson(decision) !== canonicalJson(read.value)) throw new Error('卡片决策已变化')
+    if (decision.status === 'void') return { card: expiredCard({ title: '已失效' }) }
+    if (['answered', 'used'].includes(decision.status)) {
+      return { card: recordedCard({ title: '已记录', lines: ['这条决策已经记录。'] }) }
+    }
+    if (!['active', 'exiting'].includes(target.record.status)) {
+      log('event-inactive-change', { eventId, decision: decision.id })
+      return {}
+    }
+    const answer = buildAnswer(decision, event)
+    if (!answer.ok) {
+      log('event-invalid-selection', { eventId, decision: decision.id, reason: answer.reason })
+      return {}
+    }
+    const written = transition(decisionFile(target.directory, decision.id), ['pending'], {
+      status: 'answered', answer: answer.answer, batchStartedAt: batch.startedAt,
+    })
+    if (!written.ok) throw new Error('卡片回复写入失败')
+    return { directory: target.directory, card: recordedCard({ title: '已记录',
+      lines: [`选择：${answer.answer.choice || Object.values(answer.answer.answers || {}).join('、')}`] }) }
+  })
+  if (disposition.card) updateCard(config, event.token, disposition.card)
+  if (disposition.directory) {
+    log('event-recorded', { eventId, decision: decision.id })
+    spawn(process.execPath, [path.join(SKILL_DIR, 'scripts', 'scheduler.mjs'), '--once'], {
+      cwd: disposition.directory, detached: true, stdio: 'ignore',
+    }).unref()
   }
-  const file = path.join(decisionsDir(changeDir), `${decision.id}.json`)
-  const written = transition(file, ['pending'], { status: 'answered', answer: answer.answer })
-  if (!written.ok) {
-    log('event-write-failed', { eventId, decision: decision.id, reason: written.reason })
-    processed.add(eventId)
-    markEvent(eventId)
-    return
+  return true
+}
+
+function handleEvent(config, event, processed) {
+  if (processEvent(config, event, processed)) {
+    markEvent(event.event_id)
+    processed.add(event.event_id)
   }
-  updateCard(config, event.token, recordedCard({
-    title: '已记录',
-    lines: [`选择：${answer.answer.choice || Object.values(answer.answer.answers || {}).join('、')}`],
-  }))
-  log('event-recorded', { eventId, decision: decision.id })
-  processed.add(eventId)
-  markEvent(eventId)
-  // 用分离进程启动调度一轮（design D10）。
-  spawn(process.execPath, [path.join(SKILL_DIR, 'scripts', 'scheduler.mjs'), '--once'], {
-    cwd: changeDir, detached: true, stdio: 'ignore',
-  }).unref()
 }
 
 /** 主流程：取锁、启动事件消费、逐条处理事件。 */
@@ -325,44 +304,41 @@ function main() {
     return EXIT.STOPPED
   }
   const processed = processedEvents()
-  try {
-    const child = spawn(config.larkBin, ['event', 'consume', 'card.action.trigger', '--as', 'bot'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    // 保持标准输入打开：lark-cli 在标准输入关闭时退出（design D10）。
-    child.stdin.on('error', () => {})
-    let buffer = ''
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', chunk => {
-      buffer += chunk
-      let index = buffer.indexOf('\n')
-      while (index >= 0) {
-        const line = buffer.slice(0, index).trim()
-        buffer = buffer.slice(index + 1)
-        if (line && line !== READY_MARKER) {
-          try {
-            handleEvent(config, JSON.parse(line), processed)
-          } catch (error) {
-            log('event-error', { error: error.message })
-          }
+  const child = spawn(config.larkBin, ['event', 'consume', 'card.action.trigger', '--as', 'bot'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  // 保持标准输入打开：lark-cli 在标准输入关闭时退出（design D10）。
+  child.stdin.on('error', () => {})
+  let buffer = ''
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', chunk => {
+    buffer += chunk
+    let index = buffer.indexOf('\n')
+    while (index >= 0) {
+      const line = buffer.slice(0, index).trim()
+      buffer = buffer.slice(index + 1)
+      if (line && line !== READY_MARKER) {
+        try {
+          handleEvent(config, JSON.parse(line), processed)
+        } catch (error) {
+          log('event-error', { error: error.message })
         }
-        index = buffer.indexOf('\n')
       }
-    })
-    child.stderr.setEncoding('utf8')
-    child.stderr.on('data', chunk => {
-      for (const line of String(chunk).split('\n').filter(Boolean)) log('lark-stderr', { line: line.slice(0, 200) })
-    })
-    // lark-cli 退出时释放锁并以退出码 1 退出，由 launchd 重新启动（design D10）。
-    child.on('exit', () => {
-      releaseLock(lockFile)
-      log('event-stream-stopped')
-      process.exit(EXIT.STOPPED)
-    })
-    return null
-  } finally {
-    // 锁在子进程退出时释放。
-  }
+      index = buffer.indexOf('\n')
+    }
+  })
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', chunk => {
+    for (const line of String(chunk).split('\n').filter(Boolean)) log('lark-stderr', { line: line.slice(0, 200) })
+  })
+  // lark-cli 退出时释放锁并以退出码 1 退出，由 launchd 重新启动（design D10）。
+  child.on('exit', () => {
+    releaseLock(lockFile)
+    log('event-stream-stopped')
+    process.exit(EXIT.STOPPED)
+  })
+  return null
+
 }
 
 const code = main()

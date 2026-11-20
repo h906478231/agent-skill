@@ -21,6 +21,7 @@
  *   node implementation-gate.mjs archive     <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs facts       <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs hygiene     <changeRoot>
+ *   node implementation-gate.mjs trace       <changeRoot>
  *   node implementation-gate.mjs regress     --baseline <file> --actual <file>
  *
  * 输出：fingerprint 输出一行指纹；baseline 输出 Markdown 基线区块（--since 给出时追加增量范围）；其余输出 JSON。
@@ -40,7 +41,7 @@
  * 提交指纹（fingerprint --rev）：算法相同，种子是该提交的树，不写入工作区的修改。
  */
 
-import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -815,13 +816,10 @@ const lineField = (lines, key) => findLineField(lines, key) ?? ''
  * @throws {GateError} 区块存在但校验不通过时抛出（退出码 2）。用户写了终点却被忽略时，门禁会回到旧口径而用户发现不了。
  */
 function readChangeHead(repo, changeRoot) {
-  const lines = readTasks(changeRoot).split(/\r?\n/)
-  const start = lines.findIndex(line => CHANGE_HEAD_HEADING.test(line))
-  if (start < 0) return null
-  const end = lines.findIndex((line, i) => i > start && /^#{1,2}\s/.test(line))
-  const block = lines.slice(start + 1, end < 0 ? lines.length : end)
-  const value = lineField(block, '提交')
-  const decider = lineField(block, '判定人')
+  const block = changeHeadBlock(readTasks(changeRoot).split(/\r?\n/))
+  if (!block) return null
+  const value = lineField(block.slice(1), '提交')
+  const decider = lineField(block.slice(1), '判定人')
   const problems = []
   let commit = null
   if (!FULL_COMMIT_SHA.test(value)) {
@@ -835,6 +833,14 @@ function readChangeHead(repo, changeRoot) {
   if (!decider) problems.push('判定人为空，只能由用户填写')
   if (problems.length) throw new GateError(`tasks.md 的「## 变更终点」无效：${problems.join('；')}`)
   return { commit, fingerprint: commitFingerprint(repo, changeRoot, commit), decider }
+}
+
+/** 取变更终点区块的原文行。保留标题以便 trace 检测区块的变化。 */
+function changeHeadBlock(lines) {
+  const start = lines.findIndex(line => CHANGE_HEAD_HEADING.test(line))
+  if (start < 0) return null
+  const end = lines.findIndex((line, index) => index > start && /^#{1,2}\s/.test(line))
+  return lines.slice(start, end < 0 ? lines.length : end)
 }
 
 /**
@@ -860,9 +866,9 @@ const clean = value => value.trim().replace(/^[`*]+|[`*]+$/g, '').trim()
 const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /** 读取 `Key: value` 或 `- Key: value` 字段（首个匹配），兼容全角冒号。 */
-function readField(text, key) {
+function readField(text, key, missing = '') {
   const match = text.match(new RegExp(`^\\s*(?:[-*]\\s+)?\\**${escapeRegExp(key)}\\**\\s*[:：]\\s*(.*)$`, 'm'))
-  return match ? clean(match[1]) : ''
+  return match ? clean(match[1]) : missing
 }
 
 /**
@@ -913,9 +919,20 @@ function parseTables(text) {
 }
 
 /** 读取「## 评审基线」区块中的身份字段（含可缺省字段，缺省为空串）。 */
-function readBaseline(text) {
+function readBaseline(text, missing = '') {
   const block = section(text, '评审基线')
-  return Object.fromEntries([...BASELINE_KEYS, ...OPTIONAL_BASELINE_KEYS].map(key => [key, readField(block, key)]))
+  return Object.fromEntries([...BASELINE_KEYS, ...OPTIONAL_BASELINE_KEYS].map(key => [key, readField(block, key, missing)]))
+}
+
+/** 双轴报告的 Findings 行。台账与上轮闭环验证也包含相同的 ID，须先排除。 */
+function readFindingRows(text) {
+  return parseTables(withoutSection(withoutSection(text, LEDGER_TITLE), CLOSURE_TITLE))
+    .filter(row => FINDING_ID.test(row.ID || ''))
+}
+
+/** 双轴报告中有合法 finding ID 的台账行。 */
+function readLedgerRows(text) {
+  return parseTables(section(text, LEDGER_TITLE)).filter(row => FINDING_ID.test(row.ID || ''))
 }
 
 /**
@@ -934,7 +951,7 @@ function checkRulesV2(file, text, findings) {
     issues.push(`${file} 缺少「## ${LEDGER_TITLE}」区块（Rules Version ${RULES_VERSION} 必填）`)
     return issues
   }
-  const ledger = parseTables(section(text, LEDGER_TITLE)).filter(row => FINDING_ID.test(row.ID || ''))
+  const ledger = readLedgerRows(text)
   const findingIds = new Set(findings.map(row => row.ID))
   const ledgerIds = new Set(ledger.map(row => row.ID))
   for (const row of ledger) {
@@ -1095,9 +1112,7 @@ function checkReview(changeRoot, { required = false, currentFingerprint = null, 
     const axisBaseline = readBaseline(text)
     baselines.push([axis.file, axisBaseline])
     const rulesVersion = axisBaseline['Rules Version']
-    // 台账与上轮闭环验证表也用 finding ID 作首列，必须排除，否则已闭环的 ID 会被当作 finding。
-    const findings = parseTables(withoutSection(withoutSection(text, LEDGER_TITLE), CLOSURE_TITLE))
-      .filter(row => FINDING_ID.test(row.ID || ''))
+    const findings = readFindingRows(text)
     for (const row of findings) {
       if (!row.ID.startsWith(`${axis.prefix}-`)) issues.push(`${axis.file} 的 finding ${row.ID} 前缀与评审轴不符，应为 ${axis.prefix}-`)
       if (!LOCATION.test(row['位置'] || '')) issues.push(`${axis.file} 的 finding ${row.ID} 位置无法定位，须写成 文件:行号`)
@@ -1348,7 +1363,7 @@ function describePendingEnvironment({ owner, plan }) {
  * @returns {object|null} 成立的登记行；多行成立时取表中最后一行（最近的登记），没有时为 null。
  */
 function findPendingEnvironment(repo, text, currentFingerprint) {
-  const rows = parseTables(section(text, PENDING_ENVIRONMENT_TITLE)).reverse()
+  const rows = readPendingRows(text).reverse()
   return rows.find(row => {
     if (!clean(row['确认人'] || '')) return false
     const registered = clean(row['登记指纹'] || '')
@@ -1364,10 +1379,16 @@ function findPendingEnvironment(repo, text, currentFingerprint) {
  * @returns {{ confirmed: object|null, unconfirmed: object|null }} 匹配行中最近的已确认行与未确认行，没有时为 null。
  */
 function findDeferredAtRecording(text, evidenceFingerprint) {
-  const rows = parseTables(section(text, PENDING_ENVIRONMENT_TITLE)).reverse()
-    .filter(row => clean(row['登记指纹'] || '') === evidenceFingerprint)
-  const confirmed = rows.find(row => clean(row['确认人'] || '')) || null
-  return { confirmed, unconfirmed: confirmed ? null : rows[0] || null }
+  const rows = readPendingRows(text).reverse().filter(row => clean(row['登记指纹'] || '') === evidenceFingerprint)
+  return {
+    confirmed: rows.find(row => clean(row['确认人'] || '')) || null,
+    unconfirmed: rows.find(row => !clean(row['确认人'] || '')) || null,
+  }
+}
+
+/** 读取待环境补测表，供证据判定与 trace 共用。 */
+function readPendingRows(text) {
+  return parseTables(section(text, PENDING_ENVIRONMENT_TITLE))
 }
 
 /** 待环境补测登记行在 evidence 输出中的视图（pendingEnvironment 字段）。 */
@@ -1782,10 +1803,14 @@ function readTechnicalReview(changeRoot) {
   // 按 \n 分行、保留 CR，与 hook 的 grep 相同；CR 在取裁决值与签字值时删除。
   const lines = summary.split('\n')
   const verdictLine = lines.filter(line => GATE_VERDICT_LINE.test(line)).pop()
-  // 人工确认区位于正文之后，末尾用户签字也可覆盖前面的空白占位；Node 16 不支持 findLast。
-  const signLine = lines.filter(line => APPROVAL_LINE.test(line)).pop()
+  const signLine = lastApprovalLine(lines)
   return { exists: true, gateVerdict: verdictLine === undefined ? null : verdictOf(verdictLine),
     approval: signLine === undefined ? 'missing' : approvalOf(signLine) }
+}
+
+/** 人工确认区位于正文之后。末尾的签字行可覆盖前面的空白占位。 */
+function lastApprovalLine(lines) {
+  return lines.filter(line => APPROVAL_LINE.test(line)).pop()
 }
 
 /** verify 报告头部的结论字段名（add-verify-verdict design D1）：写在 Fingerprint 行之后，读取规则与 Fingerprint 相同。 */
@@ -1933,7 +1958,229 @@ function collectFacts(repo, changeRoot, head) {
 // 命令入口
 // ============================================================================
 
-/** 各子命令接受的 `--key value` 参数；其他参数一律按参数错误处理，不静默忽略。 */
+/** `trace` 的字段或语义发生不兼容变更时递增。 */
+const TRACE_VERSION = 1
+
+/** 诊断只包含资料类别与失败类别，避免把不可信路径或系统错误带入托管告警。 */
+function traceInputCategory(relative) {
+  const [root] = relative.toLowerCase().split('/')
+  if (root === 'tasks.md') return '任务'
+  if (root === 'review') return '评审报告'
+  if (root === 'evidence') return '切片证据'
+  return relative ? '签署资料' : '变更目录'
+}
+
+function traceInputError(relative, reason) {
+  return new GateError(`trace：${traceInputCategory(relative)}：${reason}`)
+}
+
+function sameTraceObject(before, after) {
+  return before.dev === after.dev && before.ino === after.ino && before.mode === after.mode
+    && before.nlink === after.nlink && before.mtimeNs === after.mtimeNs && before.ctimeNs === after.ctimeNs
+}
+
+/** 只为 trace 验证 Markdown 所在的目录链。读取钉在一个文件描述符上，前后都复核路径身份。 */
+function readTraceDocuments(target) {
+  const documents = new Map()
+  const identities = new Map()
+  const inspect = file => lstatSync(file, { bigint: true })
+  let rootStat
+  try {
+    rootStat = inspect(target)
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new GateError(`变更目录不存在：${target}`)
+    throw traceInputError('', '读取失败')
+  }
+  if (!rootStat.isDirectory()) throw traceInputError('', '类型无效')
+
+  function assertIdentity(file, expected, relative) {
+    if (!sameTraceObject(expected, inspect(file))) throw traceInputError(relative, '对象已改变')
+  }
+
+  function readDocument(file, relative, verifyParents) {
+    const before = inspect(file)
+    if (!before.isFile() || before.nlink !== 1n) throw traceInputError(relative, '类型或链接无效')
+    const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    try {
+      const stat = () => fstatSync(fd, { bigint: true })
+      const verify = () => {
+        verifyParents(relative)
+        assertIdentity(file, before, relative)
+        if (!sameTraceObject(before, stat())) throw traceInputError(relative, '对象已改变')
+      }
+      verify()
+      const text = readFileSync(fd, 'utf8')
+      verify()
+      identities.set(file, before)
+      documents.set(relative, text)
+    } finally {
+      closeSync(fd)
+    }
+  }
+
+  function scan(directory, relative, before, verifyParents) {
+    const verify = category => {
+      verifyParents(category)
+      assertIdentity(directory, before, category)
+    }
+    verify(relative)
+    const entries = readdirSync(directory, { withFileTypes: true })
+    verify(relative)
+    for (const entry of entries) {
+      const child = path.join(directory, entry.name)
+      const rel = relative ? `${relative}/${entry.name}` : entry.name
+      try {
+        verify(rel)
+        if (/\.md$/i.test(rel)) readDocument(child, rel, verify)
+        else if (entry.isDirectory()) {
+          const stat = inspect(child)
+          if (!stat.isDirectory()) throw traceInputError(rel, '目录类型无效')
+          scan(child, rel, stat, verify)
+        } else if (rel === 'review' || rel === 'evidence') {
+          throw traceInputError(rel, '目录类型无效')
+        }
+      } catch (error) {
+        if (error instanceof GateError) throw error
+        throw traceInputError(rel, '读取失败或对象已改变')
+      }
+    }
+    verify(relative)
+    identities.set(directory, before)
+  }
+
+  let root
+  try {
+    root = realpathSync.native(target)
+    scan(root, '', rootStat, () => assertIdentity(target, rootStat, ''))
+  } catch (error) {
+    if (error instanceof GateError) throw error
+    throw traceInputError('', '读取失败或对象已改变')
+  }
+
+  /** 固定输入路径按文件系统的大小写规则查找。每一级都应对应扫描时已核验的对象。 */
+  function resolveInput(relative) {
+    let parent = root
+    try {
+      assertIdentity(target, rootStat, relative)
+      for (const part of relative.split('/')) {
+        assertIdentity(parent, identities.get(parent), relative)
+        const input = path.join(parent, part)
+        let before
+        try {
+          before = inspect(input)
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error
+          assertIdentity(parent, identities.get(parent), relative)
+          return undefined
+        }
+        if (before.isSymbolicLink()) throw traceInputError(relative, '链接无效')
+        const actual = realpathSync.native(input)
+        const verified = identities.get(actual)
+        if (path.dirname(actual) !== parent || !verified || !sameTraceObject(verified, before)) {
+          throw traceInputError(relative, '类型或归属无效')
+        }
+        assertIdentity(parent, identities.get(parent), relative)
+        assertIdentity(actual, verified, relative)
+        parent = actual
+      }
+      return path.relative(root, parent).split(path.sep).join('/')
+    } catch (error) {
+      if (error instanceof GateError) throw error
+      throw traceInputError(relative, '读取失败或对象已改变')
+    }
+  }
+
+  return { documents, resolveInput, readExpected: relative => documents.get(resolveInput(relative)) }
+}
+
+/** Sonar 问题表与质量门使用不同的索引列，位置只在问题表中填写。 */
+function readSonarRows(text) {
+  return ['本次修改行上的问题', '质量门'].flatMap(table => parseTables(section(text, table)).map(row => ({
+    table, key: clean(row['规则'] || row['条件'] || ''), location: clean(row['位置'] || ''),
+    handling: clean(row['处理'] || ''),
+  })))
+}
+
+/** 围栏表达式与关闭条件同 video.mjs 的 splitStoryboard，由两边共用的样本核对。 */
+const STORYBOARD_FENCE = /^\s*(`{3,}|~{3,})\s*([^\s`]*)/
+const STORYBOARD_APPROVAL = /^\s*Storyboard Approved:\s*(.*?)\s*$/
+
+/** 取代码块外第一条分镜签署行的值。 */
+function firstStoryboardApproval(text) {
+  let marker = null
+  for (const raw of text.split(/\r?\n/)) {
+    const fence = STORYBOARD_FENCE.exec(raw)
+    if (marker) {
+      if (fence && fence[1][0] === marker[0] && fence[1].length >= marker.length && !fence[2]) marker = null
+    } else if (fence) {
+      marker = fence[1]
+    } else {
+      const signature = STORYBOARD_APPROVAL.exec(raw)
+      if (signature) return signature[1]
+    }
+  }
+  return undefined
+}
+
+/** 读取门禁当前看到的处理记录。不计算实现指纹，也不判断两次运行之间的变化。 */
+function collectTrace(changeRoot) {
+  const { documents, resolveInput, readExpected } = readTraceDocuments(changeRoot)
+  const evidenceDir = resolveInput('evidence')
+  const approval = {}
+  const storyboard = {}
+  const pendingEnvironment = {}
+  for (const [file, text] of documents) {
+    const signLine = lastApprovalLine(text.split('\n'))
+    if (signLine !== undefined) approval[file] = signLine
+    const storyboardLine = firstStoryboardApproval(text)
+    if (storyboardLine !== undefined) storyboard[file] = storyboardLine
+    if (path.posix.dirname(file) !== evidenceDir) continue
+    const rows = new Map()
+    for (const row of readPendingRows(text)) {
+      const { fingerprint, confirmer } = pendingView(row)
+      if (!fingerprint) continue
+      if (!rows.has(fingerprint)) rows.set(fingerprint, [])
+      rows.get(fingerprint).push(confirmer)
+    }
+    if (rows.size) pendingEnvironment[file] = Object.fromEntries(rows)
+  }
+  const tasks = readExpected('tasks.md') ?? ''
+  const slices = readSlices(tasks).map(slice => {
+    const { id, environment, done, total } = slice
+    const view = { id, environment, done, total }
+    const expected = `evidence/slice-${id}.md`
+    const ref = evidencePath(slice.evidenceRef)
+    // 有声明就校验归属，缺少可选证据时仍输出切片计数，让调用方识别声明变化。
+    if (slice.evidenceRef && ref !== expected) throw traceInputError(expected, '切片引用无效')
+    if (!environment) return view
+    const text = readExpected(expected)
+    if (text === undefined) return view
+    const fingerprint = readField(text.split(/^##\s/m)[0], 'Fingerprint')
+    const { confirmed, unconfirmed } = findDeferredAtRecording(text, fingerprint)
+    return { ...view, evidence: expected, fingerprint, deferred: {
+      confirmed: Boolean(confirmed), unconfirmed: Boolean(unconfirmed),
+    } }
+  })
+  const findings = []
+  const rulesVersion = {}
+  for (const { file } of AXES) {
+    const report = readExpected(file) ?? ''
+    rulesVersion[file] = readBaseline(report, null)['Rules Version']
+    for (const row of readFindingRows(report)) {
+      findings.push({ file, id: row.ID, source: 'findings', status: clean(row['闭环状态'] || '').toLowerCase(),
+        severity: clean(row['严重级别'] || ''), openBlocker: isOpenBlocker(row) })
+    }
+    for (const row of readLedgerRows(report)) {
+      findings.push({ file, id: row.ID, source: 'ledger', status: clean(row['状态'] || '').toLowerCase() })
+    }
+  }
+  const sonar = readSonarRows(readExpected('review/sonar.md') ?? '')
+  const changeHead = changeHeadBlock(tasks.split(/\r?\n/))?.join('\n') ?? null
+  return { traceVersion: TRACE_VERSION, findings, rulesVersion, sonar, slices,
+    signOff: { approval, storyboard, changeHead, pendingEnvironment } }
+}
+
+/** 各子命令接受的 `--key value` 参数；其他参数一律按参数错误处理。 */
 const COMMAND_OPTIONS = {
   fingerprint: ['rev', 'repo'],
   baseline: ['base', 'since', 'repo'],
@@ -1943,6 +2190,7 @@ const COMMAND_OPTIONS = {
   archive: ['repo'],
   facts: ['repo'],
   hygiene: [],
+  trace: [],
   regress: ['baseline', 'actual'],
 }
 
@@ -1963,6 +2211,7 @@ function parseOptions(command, args) {
 const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive|facts|hygiene> <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]'
   + '\n      node implementation-gate.mjs fingerprint <changeRoot> --rev <commit> [--repo <dir>]'
   + '\n      node implementation-gate.mjs classify <changeRoot> --from <fingerprint> [--to <fingerprint>] [--repo <dir>]'
+  + '\n      node implementation-gate.mjs trace <changeRoot>'
   + '\n      node implementation-gate.mjs regress --baseline <file> --actual <file>'
 
 /**
@@ -1982,6 +2231,10 @@ function run(argv) {
   if (!Object.prototype.hasOwnProperty.call(COMMAND_OPTIONS, command) || !changeRootArg) throw new GateError(USAGE)
   const options = parseOptions(command, rest)
   const target = path.resolve(changeRootArg)
+  if (command === 'trace') {
+    const trace = collectTrace(target)
+    return { code: EXIT.PASS, output: `${JSON.stringify({ command, change: path.basename(target), ...trace })}\n` }
+  }
   if (!existsSync(target) || !statSync(target).isDirectory()) throw new GateError(`变更目录不存在：${target}`)
   const changeRoot = realpathSync(target)
   // 产物检查只读变更目录，不依赖 git。

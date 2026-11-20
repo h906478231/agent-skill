@@ -9,18 +9,26 @@
  * 边界：只运行一个 claude 进程；对外写入只由出口动作执行（design D3、D11）。
  */
 
-import { createHash } from 'node:crypto'
-import { accessSync, constants, existsSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { performance } from 'node:perf_hooks'
+import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { alertCard, checkFailureLines, exitCard, noticeCard, questionCard, sendCard } from './lib/card.mjs'
-import { createDecision, decisionsDir, fingerprintOf, listDecisions, readRecord, recordFile, transition } from './lib/decisions.mjs'
+import { alertCard, checkFailureLines, exitCard, noticeCard, questionCard, sendCard, sendRecoveryCard } from './lib/card.mjs'
+import { createDecision, decisionFile, decisionsDir, fingerprintOf, listDecisions, nextDecisionId,
+  OPEN_STATUSES, readDecision, recordFile, scanDecisions, transition } from './lib/decisions.mjs'
+import { writeJsonAtomic } from './lib/atomic-write.mjs'
+import { sameObject } from './lib/bounded-json.mjs'
+import { batchOf, enumerateBatches, locateBatch, readReturnHandoff, withVerifiedBatch } from './lib/batch.mjs'
+import { batchKey, canonicalJson, pendingForName, readPendingTrace, replacePendingTrace,
+  traceDigest, traceFits, writeRecoveryCursor } from './lib/pending-trace.mjs'
+import { captureWriter, writerStatus } from './lib/writer-instance.mjs'
 import { appendLog, homeDir, readConfig, writeHomeJson } from './lib/home.mjs'
 import { acquireLock, currentBootTime, readLockFile, releaseLock, writeLockFile } from './lib/lock.mjs'
-import { gitUserName, inside, locateChangeDir, readProgressView } from './lib/project.mjs'
+import { gitUserName, inside, readProgressView, realPath } from './lib/project.mjs'
 import { checkProject } from './lib/rule-check.mjs'
-import { compareSignOff, compareTrace, signOffSnapshot, traceSnapshot } from './lib/trace-check.mjs'
+import { compareSignOff, compareTrace, recoveryTraceSnapshot, traceSnapshot, validTrace } from './lib/trace-check.mjs'
 import {
   COMMIT_OPTIONS, EXIT_ACTIONS, PUSH_OPTIONS, checkPlan, contentHash, currentExit, executeCommitMerge, executePush,
   git, gitLine, mainSpecList, otherMainSpecs, pushList, writeExitState,
@@ -61,6 +69,24 @@ const SESSION_NOT_FOUND = /no conversation found|session[^\n]{0,40}not found/i
 
 /** 核对结果文件：已通知过的启动前核对条目（按项目根）与运行环境原因，结果不变时不再发卡片（design D4）。 */
 const CHECK_FILE = 'rule-check.json'
+const RECOVERY_MS = 120_000
+const CURSOR_RESERVE_MS = 1_000
+const recoveredThisRound = new Set()
+const CARD_LIMIT = 24 * 1024
+const HANDOFF_SCAN_MS = 2_000
+const VERSION_REASON = '比较起点的版本与当前不同'
+const RECHECK_VOID = '提问因本次重新核对作废'
+const EARLY_ARCHIVE_VOID = '提前归档后续查选项失效'
+const READ_FAILURE_TEXT = '无法读取处理记录，无法列出修改。请先修复读取原因，再选「补充说明后继续」，托管以比较起点列出修改。选「回会话处理」后，托管不再列出这次运行的修改，请在会话中查看 agent 对 review/、evidence/、tasks.md 的修改。'
+let pendingStore
+let runToken
+let recoveryDeadline = Infinity
+
+function checkRecoveryTime() {
+  const remaining = Math.floor(recoveryDeadline - performance.now())
+  if (remaining <= 0) throw new Error('本轮恢复时间已用完')
+  return remaining
+}
 
 /** 写一条调度日志（design D2）。 */
 const log = (event, fields) => appendLog('scheduler', event, fields)
@@ -93,7 +119,7 @@ function canRun(command) {
  */
 function realOf(target) {
   try {
-    return realpathSync(target)
+    return realPath(target)
   } catch {
     return path.resolve(target)
   }
@@ -117,10 +143,35 @@ function checkEnvironment(config) {
   // 守卫脚本不能装在被托管的仓库中：agent 改代码就能改掉守卫（design D4，评审 SEC-02）。
   const skillReal = realOf(SKILL_DIR)
   const progressReal = realOf(config.progressBin)
+  const gate = config.gateBin === undefined
+    ? path.resolve(path.dirname(progressReal), '../../openspec-technical-review/scripts/implementation-gate.mjs')
+    : config.gateBin
+  let gateReal = null
+  if (typeof gate !== 'string' || !path.isAbsolute(gate)) {
+    problems.push('gateBin 必须是绝对路径')
+  } else {
+    try {
+      gateReal = realPath(gate)
+      if (!statSync(gateReal).isFile()) gateReal = null
+    } catch {
+      gateReal = null
+    }
+    if (!gateReal) problems.push('gateBin 不可读，请同步 openspec-technical-review')
+  }
   for (const project of config.projects) {
     const rootReal = realOf(project.root)
     if (inside(skillReal, rootReal)) problems.push(`skill 目录在项目内：${skillReal}`)
     if (inside(progressReal, rootReal)) problems.push(`progressBin 在项目内：${progressReal}`)
+    if (inside(gateReal, rootReal)) problems.push(`gateBin 在项目内：${gateReal}`)
+  }
+  // 先验证来源，再运行脚本探测用法，进度视图与核对复用验证过的路径。
+  if (!problems.length) {
+    const usage = spawnSync(process.execPath, [gateReal], { encoding: 'utf8', timeout: 60_000 })
+    if (usage.error || !/\btrace\b/.test(`${usage.stdout || ''}\n${usage.stderr || ''}`)) {
+      problems.push('gateBin 不支持 trace，请同步 openspec-technical-review')
+    } else {
+      config.gateBin = gateReal
+    }
   }
 
   // allowedCommands 只接受 Bash(<命令前缀>...) 形式（design D4，评审 SEC-12）。
@@ -210,16 +261,12 @@ function writeSettings(config, project, readRules) {
   const settingsFile = path.join(home, 'settings.json')
   const template = readFileSync(path.join(SKILL_DIR, 'templates', 'autopilot-settings.json'), 'utf8')
   const written = JSON.parse(template.replace(/<SKILL_DIR>/g, SKILL_DIR).replace(/<AUTOPILOT_HOME>/g, home))
-  const tmp = `${settingsFile}.tmp.${process.pid}`
-  writeFileSync(tmp, `${JSON.stringify(written, null, 2)}\n`, { mode: 0o600 })
-  renameSync(tmp, settingsFile)
+  writeJsonAtomic(settingsFile, written)
 
   const mcpFile = path.join(home, 'mcp.json')
   const mcp = JSON.parse(readFileSync(path.join(SKILL_DIR, 'templates', 'autopilot-mcp.json'), 'utf8'))
   mcp.mcpServers.autopilot.env.AUTOPILOT_ALLOWED_COMMANDS = prefixes
-  const mcpTmp = `${mcpFile}.tmp.${process.pid}`
-  writeFileSync(mcpTmp, `${JSON.stringify(mcp, null, 2)}\n`, { mode: 0o600 })
-  renameSync(mcpTmp, mcpFile)
+  writeJsonAtomic(mcpFile, mcp)
 
   return { settingsFile, mcpFile, allowedTools }
 }
@@ -230,8 +277,12 @@ function writeSettings(config, project, readRules) {
  * @returns {object[]} 决策列表。
  */
 function openDecisions(changeDir) {
-  return listDecisions(changeDir).decisions
-    .filter(item => item.status === 'pending' || item.status === 'answered')
+  const open = []
+  const error = scanDecisions(decisionsDir(changeDir), decision => {
+    if (OPEN_STATUSES.includes(decision.status)) open.push(decision)
+  }, checkRecoveryTime)
+  if (error) throw new Error(`未能完整读取决策：${error}`)
+  return open.sort((a, b) => a.id.localeCompare(b.id))
 }
 
 /**
@@ -256,10 +307,12 @@ function stagePrompt({ skill, change, skillDir, userName, note }) {
  * 把 claude 进程号写回运行锁。只写本进程持有的锁：撤回读锁中的 claudePid 向进程组发 SIGTERM（design D12）。
  * @param {number|null} pid claude 进程号；claude 结束后写 null。
  */
-function writeLockClaudePid(pid) {
+function writeLockClaudePid(pid, writer = null) {
   const lockFile = path.join(homeDir(), 'run.lock')
   const lock = readLockFile(lockFile)
-  if (lock.value && lock.value.pid === process.pid) writeLockFile(lockFile, { ...lock.value, claudePid: pid })
+  if (lock.value?.pid !== process.pid || lock.value?.token !== runToken) return false
+  writeLockFile(lockFile, { ...lock.value, claudePid: pid, writer })
+  return true
 }
 
 /** 向正在运行的 claude 进程组发 SIGTERM；没有 claude 在运行时不做任何事。 */
@@ -277,8 +330,8 @@ function terminateClaude() {
  * @param {object} options config、project、changeRoot、prompt、resume、readRules。
  * @returns {object} 运行结果：code、stdout、stderr、sessionId、result。
  */
-async function runClaude({ config, project, changeRoot, prompt, resume, readRules, draft = false }) {
-  const { settingsFile, mcpFile, allowedTools } = writeSettings(config, project, readRules, draft)
+async function runClaude({ config, project, changeRoot, prompt, resume, readRules, draft = false, saved = null }) {
+  const { settingsFile, mcpFile, allowedTools } = writeSettings(config, project, readRules)
   const args = []
   if (resume) args.push('--resume', resume)
   // 恢复会话时不带提示词：提示词会让 agent 从头开始（design D3 的恢复约定）。
@@ -311,14 +364,13 @@ async function runClaude({ config, project, changeRoot, prompt, resume, readRule
     OPENSPEC_AUTOPILOT_HOME: homeDir(),
     OPENSPEC_AUTOPILOT_CHANGE_ROOT: changeRoot,
   }
-  // 新进程组启动并写回 claudePid：撤回要能停下运行中的阶段（design D12，quality R1 SPEC-01）。
-  const child = spawn(config.claudeBin, args, { cwd: project.root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
-  if (child.pid) {
-    activeClaudePid = child.pid
-    writeLockClaudePid(child.pid)
-  }
-  const timer = setTimeout(terminateClaude, CLAUDE_TIMEOUT_MS)
-  const result = await new Promise(resolve => {
+  // 写阶段先在独立进程组等待。调度进程失联时管道关闭，阶段收不到放行指令。
+  const marker = saved && `autopilot-stage-${saved.runId}`
+  const child = saved
+    ? spawn('/bin/sh', ['-c', 'IFS= read -r release && [ "$release" = run ] || exit 125; "$@" </dev/null & wait "$!"',
+      marker, config.claudeBin, ...args], { cwd: project.root, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    : spawn(config.claudeBin, args, { cwd: project.root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  const finished = new Promise(resolve => {
     let stdout = ''
     let stderr = ''
     child.stdout.setEncoding('utf8')
@@ -329,8 +381,48 @@ async function runClaude({ config, project, changeRoot, prompt, resume, readRule
     child.on('error', error => resolve({ status: null, stdout, stderr: stderr || error.message }))
     child.on('close', status => resolve({ status, stdout, stderr }))
   })
-  clearTimeout(timer)
+  let published = null
+  let released = !saved
+  if (saved) child.stdin.on('error', () => { /* 进程已经退出，由 close 收尾。 */ })
   if (child.pid) {
+    activeClaudePid = child.pid
+    try {
+      if (saved) {
+        for (let attempt = 0; !published && attempt < 5; attempt += 1) {
+          published = captureWriter(child.pid, marker)
+          if (!published) await new Promise(resolve => setTimeout(resolve, 20))
+        }
+        if (!published || !writeLockClaudePid(child.pid, published)) throw new Error('无法发布阶段进程实例')
+        withBatch(saved, target => {
+          if (target.directory !== changeRoot || target.record.exitBlock || !['active', 'exiting'].includes(target.record.status)) {
+            throw new Error('放行前托管批次已变化')
+          }
+          replacePendingTrace(pendingStore, batchKey(saved), { ...saved, writer: published })
+          child.stdin.end('run\n')
+          released = true
+        })
+      } else {
+        writeLockClaudePid(child.pid)
+      }
+    } catch (error) {
+      child.stdin?.end()
+      terminateClaude()
+      log('writer-publish-failed', { change: saved?.name, reason: error.code || error.message })
+    }
+  }
+  const timer = setTimeout(terminateClaude, CLAUDE_TIMEOUT_MS)
+  const result = await finished
+  clearTimeout(timer)
+  let writerStopped = !published || writerStatus(published) === 'no'
+  if (saved && published && !writerStopped) {
+    // close 只证明主进程退出。短暂等待同组写者退出，失败则交后续轮次核验。
+    const deadline = performance.now() + 1_000
+    while (!writerStopped && performance.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 25))
+      writerStopped = writerStatus(published) === 'no'
+    }
+  }
+  if (child.pid && writerStopped) {
     activeClaudePid = null
     writeLockClaudePid(null)
   }
@@ -346,6 +438,8 @@ async function runClaude({ config, project, changeRoot, prompt, resume, readRule
     stderr: result.stderr || '',
     sessionId: parsed && parsed.session_id ? parsed.session_id : null,
     result: parsed,
+    writerStopped,
+    released,
   }
 }
 
@@ -356,31 +450,19 @@ async function runClaude({ config, project, changeRoot, prompt, resume, readRule
  * @param {string} title 卡片标题。
  * @param {string[]} lines 正文行。
  */
-function sendNotice(config, change, title, lines) {
+function sendNotice(config, change, title, lines, key = `${change}-notice-${Date.now()}`) {
   const body = Array.isArray(lines) ? lines : [String(lines)]
-  const key = `${change}-notice-${Date.now()}`
-  const sent = sendCard({
-    larkBin: config.larkBin,
-    ownerOpenId: config.ownerOpenId,
-    card: noticeCard({ title, lines: body }),
-    idempotencyKey: key,
-    home: homeDir(),
-  })
-  log('notice-card', { change, title, ok: sent.ok })
+  const options = { larkBin: config.larkBin, ownerOpenId: config.ownerOpenId, card: noticeCard({ title, lines: body }),
+    idempotencyKey: key, timeout: Math.min(60_000, checkRecoveryTime()) }
+  const record = sent => log('notice-card', { change, title, ok: sent.ok })
+  if (Number.isFinite(recoveryDeadline)) return sendRecoveryCard(options).then(record)
+  return record(sendCard(options))
 }
 
-/**
- * 发一张决策卡片，并把返回的 message id 写回决策文件（design D9）。
- * 发送失败时 card.messageId 保持 null，下一轮重新发送（design D3 检查顺序第 1 步）。
- * @param {object} config 托管配置。
- * @param {object} entry 进度条目。
- * @param {object} decision 决策对象。
- * @param {string} kind 决策类型：question 或 alert。
- * @param {string} changeDir 变更目录。
- */
-function sendDecisionCard(config, entry, decision, kind, changeDir) {
-  const file = path.join(decisionsDir(changeDir), `${decision.id}.json`)
-  const card = kind === 'exit' || kind === 'exit-alert'
+/** 用已保存的决策重建卡片。同一编号的完整卡和摘要由保存的请求确定。 */
+function cardFor(entry, decision) {
+  const { kind } = decision
+  return kind === 'exit' || kind === 'exit-alert'
     ? exitCard({ title: `${entry.change} 出口动作`, decision, change: entry.change })
     : kind === 'question'
     ? questionCard({
@@ -394,20 +476,45 @@ function sendDecisionCard(config, entry, decision, kind, changeDir) {
       options: decision.request.options || ['回会话处理'],
       decisionId: decision.id,
       change: entry.change,
-      text: decision.request.text,
-      checkFailures: decision.request.checkFailures || [],
+      text: decision.request.cardSummary || decision.request.text,
+      checkFailures: decision.request.cardSummary ? [] : decision.request.checkFailures || [],
     })
-  const sent = sendCard({
-    larkBin: config.larkBin,
-    ownerOpenId: config.ownerOpenId,
-    card,
-    idempotencyKey: `${entry.change}-${decision.id}`,
-    home: homeDir(),
+}
+
+/**
+ * 复核同批次决策后发送卡片，再尝试回写消息编号。
+ * @returns {Promise<{preflightPassed: boolean, recorded: boolean}>} 分开报告发卡前复核是否通过、消息编号是否已回写。
+ */
+async function sendDecisionCard(config, entry, decision, batch) {
+  const preflightPassed = withBatch(batch, target => {
+    const current = readDecision(target.directory, decision.id).value
+    if (!current || canonicalJson(current) !== canonicalJson(decision)) return false
+    if (target.record.status === 'void') {
+      transition(decisionFile(target.directory, decision.id), ['pending'], { status: 'void', voidReason: '托管已撤回' })
+      return false
+    }
+    if (target.record.status === 'closed') return false
+    return !target.record.exitBlock || (decision.kind === 'alert' && JSON.stringify(decision.request.options) === '["回会话处理"]')
   })
-  log('decision-card', { change: entry.change, decision: decision.id, ok: sent.ok })
-  if (sent.ok && sent.messageId) {
-    transition(file, ['pending'], { card: { messageId: sent.messageId } })
+  if (!preflightPassed) return { preflightPassed, recorded: false }
+  const card = cardFor(entry, decision)
+  if (Buffer.byteLength(JSON.stringify(card, null, 2), 'utf8') + 1 > CARD_LIMIT) {
+    await diagnostic(config, batch, `${decision.id} 的决策卡片超过 24 KiB`)
+    return { preflightPassed, recorded: false }
   }
+  const options = { larkBin: config.larkBin, ownerOpenId: config.ownerOpenId, card,
+    idempotencyKey: stableCardKey(batch, decision.id), timeout: Math.min(60_000, checkRecoveryTime()) }
+  const sent = Number.isFinite(recoveryDeadline) ? await sendRecoveryCard(options) : sendCard(options)
+  log('decision-card', { change: entry.change, decision: decision.id, ok: sent.ok })
+  checkRecoveryTime()
+  if (!sent.ok || !sent.messageId) return { preflightPassed, recorded: false }
+  const recorded = withBatch(batch, target => {
+    if (target.record.status === 'void' || target.record.status === 'closed') return false
+    const current = readDecision(target.directory, decision.id).value
+    if (!current || canonicalJson(current) !== canonicalJson(decision)) return false
+    return transition(decisionFile(target.directory, decision.id), ['pending'], { card: { messageId: sent.messageId } }).ok
+  })
+  return { preflightPassed, recorded }
 }
 
 /**
@@ -422,22 +529,19 @@ function pendingDecision(kind, stage, request) {
   return { kind, status: 'pending', stage, request, card: { messageId: null } }
 }
 
-/**
- * 创建决策、写日志并发卡片（design D9）。
- * @param {object} config 托管配置。
- * @param {object} entry 进度条目（取变更名）。
- * @param {string} changeDir 变更目录。
- * @param {object} decision pendingDecision 生成的决策对象。
- * @param {string} logEvent 日志事件名。
- * @param {object} [options] fields 为日志的其他字段；confirm(created) 在发卡片前调用，
- *   返回发卡片时使用的变更目录，返回 null 时不发卡片（运行后再读托管记录的检查，design D5 第 5 步）。
- * @returns {object} 创建的决策（含 id 与 file）。
- */
-function issueDecision(config, entry, changeDir, decision, logEvent, { fields = {}, confirm } = {}) {
-  const created = { ...decision, ...createDecision(changeDir, decision) }
+/** 复核出口批次后创建决策，释放项目保护再发卡。 */
+async function issueDecision(config, candidate, decision, logEvent, { fields = {} } = {}) {
+  const { batch, entry } = candidate
+  const created = withBatch(batch, target => {
+    if (target.record.status !== 'exiting' || target.record.exitBlock
+      || pendingForName(pendingStore, batch.root, batch.name)) throw new Error('本批次出口尚未获准')
+    if (openDecisions(target.directory).length) throw new Error('已有未完成决策')
+    const value = { ...decision, id: allocate(target.directory), batchStartedAt: batch.startedAt }
+    createDecision(target.directory, value)
+    return value
+  })
   log(logEvent, { change: entry.change, decision: created.id, ...fields })
-  const target = confirm ? confirm(created) : changeDir
-  if (target) sendDecisionCard(config, entry, created, created.kind, target)
+  await sendDecisionCard(config, entry, created, batch)
   return created
 }
 
@@ -521,13 +625,491 @@ function returnToSessionQuestion(decision) {
   return key || ''
 }
 
-/**
- * 拍一次核对快照（design D5「运行前后核对」）。
- * @param {string} changeDir 变更目录。
- * @returns {object} 处理记录与签署字段的快照。
- */
-function snapshotOf(changeDir) {
-  return { trace: traceSnapshot(changeDir), signOff: signOffSnapshot(changeDir) }
+/** 按运行前身份重新定位。复核与写入之间只运行本机操作。 */
+function withBatch(batch, work) {
+  return withVerifiedBatch(batch, work, checkRecoveryTime)
+}
+
+const storeEntry = entry => replacePendingTrace(pendingStore, batchKey(entry), entry)
+const removeEntry = entry => replacePendingTrace(pendingStore, batchKey(entry), null)
+const stableCardKey = (batch, id) => createHash('sha256').update(JSON.stringify([batchKey(batch), id])).digest('hex')
+
+function diagnostic(config, batch, reason) {
+  log('pending-trace-blocked', { change: batch.name, directory: batch.directory, startedAt: batch.startedAt, reason })
+  const state = readCheckState()
+  const key = stableCardKey(batch, reason)
+  if (state.traceErrors[key]) return
+  state.traceErrors[key] = { startedAt: batch.startedAt, reason }
+  writeHomeJson(CHECK_FILE, state)
+  return sendNotice(config, batch.name, '托管核对未完成', [
+    `${batch.name}（${batch.startedAt}）：${batch.directory}`,
+    reason,
+    `请排除读取或写入失败后重试，或运行 autopilot.mjs cancel ${batch.name} 并回会话查看未核对的修改。`,
+  ], key)
+}
+
+function allocate(directory, after) {
+  const id = nextDecisionId(directory, after, checkRecoveryTime)
+  if (!id) throw new Error('四位决策编号已用尽')
+  checkRecoveryTime()
+  return id
+}
+
+function prepareStage(config, candidate, stage, traceBefore, decision) {
+  const batch = candidate.batch
+  try {
+    return withBatch(batch, target => {
+      if (target.record.status !== candidate.record.status || target.record.exitBlock || target.directory !== candidate.changeDir) {
+        throw new Error('托管状态或目录已变化')
+      }
+      if (decision) {
+        const current = readDecision(target.directory, decision.id).value
+        if (!current || current.status !== 'answered' || canonicalJson(current) !== canonicalJson(decision)) {
+          throw new Error(`${decision.id} 的恢复决策已变化`)
+        }
+      }
+      allocate(target.directory)
+      if (pendingForName(pendingStore, batch.root, batch.name)) throw new Error('核对起点尚未交接')
+      const saved = { ...batch, mode: 'stage', stage, runId: candidate.runId, traceBefore, writer: { state: 'unreleased' } }
+      if (decision) saved.consumedDecisionId = decision.id
+      storeEntry(saved)
+      return saved
+    })
+  } catch (error) {
+    diagnostic(config, batch, error.code || error.message)
+    return null
+  }
+}
+
+function comparison(config, snapshot, saved, target) {
+  const considered = []
+  for (const id of saved.traceBefore.resumedDecisionIds) {
+    checkRecoveryTime()
+    const read = readDecision(target.directory, id)
+    if (read.error || !read.value) throw new Error(`${id} 的核对回复无法读取`)
+    if (!read.value.batchStartedAt || read.value.batchStartedAt === saved.startedAt) considered.push(read.value)
+  }
+  const failures = compareTrace({ before: saved.traceBefore, after: snapshot, decisions: considered, ownerOpenId: config.ownerOpenId })
+    .concat(compareSignOff({ before: saved.traceBefore, after: snapshot }))
+  if (target.recreated) failures.push({ file: target.directory, field: '原位置出现同名目录', before: saved.directory, after: target.recreated })
+  checkRecoveryTime()
+  return failures
+}
+
+function earlyArchive(saved, target) {
+  return target.record.exitBlock || (saved.mode === 'stage' && saved.location === 'active' && target.location === 'archived'
+    && saved.stage !== 'archive' ? { reason: 'early-archive', stage: saved.stage } : null)
+}
+
+function guardEarlyArchive(saved, target, block) {
+  if (!block) return
+  if (!target.record.exitBlock) {
+    const marked = transition(recordFile(target.directory), [target.record.status], { exitBlock: block }, { startedAt: saved.startedAt })
+    if (!marked.ok) throw new Error('无法保存提前归档的出口阻断')
+  }
+  for (const item of openDecisions(target.directory)) {
+    if (!['exit', 'exit-alert'].includes(item.kind)) continue
+    const result = transition(decisionFile(target.directory, item.id), OPEN_STATUSES, { status: 'void', voidReason: '提前归档' })
+    if (!result.ok) throw new Error(`${item.id} 的出口决策无法作废`)
+  }
+}
+
+function alertRequest({ saved, snapshot, failures, error, block, recovery = false }) {
+  const request = {
+    text: block ? `本批次在 ${block.stage} 阶段归档，缺少完成 quality、verify 的运行证据。请回会话处理。`
+      : error ? READ_FAILURE_TEXT : recovery ? '运行结果未交接，已按原起点重新核对。请处理本次运行。'
+        : '运行前后的记录不一致，请确认这些项。',
+    options: ['回会话处理'], checkFailures: failures,
+    traceBefore: saved.traceBefore, comparisonState: error ? 'unread' : 'listed',
+    ...(snapshot ? { comparisonBoundary: snapshot } : {}),
+    ...(saved.deferredToolUseId ? { deferredToolUseId: saved.deferredToolUseId } : {}),
+  }
+  if (!block && saved.sessionId && !saved.unavailable) request.sessionId = saved.sessionId
+  return request
+}
+
+function limitAlert(batch, decision, id) {
+  const request = decision.request
+  if (!request || decision.kind !== 'alert') return
+  const boundary = request.comparisonState === 'unread' ? request.traceBefore : request.comparisonBoundary
+  if (request.sessionId && boundary && traceFits({ ...boundary, resumedDecisionIds: [...new Set([
+    ...(request.comparisonState === 'unread' ? boundary.resumedDecisionIds || [] : []), id,
+  ])] })) {
+    request.options = ['补充说明后继续', '回会话处理']
+  } else {
+    delete request.sessionId
+  }
+  const card = cardFor({ change: batch.name }, { ...decision, id })
+  if (Buffer.byteLength(JSON.stringify(card, null, 2), 'utf8') + 1 > CARD_LIMIT && request.checkFailures) {
+    request.cardSummary = `核对项 ${request.checkFailures.length} 条。批次 ${batch.startedAt}，本地详情：decisions/${id}.json。`
+    request.options = ['回会话处理']
+    delete request.sessionId
+  }
+}
+
+function reserveDecision(saved, target, decision, snapshot, kind) {
+  if (openDecisions(target.directory).length) throw new Error('同批次还有其他未完成决策')
+  const id = allocate(target.directory, saved.resultDecisionId)
+  limitAlert(saved, decision, id)
+  const reserved = { ...saved, resultDecisionId: id, resultKind: kind }
+  if (kind === 'question') reserved.traceAfter = snapshot
+  if (decision.request.comparisonBoundary) reserved.boundaryDigest = traceDigest(decision.request.comparisonBoundary)
+  storeEntry(reserved)
+  const request = { ...decision.request, pendingTraceKey: batchKey(saved) }
+  if (kind === 'question') request.pendingTraceDigest = traceDigest(saved.traceBefore)
+  else request.traceBefore = saved.traceBefore
+  createDecision(target.directory, { ...decision, id, batchStartedAt: saved.startedAt, request })
+  return id
+}
+
+function verifyTransfer(saved, decision, id) {
+  if (decision.id !== id || decision.batchStartedAt !== saved.startedAt
+    || decision.request?.pendingTraceKey !== batchKey(saved)) throw new Error(`${id} 的转交归属不符`)
+  if (saved.resultKind === 'question') {
+    if (decision.kind !== 'question' || decision.request.traceBefore !== undefined
+      || canonicalJson(decision.request.pendingTraceDigest) !== canonicalJson(traceDigest(saved.traceBefore))) {
+      throw new Error(`${id} 的提问转交摘要不符`)
+    }
+  } else {
+    if (decision.kind !== 'alert' || canonicalJson(decision.request.traceBefore) !== canonicalJson(saved.traceBefore)) {
+      throw new Error(`${id} 的告警转交起点不符`)
+    }
+    if (saved.boundaryDigest && (!decision.request.comparisonBoundary
+      || canonicalJson(traceDigest(decision.request.comparisonBoundary)) !== canonicalJson(saved.boundaryDigest))) {
+      throw new Error(`${id} 的续查边界不符`)
+    }
+    if (saved.resultKind === 'check-alert' && !['listed', 'unread'].includes(decision.request.comparisonState)) {
+      throw new Error(`${id} 的核对状态无效`)
+    }
+    if (saved.mode === 'version-handoff' || saved.resultKind === 'early-archive-alert') {
+      if (JSON.stringify(decision.request.options) !== '["回会话处理"]') throw new Error(`${id} 的告警选项无效`)
+    }
+  }
+}
+
+/** 核验后只尝试发送一次结束通知。完成依据允许新批次替换已结束记录。 */
+async function finishReturnHandoff(config, batch, id) {
+  const shouldNotify = withBatch(batch, target => {
+    const { directory, record } = target
+    if (record.status !== 'void') {
+      const { value } = readDecision(directory, id)
+      if (value?.status !== 'answered' || value.kind !== 'alert' || value.answer?.choice !== '回会话处理'
+        || value.answer.operatorId !== config.ownerOpenId || (value.batchStartedAt && value.batchStartedAt !== batch.startedAt)) {
+        throw new Error(`${id} 的回会话选择无法核验`)
+      }
+      const written = transition(recordFile(directory), [record.status], {
+        status: 'void', voidReason: '用户选择回会话处理', returnHandoff: id,
+      }, { startedAt: batch.startedAt })
+      if (!written.ok) throw new Error('回会话托管记录写入失败')
+    }
+    const latest = locateBatch(batch, checkRecoveryTime)
+    const handoff = readReturnHandoff(latest.directory, latest.record, config.ownerOpenId)
+    if (!handoff || handoff.id !== id || handoff.completed) return false
+    if (handoff.status === 'answered'
+      && !transition(decisionFile(latest.directory, id), ['answered'], { status: 'used' }).ok) {
+      throw new Error(`${id} 的回会话告警更新失败`)
+    }
+    const after = locateBatch(batch, checkRecoveryTime)
+    if (readReturnHandoff(after.directory, after.record, config.ownerOpenId)?.status !== 'used') {
+      throw new Error('回会话终态无法核验')
+    }
+    const completed = transition(recordFile(after.directory), ['void'], {
+      returnHandoffCompleted: { id, startedAt: batch.startedAt },
+    }, { startedAt: batch.startedAt })
+    if (!completed.ok) throw new Error('回会话完成依据写入失败')
+    return true
+  })
+  if (shouldNotify) await sendNotice(config, batch.name, '托管已作废', [
+    '用户在卡片上选择回会话处理，请在会话中继续处理。',
+  ], stableCardKey(batch, `return-${id}`))
+}
+
+function recoverVersionHandoff(config, saved, target) {
+  const directory = target.directory
+  const source = readDecision(directory, saved.sourceDecisionId)
+  if (source.error || source.value?.kind !== 'alert' || source.value.answer?.choice !== '补充说明后继续'
+    || source.value.answer.operatorId !== config.ownerOpenId
+    || (source.value.batchStartedAt && source.value.batchStartedAt !== saved.startedAt)
+    || canonicalJson(source.value.request?.traceBefore) !== canonicalJson(saved.traceBefore)) {
+    throw new Error(`${saved.sourceDecisionId} 的版本转交来源无法核验`)
+  }
+  const prior = readDecision(directory, saved.alertId)
+  if (prior.error) throw new Error(`${saved.alertId} 的替代告警无法读取`)
+  if (prior.value) verifyTransfer(saved, prior.value, saved.alertId)
+  if (source.value.status === 'answered') {
+    if (!transition(decisionFile(directory, saved.sourceDecisionId), ['answered'], {
+      status: 'used', result: { reason: VERSION_REASON, replacement: saved.alertId },
+    }).ok) throw new Error('版本转交无法结束原告警')
+  } else if (source.value.status !== 'used' || source.value.result?.reason !== VERSION_REASON
+    || source.value.result.replacement !== saved.alertId) throw new Error('版本转交原告警状态不符')
+  if (!prior.value) {
+    const decision = pendingDecision('alert', source.value.stage, {
+      text: `${VERSION_REASON}。请回会话处理。`, options: ['回会话处理'], comparisonState: 'unread',
+      traceBefore: saved.traceBefore, pendingTraceKey: batchKey(saved),
+    })
+    createDecision(directory, { ...decision, id: saved.alertId, batchStartedAt: saved.startedAt })
+  }
+  return saved.alertId
+}
+
+async function versionHandoff(config, candidate, decision) {
+  const { batch } = candidate
+  try {
+    const saved = withBatch(batch, target => {
+      if (!['active', 'exiting'].includes(target.record.status)) throw new Error('托管状态已变化')
+      const source = readDecision(target.directory, decision.id).value
+      if (source?.status !== 'answered' || source.kind !== 'alert' || source.answer?.choice !== '补充说明后继续'
+        || source.answer.operatorId !== config.ownerOpenId || !source.request?.traceBefore
+        || (source.batchStartedAt && source.batchStartedAt !== batch.startedAt)) throw new Error('原告警无法核验')
+      const entry = { ...batch, mode: 'version-handoff', sourceDecisionId: source.id,
+        alertId: allocate(target.directory, source.id), traceBefore: source.request.traceBefore }
+      if (pendingForName(pendingStore, batch.root, batch.name)) throw new Error('核对起点尚未交接')
+      storeEntry(entry)
+      return entry
+    })
+    await recoverOne(config, saved)
+  } catch (error) {
+    diagnostic(config, batch, error.code || error.message)
+  }
+  return 'done'
+}
+
+async function finishTransfer(config, saved, id) {
+  const delivery = withBatch(saved, target => {
+    const current = readDecision(target.directory, id)
+    if (!current.value || current.error) throw new Error(`${id} 的转交决策无法读回`)
+    verifyTransfer(saved, current.value, id)
+    if (target.record.status === 'void') {
+      if (OPEN_STATUSES.includes(current.value.status)
+        && !transition(decisionFile(target.directory, id), OPEN_STATUSES, { status: 'void', voidReason: '托管已撤回' }).ok) {
+        throw new Error(`${id} 的撤回写入失败`)
+      }
+      return null
+    }
+    if (!OPEN_STATUSES.includes(current.value.status)) throw new Error(`${id} 的转交状态无效`)
+    if (target.record.exitBlock && JSON.stringify(current.value.request?.options) !== '["回会话处理"]') {
+      throw new Error(`${id} 的告警违反提前归档限制`)
+    }
+    return { decision: current.value, directory: target.directory }
+  })
+  if (delivery && delivery.decision.status === 'pending' && !delivery.decision.card?.messageId) {
+    const { decision } = delivery
+    const { preflightPassed, recorded } = await sendDecisionCard(config, { change: saved.name }, decision, saved)
+    // DB-13：原告警已结束。替代告警未通过末次复核时，预留仍是同批次的阻断依据。
+    if (saved.mode === 'version-handoff' && !preflightPassed) throw new Error(`${id} 的替代告警发卡前复核失败`)
+    if (!recorded && decision.request.cardSummary) {
+      await diagnostic(config, saved, `${id} 的核对摘要暂未送达，本地完整证据已保留`)
+      return
+    }
+  }
+  checkRecoveryTime()
+  removeEntry(saved)
+}
+
+/** 转交采用已保存的编号，只在确认缺失或同次重核作废后替换预留。 */
+async function recoverOne(config, stored) {
+  if (stored.mode === 'stage' && writerStatus(stored.writer) !== 'no') throw new Error('旧阶段尚未证实停止')
+  checkRecoveryTime()
+  const target = locateBatch(stored, checkRecoveryTime)
+  if (target.superseded || target.record.status === 'void') {
+    log('pending-trace-released', { change: stored.name, startedAt: stored.startedAt, reason: target.superseded ? '重新托管' : '撤回' })
+    removeEntry(stored)
+    return
+  }
+  if (target.record.status === 'closed') throw new Error('原批次已结束，仍有未交接核对')
+  const block = earlyArchive(stored, target)
+  if (block) withBatch(stored, latest => guardEarlyArchive(stored, latest, block))
+  if (stored.mode === 'version-handoff') {
+    const id = withBatch(stored, latest => recoverVersionHandoff(config, stored, latest))
+    await finishTransfer(config, stored, id)
+    return
+  }
+  let saved = stored
+  let after = null
+  let replacedId = null
+  if (saved.resultDecisionId || saved.alertId) {
+    const id = saved.resultDecisionId || saved.alertId
+    const prior = readDecision(target.directory, id)
+    if (prior.error) throw new Error(`${id} 的已预留决策无法读取`)
+    if (prior.value) {
+      verifyTransfer(saved, prior.value, id)
+      const rechecked = prior.value.status === 'void' && prior.value.voidReason === RECHECK_VOID
+        && prior.value.result?.pendingTraceKey === batchKey(saved) && saved.resultKind === 'question'
+      const restricted = block && prior.value.kind === 'alert'
+        && JSON.stringify(prior.value.request.options) !== '["回会话处理"]'
+      const blockedByArchive = restricted && prior.value.status === 'void' && prior.value.voidReason === EARLY_ARCHIVE_VOID
+        && prior.value.result?.pendingTraceKey === batchKey(saved)
+      if (prior.value.status === 'void' && !rechecked && !blockedByArchive) throw new Error(`${id} 的作废原因与本次核对无关`)
+      if (restricted && !blockedByArchive) {
+        if (prior.value.status === 'answered' && prior.value.answer?.choice === '回会话处理') {
+          await finishReturnHandoff(config, stored, id)
+          removeEntry(stored)
+          return
+        }
+        // D5 的持久阻断优先。原告警内容可能已发送，替代项必须使用不同的编号。
+        withBatch(saved, latest => {
+          const reread = readDecision(latest.directory, id).value
+          if (!latest.record.exitBlock || !reread || canonicalJson(reread) !== canonicalJson(prior.value)) {
+            throw new Error(`${id} 的原告警或提前归档标记已变化`)
+          }
+          if (!transition(decisionFile(latest.directory, id), OPEN_STATUSES, {
+            status: 'void', voidReason: EARLY_ARCHIVE_VOID, result: { pendingTraceKey: batchKey(saved) },
+          }).ok) throw new Error(`${id} 的原告警不能作废`)
+        })
+      }
+      if (restricted) replacedId = id
+      if (!rechecked && !restricted) {
+        if (saved.resultKind === 'question') {
+          const read = await recoveryTraceSnapshot(config.gateBin, target.directory, checkRecoveryTime())
+          checkRecoveryTime()
+          if (read.error) throw new Error(read.error)
+          after = read.value
+          if (canonicalJson(after) === canonicalJson(saved.traceAfter) && !block) {
+            await finishTransfer(config, saved, id)
+            return
+          }
+          withBatch(saved, latest => {
+            const reread = readDecision(latest.directory, id).value
+            if (!reread || canonicalJson(reread) !== canonicalJson(prior.value)) throw new Error(`${id} 的原提问已改变`)
+            const written = transition(decisionFile(latest.directory, id), OPEN_STATUSES, {
+              status: 'void', voidReason: RECHECK_VOID, result: { pendingTraceKey: batchKey(saved) },
+            })
+            if (!written.ok) throw new Error(`${id} 的原提问不能作废`)
+          })
+        } else {
+          await finishTransfer(config, saved, id)
+          return
+        }
+      }
+    }
+  }
+  const error = !validTrace(saved.traceBefore) ? VERSION_REASON : null
+  if (!error && !after) {
+    const read = await recoveryTraceSnapshot(config.gateBin, target.directory, checkRecoveryTime())
+    checkRecoveryTime()
+    if (read.error && !block) throw new Error(read.error)
+    after = read.value
+  }
+  const failures = after ? comparison(config, after, saved, target) : []
+  const id = withBatch(saved, latest => {
+    if (!sameObject(latest.identity, target.identity) || latest.record.status !== target.record.status) {
+      throw new Error('恢复核对期间批次已变化')
+    }
+    if (saved.consumedDecisionId) {
+      const consumed = readDecision(latest.directory, saved.consumedDecisionId)
+      if (consumed.error || !consumed.value || (consumed.value.batchStartedAt && consumed.value.batchStartedAt !== saved.startedAt)) {
+        throw new Error(`${saved.consumedDecisionId} 的原决策无法核验`)
+      }
+      if (consumed.value.status === 'answered'
+        && !transition(decisionFile(latest.directory, consumed.value.id), ['answered'], { status: 'used' }).ok) {
+        throw new Error(`${consumed.value.id} 的原决策更新失败`)
+      }
+      if (!['answered', 'used', 'void'].includes(consumed.value.status)) throw new Error('原决策未结束')
+    }
+    if (openDecisions(latest.directory).length) throw new Error('同批次还有其他未完成决策')
+    if (!saved.alertId || replacedId) {
+      const { resultDecisionId, resultKind, traceAfter, boundaryDigest, ...rest } = saved
+      saved = { ...rest, alertId: allocate(latest.directory, replacedId || resultDecisionId) }
+      storeEntry(saved)
+    }
+    const request = alertRequest({ saved: error ? { ...saved, unavailable: true } : saved,
+      snapshot: after, failures, error: !after, block, recovery: true })
+    if (error) request.text = `${error}。请回会话处理。`
+    const decision = pendingDecision('alert', saved.stage, { ...request, pendingTraceKey: batchKey(saved) })
+    limitAlert(saved, decision, saved.alertId)
+    if (request.comparisonBoundary) {
+      saved = { ...saved, boundaryDigest: traceDigest(request.comparisonBoundary) }
+      storeEntry(saved)
+    }
+    createDecision(latest.directory, { ...decision, id: saved.alertId, batchStartedAt: saved.startedAt })
+    return saved.alertId
+  })
+  await finishTransfer(config, saved, id)
+}
+
+/** 终态交接有独立短预算，跨轮从上次尝试的严格后继继续。 */
+async function recoverTerminalHandoffs(config, handoffs) {
+  if (!handoffs.length) return
+  const state = readCheckState()
+  const sorted = handoffs.sort((left, right) => (batchKey(left.batch) > batchKey(right.batch) ? 1 : -1))
+  const split = sorted.findIndex(item => batchKey(item.batch) > (state.handoffCursor || ''))
+  const next = split < 0 ? sorted : [...sorted.slice(split), ...sorted.slice(0, split)]
+  recoveryDeadline = performance.now() + HANDOFF_SCAN_MS
+  let attempted = null
+  try {
+    for (const handoff of next) {
+      if (performance.now() >= recoveryDeadline) break
+      attempted = batchKey(handoff.batch)
+      try {
+        await finishReturnHandoff(config, handoff.batch, handoff.id)
+      } catch (error) {
+        log('return-handoff-blocked', { change: handoff.batch.name, startedAt: handoff.batch.startedAt,
+          directory: handoff.batch.directory, decision: handoff.id, reason: error.code || error.message })
+      }
+    }
+  } finally {
+    recoveryDeadline = Infinity
+  }
+  if (attempted) {
+    try { writeHomeJson(CHECK_FILE, { ...readCheckState(), handoffCursor: attempted }) } catch (error) {
+      log('return-handoff-cursor-failed', { reason: error.code || error.message })
+    }
+  }
+}
+
+async function recoverPending(config) {
+  const deadline = performance.now() + RECOVERY_MS
+  recoveryDeadline = deadline - CURSOR_RESERVE_MS
+  try {
+    pendingStore = readPendingTrace()
+    const keys = Object.keys(pendingStore.entries).sort()
+    const split = keys.findIndex(key => key > (pendingStore.cursor || ''))
+    const ordered = split < 0 ? keys : [...keys.slice(split), ...keys.slice(0, split)]
+    let attempted = null
+    for (const key of ordered) {
+      if (performance.now() >= recoveryDeadline) break
+      const saved = pendingStore.entries[key]
+      attempted = key
+      recoveredThisRound.add(key)
+      try {
+        await recoverOne(config, saved)
+      } catch (error) {
+        if (performance.now() < recoveryDeadline) {
+          try { await diagnostic(config, saved, error.code || error.message) } catch { /* 起点仍在，后续轮次重试。 */ }
+        }
+      }
+    }
+    if (attempted && performance.now() < deadline) {
+      try { writeRecoveryCursor(pendingStore, attempted) } catch (error) {
+        log('recovery-cursor-failed', { reason: error.code || error.message })
+      }
+    }
+  } finally {
+    recoveryDeadline = Infinity
+  }
+}
+
+/** 读启动前快照。只有同一批次和原因都未变化时才抑制通知。 */
+function readBeforeTrace(config, { entry, changeDir, record }) {
+  const { value, error } = traceSnapshot(config.gateBin, changeDir)
+  const state = readCheckState()
+  const previous = state.traceErrors[changeDir]
+  if (error) {
+    log('trace-error-before-run', { change: entry.change, reason: error })
+    if (previous?.startedAt !== record.startedAt || previous?.reason !== error) {
+      state.traceErrors[changeDir] = { startedAt: record.startedAt, reason: error }
+      writeHomeJson(CHECK_FILE, state)
+      sendNotice(config, entry.change, '托管无法读取运行前的处理记录', [
+        error,
+        '修复读取原因后等待下一轮。',
+        `也可运行 autopilot.mjs cancel ${entry.change} 后回会话处理。撤回后托管不再比较告警中保存的起点，请在会话中查看 agent 对 review/、evidence/、tasks.md 的修改。`,
+      ])
+    }
+  } else if (previous) {
+    delete state.traceErrors[changeDir]
+    writeHomeJson(CHECK_FILE, state)
+  }
+  return value
 }
 
 /**
@@ -614,15 +1196,24 @@ function planOf(value) {
  * @returns {string} ran 表示本轮做了动作。
  */
 async function handleExitActions(config, candidate, readRules) {
-  const { project, entry, changeDir, record } = candidate
+  const { project, entry, changeDir } = candidate
+  candidate.updateExit = work => withBatch(candidate.batch, target => {
+    if (target.directory !== changeDir || target.record.status !== 'exiting' || target.record.exitBlock
+      || pendingForName(pendingStore, candidate.batch.root, candidate.batch.name)) return false
+    return work(target.record)
+  })
   // 起草与执行出口步骤之前认领：推送期间撤回要等本轮结束（spec autopilot-exit-actions「Cancel during the push」）。
-  if (!claimChange(candidate)) return 'done'
+  const record = claimChange(candidate)
+  if (!record) return 'done'
+  // 发现候选后，前一个批次的处理可能已结束。出口检查使用认领时复核的记录。
+  candidate.record = record
   // 检查顺序第 1–4 步：等待回复的决策与归档阶段留下的已回复告警先处理（quality R1 SPEC-05）。
   const handled = await handleOpenDecisions(config, candidate, readRules, { skipKinds: ['exit', 'exit-alert'] })
-  if (handled) return handled
+  if (handled || record.exitBlock) return handled || 'done'
   // 出口阶段的变更已在归档目录中；托管记录改为 exiting（design D11）。
   if (record.status === 'active') {
-    const written = transition(recordFile(changeDir), ['active'], { status: 'exiting' }, { startedAt: record.startedAt })
+    const written = withBatch(candidate.batch, target => transition(recordFile(target.directory), ['active'],
+      { status: 'exiting' }, { startedAt: record.startedAt }))
     if (!written.ok) return 'done'
     record.status = 'exiting'
   }
@@ -631,7 +1222,8 @@ async function handleExitActions(config, candidate, readRules) {
   const alert = decisions.find(item => item.status === 'answered' && item.kind === 'exit-alert')
   if (alert) {
     const choice = (alert.answer && alert.answer.choice) || ''
-    transition(path.join(decisionsDir(changeDir), `${alert.id}.json`), ['answered'], { status: 'used' })
+    if (choice === '重试本项') allocate(changeDir)
+    if (!changeDecision(candidate, alert, { status: 'used' })) return 'done'
     if (choice === '暂不处理') {
       closeExit(config, candidate, '全部出口动作已跳过')
       return 'done'
@@ -642,13 +1234,13 @@ async function handleExitActions(config, candidate, readRules) {
       sendNotice(config, entry.change, '托管已作废', ['用户在卡片上选择回会话处理，请在会话中继续处理。'])
       return 'done'
     }
-    // 重试本项：下一轮按 result.steps 决定重新起草还是只合并（design D11「执行失败」）。
+    // 重试本项：下一轮按托管记录的 exit.commit-merge.commit 决定重新起草还是只合并（design D11「执行失败」）。
     return 'done'
   }
   // 检查顺序第 5 步：有已回复的出口决策时执行动作。
   const exit = decisions.find(item => item.status === 'answered' && item.kind === 'exit')
   if (exit) {
-    runExitAction(config, candidate, exit, readRules)
+    await runExitAction(config, candidate, exit)
     return 'ran'
   }
   // 没有未完成的出口决策：起草下一项动作。
@@ -659,13 +1251,15 @@ async function handleExitActions(config, candidate, readRules) {
     closeExit(config, candidate, '全部出口动作已完成')
     return 'done'
   }
+  allocate(changeDir)
+  if (exitNow[next]?.noAlert) return 'done'
   if (next === 'commit-merge') {
     const previous = decisions.filter(item => item.kind === 'exit' && item.request && item.request.action === next).pop()
     const previousBranch = (exitNow[next] || {}).branch || (previous && previous.request ? previous.request.branch : null)
     // 重试时提交已在分支上：不起草、不按 git status 核对计划，沿用上一个出口决策的计划与内容摘要，
     // 执行从回读开始，只合并（design D11「执行失败」重试本项，评审 CONC-04）。
     if ((exitNow[next] || {}).commit && previous) {
-      issueDecision(config, entry, changeDir, pendingDecision('exit', 'exit', {
+      await issueDecision(config, candidate, pendingDecision('exit', 'exit', {
         ...previous.request, commitOnBranch: (exitNow[next] || {}).commit, options: COMMIT_OPTIONS,
       }), 'exit-decision', { fields: { action: next, retry: 'merge-only' } })
       return 'ran'
@@ -676,7 +1270,7 @@ async function handleExitActions(config, candidate, readRules) {
       config, project, changeDir, action: next, readRules, previousBranch,
     })
     if (!drafted.ok) {
-      failExitAction(config, candidate, next, null, drafted.error)
+      await failExitAction(config, candidate, next, null, drafted.error)
       return 'ran'
     }
     const checked = checkPlan({
@@ -689,10 +1283,10 @@ async function handleExitActions(config, candidate, readRules) {
       previousBranch: (exitNow[next] || {}).branch || null,
     })
     if (!checked.ok) {
-      failExitAction(config, candidate, next, null, checked.error)
+      await failExitAction(config, candidate, next, null, checked.error)
       return 'ran'
     }
-    issueDecision(config, entry, changeDir, pendingDecision('exit', 'exit', {
+    await issueDecision(config, candidate, pendingDecision('exit', 'exit', {
       action: next,
       branch: drafted.plan.branch,
       files: checked.files,
@@ -717,10 +1311,10 @@ async function handleExitActions(config, candidate, readRules) {
   }
   const list = pushList(project.root, { baseBranch: project.baseBranch, commit })
   if (!list.ok) {
-    failExitAction(config, candidate, next, null, list.error)
+    await failExitAction(config, candidate, next, null, list.error)
     return 'ran'
   }
-  issueDecision(config, entry, changeDir, pendingDecision('exit', 'exit', {
+  await issueDecision(config, candidate, pendingDecision('exit', 'exit', {
     action: next,
     branch: commitState.branch || null,
     commits: list.commits,
@@ -729,47 +1323,48 @@ async function handleExitActions(config, candidate, readRules) {
   return 'ran'
 }
 
+function changeDecision(candidate, decision, patch) {
+  return withBatch(candidate.batch, target => {
+    if (target.record.status !== 'exiting' || target.record.exitBlock) return false
+    const current = readDecision(target.directory, decision.id).value
+    if (!current || canonicalJson(current) !== canonicalJson(decision)) return false
+    return transition(decisionFile(target.directory, decision.id), ['answered'], patch).ok
+  })
+}
+
 /**
  * 执行一个已回复的出口决策（design D11「执行与回读」）。
  * @param {object} config 托管配置。
  * @param {object} candidate 候选变更。
  * @param {object} decision 出口决策。
- * @param {string[]} readRules 读取规则。
  */
-function runExitAction(config, candidate, decision, readRules) {
-  const { project, entry, changeDir, record } = candidate
+async function runExitAction(config, candidate, decision) {
   const request = decision.request || {}
   const choice = (decision.answer && decision.answer.choice) || ''
   if (choice === '暂不处理') {
-    transition(path.join(decisionsDir(changeDir), `${decision.id}.json`), ['answered'], {
-      status: 'used', result: { ok: true, steps: ['skipped'] },
-    })
+    if (!changeDecision(candidate, decision, { status: 'used', result: { ok: true, steps: ['skipped'] } })) return
     closeExit(config, candidate, '出口动作已跳过')
     return
   }
   if (request.action === 'commit-merge') {
     const result = executeCommitMerge(candidate, decision, { draftsDir: path.join(homeDir(), 'drafts'), log })
     if (!result.ok) {
-      failExitAction(config, candidate, request.action, decision, result.error, result.steps)
+      await failExitAction(config, candidate, request.action, decision, result.error, result.steps)
       return
     }
-    transition(path.join(decisionsDir(changeDir), `${decision.id}.json`), ['answered'], {
-      status: 'used', result: { ok: true, steps: result.steps },
-    })
+    changeDecision(candidate, decision, { status: 'used', result: { ok: true, steps: result.steps } })
     return
   }
   if (request.action === 'push') {
     const result = executePush(candidate, decision, { log })
     if (!result.ok) {
-      failExitAction(config, candidate, request.action, decision, result.error, result.steps)
+      await failExitAction(config, candidate, request.action, decision, result.error, result.steps)
       return
     }
-    transition(path.join(decisionsDir(changeDir), `${decision.id}.json`), ['answered'], {
-      status: 'used', result: { ok: true, steps: result.steps },
-    })
+    changeDecision(candidate, decision, { status: 'used', result: { ok: true, steps: result.steps } })
     return
   }
-  failExitAction(config, candidate, request.action, decision, `未知出口动作：${request.action}`)
+  await failExitAction(config, candidate, request.action, decision, `未知出口动作：${request.action}`)
 }
 
 /**
@@ -781,7 +1376,7 @@ function runExitAction(config, candidate, decision, readRules) {
  * @param {string} error 失败原因。
  * @param {string[]} steps 已完成的步骤。
  */
-function failExitAction(config, candidate, action, decision, error, steps = []) {
+async function failExitAction(config, candidate, action, decision, error, steps = []) {
   const { project, entry, changeDir } = candidate
   // 失败前没有提交且当前在计划分支上时，先切回主分支（design D11「执行失败」，评审 CONC-11）。
   const exitState = currentExit(candidate)['commit-merge'] || {}
@@ -793,13 +1388,16 @@ function failExitAction(config, candidate, action, decision, error, steps = []) 
     }
   }
   if (decision) {
-    transition(path.join(decisionsDir(changeDir), `${decision.id}.json`), ['answered'], {
-      status: 'used', result: { ok: false, error, steps },
-    })
+    if (!changeDecision(candidate, decision, { status: 'used', result: { ok: false, error, steps } })) return
   }
   // 托管记录已撤回时不再创建出口告警（评审 CONC-06）。
-  if (!writeExitState(candidate, action, { ok: false, failed: true }, log)) return
-  issueDecision(config, entry, changeDir, pendingDecision('exit-alert', 'exit', {
+  const noAlert = !nextDecisionId(changeDir)
+  if (!writeExitState(candidate, action, { ok: false, failed: true, steps, ...(noAlert ? { noAlert: true } : {}) }, log)) return
+  if (noAlert) {
+    diagnostic(config, candidate.batch, '四位决策编号已用尽，已保存出口失败与完成步骤')
+    return
+  }
+  await issueDecision(config, candidate, pendingDecision('exit-alert', 'exit', {
     exitAction: action, text: error, options: ['重试本项', '暂不处理', '回会话处理'],
   }), 'exit-alert', { fields: { action, error } })
 }
@@ -816,12 +1414,15 @@ function closeExit(config, candidate, note) {
   for (const action of EXIT_ACTIONS) {
     if (!exit[action]) exit[action] = { ok: false, skipped: true }
   }
-  transition(recordFile(changeDir), ['exiting'], { status: 'closed', exit }, { startedAt: record.startedAt })
+  const closed = candidate.updateExit(() => transition(recordFile(changeDir), ['exiting'], { status: 'closed', exit }, { startedAt: record.startedAt }).ok)
+  if (!closed) return
   const done = EXIT_ACTIONS.filter(item => exit[item] && exit[item].ok)
   const skipped = EXIT_ACTIONS.filter(item => !done.includes(item))
   const lines = [note,
     ...done.map(item => `已完成：${item}`),
     ...skipped.map(item => `已跳过：${item}`)]
+  const commit = exit['commit-merge']
+  if (commit?.mode === 'branch-only') lines.push(`当前分支为 ${commit.branch}。再次托管前请切回 ${candidate.project.baseBranch}。`)
   // 本变更 decisions/ 下的文件没有提交，其中有 operator_id（design D11「执行与回读」）。
   lines.push('本变更 decisions/ 下的文件没有提交，其中含有 operator_id，由你在会话中决定是否提交。')
   // 云舟任务：变更关联云舟任务时写出任务号（design D11「云舟任务」）。
@@ -840,7 +1441,8 @@ function closeExit(config, candidate, note) {
  */
 async function runOnce(config) {
   const lockFile = path.join(homeDir(), 'run.lock')
-  const lock = acquireLock(lockFile, { pid: process.pid, bootTime: currentBootTime(), change: null, claudePid: null })
+  runToken = randomUUID()
+  const lock = acquireLock(lockFile, { pid: process.pid, bootTime: currentBootTime(), change: null, claudePid: null, token: runToken })
   if (!lock.ok) {
     log('lock-busy', { reason: lock.reason })
     return EXIT.OK
@@ -848,13 +1450,13 @@ async function runOnce(config) {
   // 调度进程被停止或出现未捕获异常时，先停 claude 的进程组再释放锁（design D12，quality R1 SPEC-01）。
   const onTerm = () => {
     terminateClaude()
-    releaseLock(lockFile)
+    releaseLock(lockFile, runToken)
     log('scheduler-terminated')
     process.exit(EXIT.TERMINATED)
   }
   const onCrash = error => {
     terminateClaude()
-    releaseLock(lockFile)
+    releaseLock(lockFile, runToken)
     log('scheduler-crashed', { error: String(error && error.message || error).slice(0, 200) })
     process.exit(EXIT.ERROR)
   }
@@ -869,47 +1471,58 @@ async function runOnce(config) {
       notifyEnvironment(config, problems)
       return EXIT.ERROR
     }
-    clearEnvironmentState()
+    config.projects = config.projects.map(project => ({ ...project, root: realPath(project.root) }))
     const home = process.env.HOME || ''
     const { rules: readRules } = skillReadRules(home)
 
-    // 按 startedAt 排序处理变更：最早的先处理（design D12「并发」）。
+    try {
+      await recoverPending(config)
+      clearEnvironmentState()
+    } catch (error) {
+      notifyEnvironment(config, [`未完成核对文件无法读取：${error.code || error.message}`])
+      return EXIT.ERROR
+    }
     const candidates = []
+    const handoffs = []
     for (const project of config.projects) {
       const { view, error } = readProgressView(config, project.root)
       if (error) {
         log('progress-error', { project: project.root, error })
         continue
       }
-      for (const entry of view.active || []) {
-        const changeDir = locateChangeDir(project, view, entry.change)
-        if (!changeDir) continue
-        const record = readRecord(changeDir)
-        if (record.error || !record.value) continue
-        if (record.value.status !== 'active' && record.value.status !== 'exiting') continue
-        candidates.push({ project, view, entry, changeDir, record: record.value })
+      const entries = new Map((view.active || []).map(entry => [entry.change, entry]))
+      const archives = new Map((view.archived || []).map(entry => [entry.name, entry]))
+      for (const name of new Set([...entries.keys(), ...archives.keys()])) {
+        try {
+          const { root, candidates: batches } = enumerateBatches(project.root, name)
+          if (pendingForName(pendingStore, root, name)) continue
+          for (const { directory, location, record } of batches) {
+            if (!record) continue
+            const entry = location === 'active' ? entries.get(name) : { ...archives.get(name), change: name }
+            const batch = batchOf(project, { change: name }, directory, record, location)
+            if (recoveredThisRound.has(batchKey(batch))) continue
+            if (record.status === 'void' && record.returnHandoff && !record.returnHandoffCompleted) {
+              handoffs.push({ batch, id: record.returnHandoff })
+            }
+            if (!entry || (location === 'archived' && !archives.has(name)) || !['active', 'exiting'].includes(record.status)) continue
+            const matching = batches.filter(item => item.record?.startedAt === record.startedAt)
+            if (matching.length !== 1) throw new Error(`托管批次不唯一：${matching.map(item => item.directory).join('、')}`)
+            candidates.push({ project, view, entry, changeDir: directory, record, batch })
+          }
+        } catch (error) {
+          log('candidate-invalid', { project: project.root, change: name, reason: error.code || error.message })
+        }
       }
     }
-    candidates.sort((a, b) => String(a.record.startedAt).localeCompare(String(b.record.startedAt)))
-
+    await recoverTerminalHandoffs(config, handoffs)
+    candidates.sort((a, b) => a.record.startedAt.localeCompare(b.record.startedAt))
     for (const candidate of candidates) {
-      const handled = await handleCandidate(config, candidate, readRules)
-      if (handled === 'ran') return EXIT.OK
-    }
-    // 已归档的变更：执行出口动作（design D11 的顺序）。
-    for (const project of config.projects) {
-      const { view, error } = readProgressView(config, project.root)
-      if (error || !view) continue
-      for (const item of view.archived || []) {
-        const changeDir = locateChangeDir(project, view, item.name)
-        if (!changeDir) continue
-        const record = readRecord(changeDir)
-        if (record.error || !record.value) continue
-        if (record.value.status !== 'active' && record.value.status !== 'exiting') continue
-        const handled = await handleExitActions(config, {
-          project, entry: { change: item.name, ...item }, changeDir, record: record.value,
-        }, readRules)
+      try {
+        const handled = candidate.batch.location === 'archived'
+          ? await handleExitActions(config, candidate, readRules) : await handleCandidate(config, candidate, readRules)
         if (handled === 'ran') return EXIT.OK
+      } catch (error) {
+        diagnostic(config, candidate.batch, error.code || error.message)
       }
     }
     return EXIT.OK
@@ -917,7 +1530,7 @@ async function runOnce(config) {
     process.off('SIGTERM', onTerm)
     process.off('uncaughtException', onCrash)
     process.off('unhandledRejection', onCrash)
-    releaseLock(lockFile)
+    releaseLock(lockFile, runToken)
   }
 }
 
@@ -936,12 +1549,13 @@ async function handleOpenDecisions(config, candidate, readRules, { skipKinds = [
 
   // 第 1、2 步：有等待回复的决策时，本轮不运行阶段，也不起草出口动作。
   const pending = open.find(item => item.status === 'pending')
+  if (record.exitBlock && pending && (pending.kind !== 'alert' || JSON.stringify(pending.request?.options) !== '["回会话处理"]')) return 'done'
   if (pending) {
     if (!pending.card || !pending.card.messageId) {
       // 重发原决策卡片并写回 messageId：通知卡片没有表单，发了也不能回复，决策会一直停在 pending
       // （spec autopilot-scheduler 检查顺序第 1 步，quality R1 SPEC-06、STD-04）。幂等键沿用 <变更名>-<决策号>。
       log('resend-card', { change: entry.change, decision: pending.id })
-      sendDecisionCard(config, entry, pending, pending.kind, changeDir)
+      await sendDecisionCard(config, entry, pending, candidate.batch)
     } else {
       log('pending-decision', { change: entry.change, decision: pending.id })
     }
@@ -951,11 +1565,12 @@ async function handleOpenDecisions(config, candidate, readRules, { skipKinds = [
   // 第 3、4 步：恢复会话或按「回会话处理」作废托管。
   const answered = open.find(item => item.status === 'answered' && !skipKinds.includes(item.kind))
   if (!answered) return null
+  if (answered.batchStartedAt && answered.batchStartedAt !== candidate.batch.startedAt) {
+    throw new Error(`${answered.id} 的回复不属于当前批次`)
+  }
+  if (record.exitBlock && (answered.kind !== 'alert' || answered.answer?.choice !== '回会话处理')) return 'done'
   if (answered.kind === 'alert' && answered.answer && answered.answer.choice === '回会话处理') {
-    transition(path.join(decisionsDir(changeDir), `${answered.id}.json`), ['answered'], { status: 'used' })
-    transition(recordFile(changeDir), ['active', 'exiting'], { status: 'void', voidReason: '用户选择回会话处理' },
-      { startedAt: record.startedAt })
-    sendNotice(config, entry.change, '托管已作废', ['用户在卡片上选择回会话处理，请在会话中继续处理。'])
+    await finishReturnHandoff(config, candidate.batch, answered.id)
     return 'done'
   }
   // 恢复会话之前也做启动前核对：等待卡片期间加入的允许规则或 hook 会在恢复时生效（quality R1 SPEC-08）。
@@ -1004,25 +1619,27 @@ async function handleCandidate(config, candidate, readRules) {
   // 选定变更：认领后才清除 rerunStage、写实现快照与启动阶段（spec autopilot-scheduler 第 1 条）。
   if (!claimChange(candidate)) return 'done'
 
+  const traceBefore = readBeforeTrace(config, candidate)
+  if (!traceBefore) return 'done'
+
   // rerunStage 为 quality 时改走 quality，且不写实现快照（design D3，评审 ARCH-19）。
   let rule = entry.rule
   const rerun = record.rerunStage === 'quality' && (rule === 'R9' || rule === 'R11')
   if (rerun) rule = 'R8'
-  // 启动阶段或作废托管之前清除 rerunStage（design D3）。
-  if (record.rerunStage) {
-    transition(recordFile(changeDir), ['active', 'exiting'], { rerunStage: null }, { startedAt: record.startedAt })
-  }
-
   const skill = RULE_SKILL[rule]
   if (!skill) {
     log('no-skill-for-rule', { rule, change: entry.change })
     return 'done'
   }
-  // R11 之前记录实现快照（design D11「实现快照」）。复核之后的 transition 返回 false 时结束本轮，不启动 claude。
-  if (rule === 'R11' && !rerun && !writeImplSnapshot(project, changeDir, record)) {
-    log('record-changed-before-start', { change: entry.change })
-    return 'done'
-  }
+  const stage = { R6: 'apply', R7: 'apply', R8: 'quality', R9: 'verify', R11: 'archive' }[rule]
+  const saved = prepareStage(config, candidate, stage, { ...traceBefore, resumedDecisionIds: [] })
+  if (!saved) return 'done'
+  const ready = withBatch(saved, target => {
+    if (target.record.status !== record.status) return false
+    if (record.rerunStage && !transition(recordFile(changeDir), ['active', 'exiting'], { rerunStage: null }, { startedAt: record.startedAt }).ok) return false
+    return rule !== 'R11' || writeImplSnapshot(project, changeDir, record)
+  })
+  if (!ready) return 'ran'
 
   const prompt = stagePrompt({
     skill,
@@ -1030,7 +1647,7 @@ async function handleCandidate(config, candidate, readRules) {
     skillDir: path.join(process.env.HOME || '', '.claude', 'skills', skill),
     userName: gitUserName(project.root),
   })
-  return startStage(config, candidate, prompt, readRules)
+  return startStage(config, candidate, prompt, readRules, saved)
 }
 
 /**
@@ -1063,12 +1680,15 @@ function readCheckState() {
       return {
         projects: value.projects && typeof value.projects === 'object' ? value.projects : {},
         environment: Array.isArray(value.environment) ? value.environment : [],
+        handoffCursor: typeof value.handoffCursor === 'string' ? value.handoffCursor : null,
+        traceErrors: value.traceErrors && typeof value.traceErrors === 'object' && !Array.isArray(value.traceErrors)
+          ? value.traceErrors : {},
       }
     }
   } catch {
     // 文件不存在或不是 JSON：按没有通知过处理。
   }
-  return { projects: {}, environment: [] }
+  return { projects: {}, environment: [], traceErrors: {} }
 }
 
 /**
@@ -1130,20 +1750,22 @@ function clearEnvironmentState() {
  * 启动或恢复 claude、起草或执行出口步骤之前都调用：撤回读锁中的 change，锁中不是本变更时会立即返回，
  * 认领之后撤回才会等本轮结束（评审 CONC-06，quality R1 SPEC-04）。
  * @param {object} candidate 候选变更。
- * @returns {boolean} 托管记录的 status 与 startedAt 与选定时相同时为 true。
+ * @returns {object|null} 批次身份、目录与状态仍匹配时返回最新托管记录。
  */
 function claimChange(candidate) {
-  const { entry, changeDir, record } = candidate
+  const { entry, record, batch } = candidate
   const lockFile = path.join(homeDir(), 'run.lock')
   const lock = readLockFile(lockFile)
-  if (lock.value && lock.value.pid === process.pid) writeLockFile(lockFile, { ...lock.value, change: entry.change })
-  const again = readRecord(changeDir)
-  if (again.error || !again.value || again.value.status !== record.status
-    || again.value.startedAt !== record.startedAt) {
+  if (lock.value?.token !== runToken || lock.value.pid !== process.pid) return null
+  const runId = randomUUID()
+  writeLockFile(lockFile, { ...lock.value, change: entry.change, projectRoot: batch.root, startedAt: batch.startedAt, runId })
+  const current = locateBatch(batch)
+  if (current.superseded || current.record.status !== record.status || current.directory !== candidate.changeDir) {
     log('record-changed-before-start', { change: entry.change })
-    return false
+    return null
   }
-  return true
+  candidate.runId = runId
+  return current.record
 }
 
 /**
@@ -1152,208 +1774,165 @@ function claimChange(candidate) {
  * @param {object} candidate 候选变更。
  * @param {string} prompt 提示词。
  * @param {string[]} readRules 读取规则。
- * @returns {string} ran 表示本轮运行了阶段。
+ * @param {object} saved 持久化的核对条目。
+ * @param {object|null} resumed 要恢复的已答决策。
+ * @returns {string} ran 表示本轮占用阶段运行名额。
  */
-async function startStage(config, candidate, prompt, readRules) {
+async function startStage(config, candidate, prompt, readRules, saved, resumed = null) {
   const { project, entry, changeDir } = candidate
-  // 认领与实现快照已在 handleCandidate 中完成。
-  const before = progressDigest(project, entry, changeDir)
-  const beforeSnapshot = snapshotOf(changeDir)
-  const run = await runClaude({ config, project, changeRoot: changeDir, prompt, resume: null, readRules })
-  log('stage-finished', { change: entry.change, code: run.code, sessionId: run.sessionId })
-  const after = progressDigest(project, entry, changeDir)
-  handleResult(config, candidate, run, null, before === after, beforeSnapshot)
-  return 'ran'
-}
-
-/**
- * 恢复一个会话并处理结果（design D5「处理顺序」）。
- * @param {object} config 托管配置。
- * @param {object} candidate 候选变更。
- * @param {object} decision 已回复的决策。
- * @param {string[]} readRules 读取规则。
- * @returns {string} ran 表示本轮运行了阶段。
- */
-async function resumeSession(config, candidate, decision, readRules) {
-  const { project, entry, changeDir } = candidate
-  if (!claimChange(candidate)) return 'done'
-  const sessionId = decision.request && decision.request.sessionId
-  if (!sessionId) {
-    transition(path.join(decisionsDir(changeDir), `${decision.id}.json`), ['answered'], {
-      status: 'void', voidReason: '会话无法恢复',
-    })
-    return 'done'
-  }
-  // 会话告警回复「补充说明后继续」时，说明就是恢复会话的提示词（design D5）。
-  const note = typeof (decision.answer && decision.answer.text) === 'string' ? decision.answer.text : ''
-  const prompt = note ? `用户补充说明：${note}` : ''
-  const before = progressDigest(project, entry, changeDir)
-  const beforeSnapshot = snapshotOf(changeDir)
-  const run = await runClaude({ config, project, changeRoot: changeDir, prompt, resume: sessionId, readRules })
-  log('resume-finished', { change: entry.change, decision: decision.id, code: run.code })
-  const after = progressDigest(project, entry, changeDir)
-  handleResult(config, candidate, run, decision, before === after, beforeSnapshot)
-  return 'ran'
-}
-
-/**
- * 处理一次运行的结果（design D5「处理顺序」）。
- * 顺序：重新定位并读托管记录 → 被恢复的决策迁移到终态 → 最多创建一个新决策 → 再读托管记录。
- * @param {object} config 托管配置。
- * @param {object} candidate 候选变更。
- * @param {object} run 运行结果。
- * @param {object} [resumed] 被恢复的决策。
- * @param {boolean} [noProgress] 运行前后进展摘要相同时为 true。
- * @param {object} [beforeSnapshot] 运行前的核对快照。
- */
-function handleResult(config, candidate, run, resumed = null, noProgress = false, beforeSnapshot = null) {
-  const { entry, record } = candidate
-  // 第 1 步：运行后重新定位变更并读托管记录（design D5「运行后重新定位」）。
-  const view = readProgressView(config, candidate.project.root)
-  const located = view.view ? locateChangeDir(candidate.project, view.view, entry.change) : null
-  if (!located) {
-    log('change-not-found-after-run', { change: entry.change })
-    return
-  }
-  const current = readRecord(located)
-  if (current.error || !current.value || current.value.status !== record.status
-    || current.value.startedAt !== record.startedAt) {
-    log('record-changed-after-run', { change: entry.change })
-    return
+  const beforeDigest = progressDigest(project, entry, changeDir)
+  const run = await runClaude({ config, project, changeRoot: changeDir, prompt,
+    resume: resumed?.request?.sessionId || null, readRules, saved })
+  if (!run.writerStopped || !run.released) {
+    diagnostic(config, saved, run.released ? '旧阶段尚未证实停止' : '阶段握手未完成')
+    return 'ran'
   }
   const result = run.result
-  // 第 2 步：运行前后核对（design D5）。不通过时发会话告警，不按运行结果创建其他决策。
-  let checkFailures = []
-  if (beforeSnapshot) {
-    const afterSnapshot = snapshotOf(located)
-    const decisions = listDecisions(located).decisions
-    checkFailures = compareTrace({
-      before: beforeSnapshot.trace, after: afterSnapshot.trace, decisions, ownerOpenId: config.ownerOpenId,
-    }).concat(compareSignOff({
-      before: beforeSnapshot.signOff, after: afterSnapshot.signOff,
+  const unavailable = (resumed && SESSION_NOT_FOUND.test(`${run.stdout}\n${run.stderr}`))
+    || result?.stop_reason === 'tool_deferred_unavailable'
+  const deferred = result?.stop_reason === 'tool_deferred' && result.deferred_tool_use?.name === 'AskUserQuestion'
+    ? result.deferred_tool_use : null
+  const finished = { ...saved, writer: { state: 'exited' }, unavailable: Boolean(unavailable) }
+  // 可选字段写不下时仍保留原起点和必需恢复元数据。
+  for (const [key, value] of [['sessionId', run.sessionId], ['deferredToolUseId', deferred?.id]]) {
+    if (typeof value === 'string' && Buffer.byteLength(value) <= 1024) finished[key] = value
+  }
+  try {
+    storeEntry(finished)
+    await handleResult(config, candidate, finished, run, resumed, beforeDigest, deferred)
+  } catch (error) {
+    diagnostic(config, finished, error.code || error.message)
+  }
+  return 'ran'
+}
+
+/** 恢复会话前核对已展示的边界及实际使用的授权编号。 */
+async function resumeSession(config, candidate, decision, readRules) {
+  const { batch } = candidate
+  if (!claimChange(candidate)) return 'done'
+  const sessionId = decision.request?.sessionId
+  if (!sessionId) {
+    withBatch(batch, target => transition(decisionFile(target.directory, decision.id), ['answered'], {
+      status: 'void', voidReason: '会话无法恢复',
     }))
+    return 'done'
   }
-  const deferred = result && result.stop_reason === 'tool_deferred' ? result.deferred_tool_use : null
-  // 恢复的会话找不到时 CLI 报错，输出可能不是 JSON：与 tool_deferred_unavailable 同样按会话无法恢复处理
-  // （spec autopilot-scheduler 第 6 条，quality R1 SPEC-10）。
-  const sessionMissing = Boolean(resumed) && SESSION_NOT_FOUND.test(`${run.stdout}\n${run.stderr}`)
-  const unavailable = sessionMissing || Boolean(result && result.stop_reason === 'tool_deferred_unavailable')
-  const isError = result && (result.is_error === true || String(result.subtype || '').startsWith('error'))
-  // 回复含「回会话处理」时不论结果如何都先按它处理（spec 第 6 条的第 1 项）。
-  const returnToSession = Boolean(resumed) && hasReturnToSession(resumed)
-
-  // 第 3 步：把被恢复的决策迁移到终态（design D5）。
-  if (resumed && !returnToSession) {
-    const file = path.join(decisionsDir(located), `${resumed.id}.json`)
-    if (unavailable) {
-      // 会话无法恢复：quality 的决策先写 rerunStage，成功后再作废（design D3，评审 ARCH-19、CONC-15）。
-      if (resumed.stage === 'quality') {
-        const marked = transition(recordFile(located), ['active', 'exiting'], { rerunStage: 'quality' },
-          { startedAt: record.startedAt })
-        if (!marked.ok) {
-          // 写不进 rerunStage 时不作废决策：作废后下一轮可能直接进入 verify（评审 ARCH-19）。
-          log('rerun-stage-failed', { change: entry.change, reason: marked.reason })
-          return
-        }
-      }
-      transition(file, ['answered'], { status: 'void', voidReason: '会话无法恢复' })
-      // 不为本次结果创建决策：下一轮按进度规则重跑阶段（spec 第 6 条）。
-      sendNotice(config, entry.change, '托管阶段将重跑', [
-        `决策 ${resumed.id} 的会话无法恢复，下一轮按进度规则重跑${resumed.stage ? ` ${resumed.stage}` : ''}阶段。`,
-      ])
-      return
-    } else if (deferred && deferred.name === 'AskUserQuestion' && resumed.request
-      && deferred.id === resumed.request.toolUseId) {
-      // 再次停在同一个提问调用号上：原决策作废（design D5）。
-      transition(file, ['answered'], { status: 'void', voidReason: '提问已变化' })
-    } else {
-      transition(file, ['answered'], { status: 'used' })
-    }
+  const fresh = readBeforeTrace(config, candidate)
+  if (!fresh) return 'done'
+  const { traceBefore, comparisonBoundary, comparisonState } = decision.request
+  const boundary = comparisonState === 'listed' || comparisonState === 'stage' ? comparisonBoundary : traceBefore ?? comparisonBoundary
+  if ((traceBefore && traceBefore.traceVersion !== fresh.traceVersion) || (boundary && boundary.traceVersion !== fresh.traceVersion)) {
+    return versionHandoff(config, candidate, decision)
   }
+  if ((traceBefore && !validTrace(traceBefore)) || (boundary && !validTrace(boundary))
+    || (['listed', 'stage'].includes(comparisonState) && !comparisonBoundary) || (comparisonState === 'unread' && !traceBefore)) {
+    diagnostic(config, batch, '原起点或续查边界无法核验')
+    return 'done'
+  }
+  const priorIds = boundary && boundary === traceBefore ? traceBefore.resumedDecisionIds || [] : []
+  const beforeSnapshot = { ...(boundary || fresh), resumedDecisionIds: [...new Set([...priorIds, decision.id])] }
+  if (!traceFits(beforeSnapshot)) {
+    diagnostic(config, batch, '合入当前决策后续查起点超过 4 MiB')
+    return 'done'
+  }
+  const stage = decision.stage || 'unknown'
+  const saved = prepareStage(config, candidate, stage, beforeSnapshot, decision)
+  if (!saved) return 'done'
+  const note = typeof decision.answer?.text === 'string' ? decision.answer.text : ''
+  return startStage(config, candidate, note ? `用户补充说明：${note}` : '', readRules, saved, decision)
+}
 
-  // 第 4 步：最多创建一个新决策（design D5）。
-  // 回复含「回会话处理」时：原决策改为 used，托管作废，不为结果创建决策（design D5 结果表第 3 行）。
-  if (returnToSession) {
-    const file = path.join(decisionsDir(located), `${resumed.id}.json`)
-    transition(file, ['answered', 'used'], { status: 'used' })
-    const question = returnToSessionQuestion(resumed)
-    transition(recordFile(located), ['active', 'exiting'],
-      { status: 'void', voidReason: `用户选择回会话处理：${question}` }, { startedAt: record.startedAt })
-    // 通知卡片附上第 2 步核对不通过的项：用户回会话后要知道哪些记录被改动（spec 第 6 条，quality R1 SPEC-10）。
-    sendNotice(config, entry.change, '托管已作废', [
-      `用户在卡片上选择回会话处理（${question}），请在会话中继续处理。`,
-      ...(checkFailures.length ? ['运行前后核对不通过的项：', ...checkFailureLines(checkFailures)] : []),
-    ])
+/** 写入结果前后分别核验同一批次。无法完成任一步时保留起点。 */
+async function handleResult(config, candidate, saved, run, resumed, beforeDigest, deferred) {
+  const { entry, project } = candidate
+  const { view, error: viewError } = readProgressView(config, project.root)
+  const afterEntry = view?.active?.find(item => item.change === entry.change)
+  const archivedEntry = view?.archived?.find(item => item.name === entry.change)
+  if (viewError) log('progress-error-after-run', { change: entry.change })
+  const missingFromView = view && !afterEntry && !archivedEntry
+  let target
+  try {
+    target = locateBatch(saved)
+  } catch (error) {
+    if (!missingFromView) throw error
+    log('post-run-batch-unresolved', { change: entry.change, reason: error.code || error.message })
+  }
+  if (target?.superseded || target?.record.status === 'void') {
+    log('pending-trace-released', { change: saved.name, startedAt: saved.startedAt, reason: target.superseded ? '重新托管' : '撤回' })
+    removeEntry(saved)
     return
   }
-
-  // 各分支只算出决策与日志事件，第 5 步统一创建与发卡片（quality R1 STD-01）。
-  let decision = null
-  let logEvent = null
-  if (checkFailures.length) {
-    // 核对不通过：创建会话告警并列出每一项，不按运行结果创建提问决策或其他告警（design D5）。
-    decision = pendingDecision('alert', entry.stage, {
-      sessionId: result && result.session_id ? result.session_id : null,
-      text: '运行前后的记录不一致，请确认这些项。',
-      options: ['补充说明后继续', '回会话处理'],
-      checkFailures,
-      ...(deferred && deferred.name === 'AskUserQuestion' ? { deferredToolUseId: deferred.id } : {}),
-    })
-    logEvent = 'check-failures'
-  } else if (deferred && deferred.name === 'AskUserQuestion') {
-    const input = deferred.input || {}
-    decision = pendingDecision('question', entry.stage, {
-      sessionId: result.session_id || null,
-      toolUseId: deferred.id,
-      fingerprint: fingerprintOf(input),
-      questions: input.questions || [],
-    })
-    logEvent = 'question-decision'
-  } else if (isError) {
-    decision = pendingDecision('alert', entry.stage, {
-      sessionId: result.session_id || null,
-      text: String(result.result || result.subtype || '').slice(0, 500),
-      options: ['补充说明后继续', '回会话处理'],
-    })
-    logEvent = 'alert-decision'
-  } else if (!result || !result.session_id) {
-    // 输出不是 JSON 或没有 session_id：没有会话可以恢复，只有「回会话处理」（design D5 结果表，评审 CONC-17）。
-    decision = pendingDecision('alert', entry.stage, {
-      sessionId: null,
-      text: (run.stdout || '').slice(0, 500),
-      options: ['回会话处理'],
-    })
-    logEvent = 'alert-decision'
-  } else if (noProgress && !unavailable) {
-    // 正常结束但没有进展：发会话告警，不重跑同一阶段（design D5 结果表）。
-    // 会话无法恢复（unavailable）按上一行处理：它已经有专门的作废逻辑。
-    decision = pendingDecision('alert', entry.stage, {
-      sessionId: result.session_id || null,
-      text: String(result.result || '').slice(0, 500),
-      options: ['补充说明后继续', '回会话处理'],
-    })
-    logEvent = 'alert-decision'
+  if (missingFromView) {
+    sendNotice(config, entry.change, '托管不再处理此变更', [`进度视图不再列出 ${entry.change}，本次核对起点仍保留。`])
+    return
   }
-  if (!decision) return
-
-  // 第 5 步：创建决策之后再定位一次并读托管记录，变化时把新决策作废、不发卡片（design D5，评审 CONC-12）。
-  issueDecision(config, entry, located, decision, logEvent, {
-    fields: logEvent === 'check-failures' ? { count: checkFailures.length } : {},
-    confirm: created => {
-      const afterView = readProgressView(config, candidate.project.root)
-      const afterDir = afterView.view ? locateChangeDir(candidate.project, afterView.view, entry.change) : null
-      const target = afterDir || located
-      const after = readRecord(target)
-      if (!after.error && after.value && (after.value.status !== record.status
-        || after.value.startedAt !== record.startedAt)) {
-        transition(path.join(decisionsDir(target), `${created.id}.json`), ['pending'], {
-          status: 'void', voidReason: '托管已撤回',
-        })
-        return null
+  if (target.record.status !== candidate.record.status) throw new Error('运行后托管状态已变化')
+  const block = earlyArchive(saved, target)
+  if (block) withBatch(saved, latest => guardEarlyArchive(saved, latest, block))
+  const { value: snapshot, error } = traceSnapshot(config.gateBin, target.directory)
+  const failures = snapshot ? comparison(config, snapshot, saved, target)
+    : [{ file: '门禁核对', field: '处理记录', before: '已保存起点', after: error }]
+  if (error && target.recreated) failures.push({ file: target.directory, field: '原位置出现同名目录', before: saved.directory, after: target.recreated })
+  const moved = saved.location === 'active' && target.location === 'archived'
+  const progressEntry = target.location === 'archived' ? archivedEntry : afterEntry
+  const noProgress = !moved && progressEntry && beforeDigest === progressDigest(project, progressEntry, target.directory)
+  const result = run.result
+  const returned = resumed && hasReturnToSession(resumed) && !block
+  const outcome = withBatch(saved, latest => {
+    if (latest.directory !== target.directory || !sameObject(latest.identity, target.identity)
+      || latest.record.status !== target.record.status) throw new Error('结果的批次已变化')
+    if (resumed) {
+      const original = readDecision(latest.directory, resumed.id).value
+      if (!original || canonicalJson(original) !== canonicalJson(resumed)) throw new Error('已恢复的原决策已变化')
+      let patch = { status: 'used' }
+      if (saved.unavailable && !returned) {
+        if (saved.stage === 'quality' && !transition(recordFile(latest.directory), ['active', 'exiting'], {
+          rerunStage: 'quality',
+        }, { startedAt: saved.startedAt }).ok) throw new Error('质量重跑标记写入失败')
+        patch = { status: 'void', voidReason: '会话无法恢复' }
+      } else if (deferred && deferred.id === resumed.request?.toolUseId && !returned) {
+        patch = { status: 'void', voidReason: '提问已变化' }
       }
-      return target
-    },
+      if (!transition(decisionFile(latest.directory, resumed.id), ['answered'], patch).ok) throw new Error('原决策终态写入失败')
+    }
+    if (returned) {
+      const question = returnToSessionQuestion(resumed)
+      if (!transition(recordFile(latest.directory), ['active', 'exiting'], {
+        status: 'void', voidReason: `用户选择回会话处理：${question}`,
+      }, { startedAt: saved.startedAt }).ok) throw new Error('回会话状态写入失败')
+      return { notice: '托管已作废', lines: [`用户在卡片上选择回会话处理（${question}）。`, ...checkFailureLines(failures)] }
+    }
+    let decision
+    let kind
+    if (block || failures.length) {
+      kind = block ? 'early-archive-alert' : 'check-alert'
+      const request = alertRequest({ saved, snapshot, failures, error, block })
+      decision = pendingDecision('alert', saved.stage, request)
+    } else if (saved.unavailable) {
+      return { notice: '托管阶段将重跑', lines: [`决策 ${resumed?.id || ''} 的会话无法恢复，下一轮按进度规则重跑。`] }
+    } else if (deferred && saved.sessionId) {
+      kind = 'question'
+      decision = pendingDecision('question', saved.stage, { sessionId: saved.sessionId,
+        toolUseId: deferred.id, fingerprint: fingerprintOf(deferred.input || {}), questions: deferred.input?.questions || [] })
+    } else if (!saved.sessionId || result?.is_error || String(result?.subtype || '').startsWith('error') || noProgress) {
+      kind = 'stage-alert'
+      const text = String(result?.result || result?.subtype || run.stdout || '').slice(0, 500)
+      const request = { text, options: ['回会话处理'] }
+      if (saved.sessionId) Object.assign(request, { sessionId: saved.sessionId, comparisonBoundary: snapshot, comparisonState: 'stage' })
+      decision = pendingDecision('alert', saved.stage, request)
+    }
+    if (!decision) return {}
+    return { id: reserveDecision(saved, latest, decision, snapshot, kind) }
   })
+  if (outcome.id) {
+    await finishTransfer(config, pendingStore.entries[batchKey(saved)], outcome.id)
+  } else {
+    withBatch(saved, latest => {
+      if (!latest.record || latest.record.startedAt !== saved.startedAt) throw new Error('结果交接前批次已变化')
+      removeEntry(saved)
+    })
+    if (outcome.notice) sendNotice(config, saved.name, outcome.notice, outcome.lines)
+  }
 }
 
 /** 命令行入口。 */

@@ -162,10 +162,9 @@ Blocker 与 Major 的选项相同，沿用 `../openspec-technical-review/shared/
 
 **留痕字段**
 
-- 用户名：交互会话中取项目的 `git config user.name`，为空时不写入任何留痕字段，停止并提示用户设置；托管中取阶段提示词给出的用户名。
+- 用户名：交互会话中取项目的 `git config user.name`，为空时不写入任何留痕字段，停止并提示用户设置；托管中取阶段提示词给出的用户名（托管运行时不读 `git config user.name`）。
 - 留痕字段只有三个：双轴原始报告中驳回记录的「驳回人」、risk accepted 记录的「接受人」，以及 `review/sonar.md` 的「决策人」。
 - 来源行：交互会话中写 `> 来源：AskUserQuestion，交互会话`；托管中写 `> 来源：AskUserQuestion，托管决策 D-<编号>`。
-- 托管中的用户名取阶段提示词给出的用户名（托管运行时不读 `git config user.name`）；交互会话中取项目的 `git config user.name`。
 - 托管中的决策编号：用 Grep 在变更目录的 `decisions/` 中找状态为 `answered`、`request.questions` 含该 finding ID 的决策，取它的编号。
   恢复的会话运行期间该决策仍为 `answered`，据此写来源行。
 - 只按用户对**该 finding ID 或该 Sonar 行**的回复写入；没有回复的条目不写。

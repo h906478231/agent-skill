@@ -763,7 +763,7 @@ test('quality 询问处理方式：托管中写出来源行与决策人的托管
   assert.ok(body, `${QUALITY_SKILL} 缺少 Step 6`)
   for (const [label, pattern] of [
     ['托管来源行', /> 来源：AskUserQuestion，托管决策 D-<编号>/],
-    ['托管用户名取阶段提示词', /托管[^\n]*用户名[^\n]*阶段提示词/],
+    ['托管用户名取阶段提示词', /^- 用户名：[^\n]*托管中取阶段提示词给出的用户名（托管运行时不读 `git config user\.name`）/m],
     ['决策编号查找规则', /decisions\/[^\n]*`answered`[^\n]*`request\.questions`/],
   ]) assert.match(body, pattern, `Step 6 缺少：${label}`)
   const sonar = await read('skills/openspec-code-quality/shared/sonar-scan.md')

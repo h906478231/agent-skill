@@ -6,9 +6,10 @@
  * 边界：锁文件在托管目录中；取锁失败时调用方按「本轮退出」处理。
  */
 
-import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { writeJsonAtomic } from './atomic-write.mjs'
 
 /** 开机时间与当前时间相差超过这个秒数时，锁按上次开机留下的处理（design D12）。 */
 const BOOT_TIME_TOLERANCE = 60
@@ -45,9 +46,7 @@ export function isAlive(pid) {
  * @param {object} value 锁内容。
  */
 export function writeLockFile(file, value) {
-  const tmp = `${file}.tmp.${process.pid}`
-  writeFileSync(tmp, `${JSON.stringify(value)}\n`, { mode: 0o600 })
-  renameSync(tmp, file)
+  writeJsonAtomic(file, value, { indent: 0 })
 }
 
 /**
@@ -56,11 +55,12 @@ export function writeLockFile(file, value) {
  * @returns {{ value: object|null, unreadable: boolean, stale: boolean }} 锁内容与判定。
  */
 export function readLockFile(file) {
-  if (!existsSync(file)) return { value: null, unreadable: false, stale: false }
+  const missing = { value: null, unreadable: false, stale: false }
   let raw
   try {
     raw = readFileSync(file, 'utf8')
-  } catch {
+  } catch (error) {
+    if (error.code === 'ENOENT') return missing
     raw = ''
   }
   let value = null
@@ -71,8 +71,13 @@ export function readLockFile(file) {
   }
   if (value && typeof value === 'object') return { value, unreadable: false, stale: isStale(value) }
   // 读不出内容：修改时间不超过 60 秒按存活处理，超过按陈旧处理（design D12）。
-  const age = (Date.now() - statSync(file).mtimeMs) / 1000
-  return { value: null, unreadable: true, stale: age > UNREADABLE_TOLERANCE }
+  try {
+    const age = (Date.now() - statSync(file).mtimeMs) / 1000
+    return { value: null, unreadable: true, stale: age > UNREADABLE_TOLERANCE }
+  } catch (error) {
+    if (error.code === 'ENOENT') return missing
+    return { value: null, unreadable: true, stale: false }
+  }
 }
 
 /**
@@ -147,8 +152,8 @@ export function acquireLock(file, value) {
  * 释放锁：只有锁中的 pid 是本进程时才删除（design D12）。
  * @param {string} file 锁文件路径。
  */
-export function releaseLock(file) {
+export function releaseLock(file, token) {
   const current = readLockFile(file)
-  if (!current.value || current.value.pid !== process.pid) return
+  if (!current.value || current.value.pid !== process.pid || (token && current.value.token !== token)) return
   if (existsSync(file)) unlinkSync(file)
 }

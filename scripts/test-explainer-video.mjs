@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { STORYBOARD_SIGNATURE_SAMPLES } from './lib/storyboard-signature-samples.mjs'
 
 // 通过 /opsx:video 实际调用的 video.mjs 入口验证行为（doctor / check-storyboard / render 的 Python 启动前部分）；
 // 每个用例在临时目录里构造项目与缓存目录，不改动本仓库，也不依赖本机是否安装 uv、ffmpeg、Piper。
@@ -206,6 +207,17 @@ function videoFixture(t, { design = DESIGN, ...options } = {}) {
   const checkStoryboard = () => f.run(['check-storyboard', changeRoot])
   return { ...f, changeRoot, storyboard, checkStoryboard }
 }
+
+test('check-storyboard：按共用样本识别围栏外第一条签署行', async t => {
+  const f = videoFixture(t)
+  for (const sample of STORYBOARD_SIGNATURE_SAMPLES) {
+    await t.test(sample.name, () => {
+      f.storyboard([...sample.lines, storyboardText()].join('\n'))
+      const result = f.checkStoryboard()
+      assert.equal(result.json().signature, sample.signature, result.out + result.err)
+    })
+  }
+})
 
 /** 检查项摘要：`规则:命中内容`，便于整体断言。 */
 const findings = report => report.blocking.map(entry => `${entry.rule}:${entry.text}`)
