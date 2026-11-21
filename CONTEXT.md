@@ -125,5 +125,5 @@ _Avoid_: 审批卡片
 _Avoid_: 收尾动作、外发动作
 
 **Fact Research（事实预调研）**:
-explore 之前，由一个只读子 agent 针对一个主题查明代码现状、既有约定与外部事实的步骤，结果按五段契约写入变更目录的 `discussion-log.md`，只写事实与出处，不写推荐方案。与 explore 不同，它不与用户讨论（见 ADR-0012）。
+explore 之前，由一个只读子 agent 针对一个主题查明代码现状、既有约定与外部事实的步骤，结果按五段契约写入变更根目录的 `research.md`，只写事实与出处，不写推荐方案。与 explore 不同，它不与用户讨论（见 ADR-0012）。`research.md` 与 `discussion-log.md` 分开，后者只记讨论与决策（见 ADR-0014）。
 _Avoid_: 预调研、先行调研

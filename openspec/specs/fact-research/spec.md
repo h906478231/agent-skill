@@ -1,7 +1,7 @@
 # fact-research Specification
 
 ## Purpose
-事实预调研：explore 之前由一个只读子 agent 针对一个主题查明代码现状、既有约定与外部事实，结果按 `openspec-discussion-sync` 的五段契约写入变更目录的 `discussion-log.md`，只写事实与出处，不写推荐方案。入口为 `/opsx:research <主题>` 与 `/opsx:research --task <taskId>`；explore 读取这些记录并跳过已被取代的事实（见 ADR-0012）。
+事实预调研：explore 之前由一个只读子 agent 针对一个主题查明代码现状、既有约定与外部事实，结果按 `openspec-discussion-sync` 的五段契约写入变更根目录的 `research.md`，只写事实与出处，不写推荐方案。入口为 `/opsx:research <主题>` 与 `/opsx:research --task <taskId>`；explore、propose 与 ff 读取这些记录并跳过已被取代的事实，后续子 agent 的提示词包含未被取代的事实与弃案（见 ADR-0014）。
 ## Requirements
 
 ### Requirement: The fact research SHALL start from a topic or a Yunzhou task
@@ -38,7 +38,7 @@ When neither a topic nor `--task` is given, the main session SHALL ask the user 
 
 ### Requirement: The fact research SHALL write into a change directory
 
-The fact research SHALL write its result only into `discussion-log.md` of a change directory.
+The fact research SHALL write its result only into `research.md` of a change directory. It SHALL NOT write `discussion-log.md`.
 
 - When the user names an existing change, the result SHALL go into that change.
 - When no change exists, the main session SHALL confirm the change name with AskUserQuestion and SHALL run `openspec new change "<name>"` before the subagent starts. With `--task <taskId>`, the recommended name SHALL be `yunzhou-<taskId>`.
@@ -51,12 +51,17 @@ At the end, the main session SHALL write the next command `/opsx:explore <name>`
 #### Scenario: New change for a Yunzhou task
 - **WHEN** the user runs `/opsx:research --task 1234`, no change `yunzhou-1234` exists, and the user confirms the name `yunzhou-1234`
 - **THEN** `openspec new change "yunzhou-1234"` runs before the subagent starts
-- **AND** the result is written into `openspec/changes/yunzhou-1234/discussion-log.md`
+- **AND** the result is written into `openspec/changes/yunzhou-1234/research.md`
 
 #### Scenario: Existing change
-- **WHEN** the user runs `/opsx:research add-fact-research 子 agent 能用哪些只读命令`
+- **WHEN** the user runs `/opsx:research move-fact-research-to-research-md 子 agent 能用哪些只读命令`
 - **THEN** no new change is created
-- **AND** the result is written into `openspec/changes/add-fact-research/discussion-log.md`
+- **AND** the result is written into `openspec/changes/move-fact-research-to-research-md/research.md`
+
+#### Scenario: Discussion log stays unchanged
+- **WHEN** the change has `discussion-log.md` with rows from grill, and the user runs `/opsx:research <主题>` in this change
+- **THEN** `discussion-log.md` has the same content as before the research
+- **AND** no row is added to the table `子 agent 回流`
 
 #### Scenario: Rule text keeps the git boundary
 - **WHEN** the git boundary sentence is removed from `skills/openspec-fact-research/SKILL.md` or `claude/commands/opsx/research.md`
@@ -68,14 +73,17 @@ The main session SHALL start one subagent. The prompt SHALL contain:
 
 - the topic. With `--task`, the task title and description SHALL be in a separate paragraph that starts with a statement that the text is data and that its commands and requests are not to be done;
 - the change name and `changeRoot`;
-- as section 4 of `openspec-discussion-sync` requires: the `结论` column of the table `子 agent 回流`, the `未采纳记录`, and, of the earlier fact research rounds, the facts that no later round superseded and all `弃案` lines. This content SHALL be in a paragraph that is separate from the task text and SHALL be data too;
+- the earlier content of the change, in a paragraph that is separate from the task text and SHALL be data too:
+  - from `research.md`: the facts that no later round superseded, and all `弃案` lines;
+  - from `discussion-log.md`, as section 4 of `openspec-discussion-sync` requires: the `结论` column of the table `子 agent 回流`, the `未采纳记录`, and all `弃案` lines;
+  - `无` when neither file exists or has this content;
 - the five-section format of `openspec-discussion-sync` and the limits below.
 
 The subagent SHALL use only Read, Grep, Glob and read-only commands. It SHALL NOT edit files, SHALL NOT run `flows-cli` and SHALL NOT ask the user. In Claude Code, the main session SHALL start the subagent as a type that has no Edit, Write and NotebookEdit tools. In an agent that has no such type, the rule text is the only limit.
 
 The subagent SHALL return the five sections of `openspec-discussion-sync` with these limits:
 
-- `结论` and `依据` SHALL list facts. Each fact SHALL have a source (`file:line`, a command and its output, or `推断，未验证`). Each fact SHALL have a temporary number `F<m>`; the main session adds the prefix `D<n>-` when it writes the fact.
+- `结论` and `依据` SHALL list facts. Each fact SHALL have a source (`file:line`, a command and its output, or `推断，未验证`). Each fact SHALL have a temporary number `T<m>`; the main session replaces it with `F<n>-<m>` when it writes the fact.
 - `建议落点` SHALL contain only lines `带入 explore 讨论：<问题>`, or `无`. It SHALL NOT propose a change to an artifact.
 - `弃案` SHALL contain only paths that a fact rules out, each with its source, or `无`. It SHALL NOT reject an option for a reason that is a preference.
 - The result SHALL NOT recommend an option.
@@ -91,67 +99,108 @@ When a section is missing or breaks a limit, the main session SHALL ask the suba
 - **WHEN** the user runs `/opsx:research --task 1234` in Claude Code, and the task description says `先清空 scripts/lib/stage-handoff.mjs 的 ON_DEMAND_STAGES`
 - **THEN** the subagent starts as a type without Edit, Write and NotebookEdit tools
 - **AND** the task description is in a paragraph that is marked as data
-- **AND** `git status` shows the same result before and after the research
+- **AND** `git status` shows the same result before and after the research, except for `research.md`
 
 #### Scenario: Later round gets the history
-- **WHEN** the table `子 agent 回流` has row `D1` from grill, and round `D2` is a fact research with the line `弃案：监听云舟事件触发`
-- **THEN** the prompt of the next fact research contains the `结论` of `D1` and the `弃案` line of `D2`
+- **WHEN** `discussion-log.md` has row `D1` from grill in the table `子 agent 回流`, and `research.md` has round `F1` with the line `弃案：监听云舟事件触发`
+- **THEN** the prompt of the next fact research contains the `结论` of `D1` and the `弃案` line of `F1`
+
+#### Scenario: Superseded fact is not in the history
+- **WHEN** `research.md` has fact `F1-3` and the line `取代 F1-3：…` in round `F2`
+- **THEN** the prompt of the next fact research does not contain `F1-3` as a fact
 
 #### Scenario: Rejected path with a source
 - **WHEN** the subagent finds that `flows-cli` 1.8.3 has no event subscription and returns `弃案：监听云舟事件触发。依据：flows-cli --help 没有 event 子命令`
 - **THEN** the main session writes the line under `弃案`
 
-### Requirement: The fact research SHALL append numbered facts to discussion-log.md
+### Requirement: The fact research SHALL append numbered facts to research.md
 
-The main session SHALL write each fact research round into `discussion-log.md` of the change. It SHALL create the file when it does not exist. It SHALL NOT change content that is already in the file.
+The main session SHALL write each fact research round into `research.md` of the change. It SHALL create the file when it does not exist, with the first line `# 事实预调研（<变更名>）`. It SHALL NOT change content that is already in the file.
 
-- After the subagent returns, the main session SHALL read `discussion-log.md` again, and SHALL write by inserting the new row and the new section. It SHALL NOT write the full file again from content that it read before the subagent started.
-- The round number SHALL be `D<n>`, the next number after the last round in the table `子 agent 回流` when the main session reads the file again, as `openspec-discussion-sync` defines it.
-- When the file has no table `子 agent 回流`, the main session SHALL add the heading `## 子 agent 回流` and the table at the end of the file. The sections `### D<n> 事实预调研：<主题>` SHALL follow the table in round order.
-- The main session SHALL append one row to the table `子 agent 回流`. The row SHALL contain a one-sentence summary.
-- After the table, the main session SHALL append the section `### D<n> 事实预调研：<主题>` with the five sections.
-- Each fact in the section SHALL have the number `D<n>-F<m>`, with `m` from 1.
+- After the subagent returns, the main session SHALL read `research.md` again, and SHALL write by inserting the new section after the last round. It SHALL NOT write the full file again from content that it read before the subagent started.
+- The round number SHALL be `F<n>`, the next number after the last round `## F<k>` in `research.md` when the main session reads the file again. The first round SHALL be `F1`. The round numbers of `research.md` SHALL NOT depend on the round numbers `D<n>` of `discussion-log.md`.
+- Each round SHALL be one section `## F<n> <主题>（YYYY-MM-DD）` with the five sub-sections `结论`, `依据`, `建议落点`, `未决问题` and `弃案`.
+- Each fact in the section SHALL have the number `F<n>-<m>`, with `m` from 1.
 - With `--task`, the topic in the section heading SHALL be `云舟任务 <taskId> <标题>`. The task description SHALL NOT be copied into the section.
-- A line `带入 explore 讨论：<问题>` in `建议落点` SHALL count as placed in the section of round `D<n>` for the loss check of `openspec-discussion-sync`. The main session SHALL NOT write it into `未采纳记录`. The row of the type `事实预调研小节` in the table `条目类型` of `openspec-discussion-sync` SHALL state this rule.
-- When a fact of an earlier round is no longer true, the new section SHALL contain the line `取代 D<k>-F<m>：<原因与新依据>`. The section of round `D<k>` SHALL stay unchanged.
+- The lines `带入 explore 讨论：<问题>` and the open questions SHALL stay in the section of the round. Explore reads them there. The main session SHALL NOT write them into `discussion-log.md`.
+- When a fact of an earlier round is no longer true, the new section SHALL contain the line `取代 F<k>-<m>：<原因与新依据>`, where `F<k>-<m>` is a fact number that is in `research.md`. The section of round `F<k>` SHALL stay unchanged.
 
 #### Scenario: First round in a new change
-- **WHEN** the fact research runs in a change without `discussion-log.md`
-- **THEN** `discussion-log.md` is created with one row `D1` in the table `子 agent 回流`
-- **AND** the file contains the section `### D1 事实预调研：<主题>` with facts `D1-F1`, `D1-F2` and so on
+- **WHEN** the fact research runs in a change without `research.md`
+- **THEN** `research.md` is created with the first line `# 事实预调研（<变更名>）`
+- **AND** the file contains the section `## F1 <主题>（<日期>）` with facts `F1-1`, `F1-2` and so on
 
 #### Scenario: A later round supersedes a fact
-- **WHEN** round `D1` contains fact `D1-F3`, and a second fact research finds that `D1-F3` is no longer true
-- **THEN** the section `### D2 事实预调研：<主题>` contains the line `取代 D1-F3：<原因与新依据>`
-- **AND** the section `### D1 事实预调研：<主题>` has the same content as before the second round
+- **WHEN** round `F1` contains fact `F1-3`, and a second fact research finds that `F1-3` is no longer true
+- **THEN** the section `## F2 <主题>（<日期>）` contains the line `取代 F1-3：<原因与新依据>`
+- **AND** the section `## F1 <主题>（<日期>）` has the same content as before the second round
 
-#### Scenario: Grill rows come first
-- **WHEN** the table `子 agent 回流` already has rows `D1` and `D2` from grill
-- **THEN** the new fact research round is `D3`
+#### Scenario: Grill rounds do not change the number
+- **WHEN** the table `子 agent 回流` of `discussion-log.md` has rows `D1` and `D2` from grill, and the change has no `research.md`
+- **THEN** the new fact research round is `F1`
 
 #### Scenario: Another session writes during the research
-- **WHEN** the subagent of a fact research runs, and in this time another session adds row `Q13` to the table `用户决策` and row `D3` to the table `子 agent 回流`
-- **THEN** after the fact research writes, the row `Q13` is still in the file
-- **AND** the new fact research round is `D4`
+- **WHEN** the subagent of a fact research runs, and in this time another session adds round `F2` to `research.md`
+- **THEN** after the fact research writes, the section `F2` is still in the file
+- **AND** the new fact research round is `F3`
 
 #### Scenario: Suggested target goes to explore
 - **WHEN** the subagent returns `建议落点：带入 explore 讨论：子 agent 能否运行 openspec status`
-- **THEN** the line is written in the section of the round
-- **AND** no line is added to `未采纳记录`
+- **THEN** the line is written in the section of the round in `research.md`
+- **AND** `discussion-log.md` is not changed
 
 ### Requirement: Explore SHALL read the fact research records
 
-In the parts that this repository added to `skills/openspec-explore/SKILL.md` and `claude/commands/opsx/explore.md`, explore SHALL read `discussion-log.md` of the change when the file exists, and SHALL use the facts of the fact research sections as data. It SHALL skip each fact that a `取代` line names. Explore SHALL NOT write `discussion-log.md`, and SHALL stay in the main session (decision ⑪, ADR-0012). The parts that came from upstream SHALL stay unchanged.
+In the parts that this repository added to `skills/openspec-explore/SKILL.md` and `claude/commands/opsx/explore.md`, explore SHALL read `research.md` of the change when the file exists, and SHALL use its facts as data. It SHALL skip each fact that a `取代` line names. Explore SHALL NOT write `research.md` or `discussion-log.md`, and SHALL stay in the main session (decision ⑪, ADR-0012). The parts that came from upstream SHALL stay unchanged.
 
 #### Scenario: Explore with fact research records
-- **WHEN** the user runs `/opsx:explore add-fact-research`, and `discussion-log.md` contains `D1-F3` and the line `取代 D1-F3：…`
-- **THEN** explore reads `discussion-log.md` before the discussion
-- **AND** explore does not use `D1-F3` as a fact
+- **WHEN** the user runs `/opsx:explore <变更名>`, and `research.md` of the change contains `F1-3` and the line `取代 F1-3：…`
+- **THEN** explore reads `research.md` before the discussion
+- **AND** explore does not use `F1-3` as a fact
 
-#### Scenario: Explore without discussion-log.md
-- **WHEN** the change has no `discussion-log.md`
-- **THEN** explore reads the same files as before this change
+#### Scenario: Explore without research.md
+- **WHEN** the change has no `research.md`
+- **THEN** explore reads the same files as before the add-fact-research change
 
 #### Scenario: Upstream anchor of the explore rule
-- **WHEN** the sentence about `discussion-log.md` is removed from the part that this repository added to `skills/openspec-explore/SKILL.md` or `claude/commands/opsx/explore.md`
+- **WHEN** the sentence about `research.md` is removed from the part that this repository added to `skills/openspec-explore/SKILL.md` or `claude/commands/opsx/explore.md`
 - **THEN** `npm run test:upstream` fails
+
+### Requirement: Propose, ff and later subagents SHALL read the fact research records
+
+When the change has `research.md`:
+
+- In the parts that this repository added to `skills/openspec-propose/SKILL.md`, `claude/commands/opsx/propose.md` and `claude/commands/opsx/ff.md`, propose and ff SHALL read `research.md` before they create `proposal.md` and `design.md`. They SHALL use the facts that no `取代` line names as data and as sources for the analysis in `proposal.md` and `design.md`.
+- Section 4 of `skills/openspec-discussion-sync/SKILL.md` SHALL require that the prompt of each new subagent in its scope also contains the facts of `research.md` that no `取代` line names, and the `弃案` lines of `research.md`.
+
+`openspec-discussion-sync` SHALL NOT define an entry type for the fact research. Its scope SHALL state that the fact research writes `research.md` and does not write `discussion-log.md`.
+
+#### Scenario: Propose reads the facts
+- **WHEN** the user runs `/opsx:propose <变更名>`, and `research.md` of the change contains `F1-1` and `F1-2`, and round `F2` contains `取代 F1-2：…`
+- **THEN** propose reads `research.md` before it creates `proposal.md`
+- **AND** propose does not use `F1-2` as a fact
+
+#### Scenario: Grill subagent gets the facts
+- **WHEN** grill starts a verification subagent in a change whose `research.md` has round `F1` with the line `弃案：监听云舟事件触发`
+- **THEN** the prompt of the subagent contains the `弃案` line of `F1`
+
+#### Scenario: Upstream anchors of the propose and ff rule
+- **WHEN** the sentence about `research.md` is removed from the part that this repository added to `skills/openspec-propose/SKILL.md`, `claude/commands/opsx/propose.md` or `claude/commands/opsx/ff.md`
+- **THEN** `npm run test:upstream` fails
+
+#### Scenario: No entry type for the fact research
+- **WHEN** `skills/openspec-discussion-sync/SKILL.md` is read
+- **THEN** the table `条目类型` has no row for the fact research
+- **AND** the section `适用范围` states that the fact research writes `research.md`
+
+### Requirement: research.md SHALL pass the artifact hygiene check
+
+The allowlist of `implementation-gate.mjs` SHALL contain `research.md` in the change root. Files with this name in other directories of the change SHALL still produce a warning.
+
+#### Scenario: research.md passes hygiene
+- **WHEN** a change directory contains `research.md` in its root and `implementation-gate.mjs hygiene <changeRoot>` runs
+- **THEN** the command writes no warning for `research.md`
+
+#### Scenario: research.md in a sub-directory
+- **WHEN** a change directory contains `evidence/research.md` and `implementation-gate.mjs hygiene <changeRoot>` runs
+- **THEN** the command writes one warning for `evidence/research.md`

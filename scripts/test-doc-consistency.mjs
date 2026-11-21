@@ -40,7 +40,7 @@ const GIT_GUARD_FILES = [
   'skills/openspec-change-recap/SKILL.md',
   // archive 第 7 步生成完成清单：git 边界句写在本仓自加的第 7 步内，不修改上游原文。
   'skills/openspec-archive-change/SKILL.md',
-  // 事实预调研写入变更目录的 discussion-log.md（add-fact-research D7）。
+  // 事实预调研写入变更根目录的 research.md（add-fact-research D7；move-fact-research-to-research-md D4）。
   'skills/openspec-fact-research/SKILL.md',
   'claude/commands/opsx/research.md',
   // 面向人的流程文档保留「门禁产物提交 git」的策略，同时写明 agent 不执行提交、以项目 .gitignore 为准。

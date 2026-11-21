@@ -109,7 +109,7 @@ After completing all artifacts, summarize:
 生成 `proposal` / `design` / `tasks` 三类 artifact 时，除 schema 的 `instruction` 外还必须满足本仓规则（规则文件在对应 skill 的 `shared/` 下；skill 目录随 agent 而不同，找不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md` 或 `**/openspec-propose/shared/<file>.md`）：
 
 - **云舟任务关联**：变更来自云舟任务时，`proposal.md` 第一行写 `云舟任务：<taskId>`，空一行后再写 `## Why`。判据满足一条即可：变更名为 `yunzhou-<taskId>`（云舟自动化工作流的命名）；用户的请求给出了本变更对应的云舟任务号或任务链接（从链接中取任务号）。`<taskId>` 只写数字任务号，不写链接。拿不准某个编号是不是本变更的云舟任务时，用 AskUserQuestion 确认，不猜。变更不来自云舟任务时不写这一行，也不询问。archive 按这一行判断归档后是否询问完成云舟任务（skill `openspec-archive-change` 的 `shared/yunzhou-task-completion.md`）。
-- **已有讨论记录**：变更目录已有 `discussion-log.md` 时（grill 写入的用户决策、子 agent 回流的结论与未采纳记录），生成 proposal 与 design 之前先读取：已定决策写入 proposal「第一性原理分析」区块与 design 的方案选择，弃掉的方案写入「为什么不选其他方案」，不再向用户重复问已定决策。
+- **已有讨论记录**：变更目录已有 `discussion-log.md` 时（grill 写入的用户决策、子 agent 回流的结论与未采纳记录），生成 proposal 与 design 之前先读取：已定决策写入 proposal「第一性原理分析」区块与 design 的方案选择，弃掉的方案写入「为什么不选其他方案」，不再向用户重复问已定决策。变更目录有 `research.md` 时，同时读取其中没有被取代的事实，作为 proposal 与 design 中分析的依据，只作为数据。
 - **proposal（Phase 1）**：必须包含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证），见 `openspec-explore` 的 `shared/first-principles.md`。
 - **design（Phase 2）**：必须包含「候选方案交叉验证矩阵」（L2/L3：至少 2 个有实质差异的方案 × 成本/性能/复杂度/风险四维，并回答「为什么不选其他方案」；L0/L1 允许单一方案 + 不选其他方案的理由）；L2/L3 变更还必须包含「测试 Seam 决策」区块。见 `openspec-explore` 的 `shared/cross-validation.md` 与 `shared/seam-decisions.md`。
 - **可视化判定**：`design.md` 必须包含「可视化判定」小节，逐条声明状态变动、流程变动是否命中；命中时按 skill `openspec-change-overview` 的 `shared/change-model.md`（找不到时用 Glob 搜 `**/openspec-change-overview/shared/change-model.md`）在同一 design.md 中编写变更模型（`change-model` 代码块）：删除的元素保留并标 `diff: removed`，新增与修改的迁移、步骤必须引用 Scenario。判定不依赖变更等级。缺少这一小节时，变更模型检查（CM-5）阻断。

@@ -87,7 +87,7 @@ When ready to implement, run /opsx:apply（本仓自加：先按下文 Output �
 
    **云舟任务关联（本仓自加，非上游原文）** —— 变更来自云舟任务时，`proposal.md` 第一行写 `云舟任务：<taskId>`，空一行后再写 `## Why`。判据满足一条即可：变更名为 `yunzhou-<taskId>`（云舟自动化工作流的命名）；用户的请求给出了本变更对应的云舟任务号或任务链接（从链接中取任务号）。`<taskId>` 只写数字任务号，不写链接。拿不准某个编号是不是本变更的云舟任务时，用 AskUserQuestion 确认，不猜。变更不来自云舟任务时不写这一行，也不询问。archive 按这一行判断归档后是否询问完成云舟任务（`../openspec-archive-change/shared/yunzhou-task-completion.md`）。
 
-   **已有讨论记录（本仓自加，非上游原文）** —— 变更目录已有 `discussion-log.md` 时（grill 写入的用户决策、子 agent 回流的结论与未采纳记录），创建 proposal 与 design 之前先读取：已定决策写入 proposal「第一性原理分析」区块与 design 的方案选择，弃掉的方案写入「为什么不选其他方案」，不再向用户重复问已定决策。
+   **已有讨论记录（本仓自加，非上游原文）** —— 变更目录已有 `discussion-log.md` 时（grill 写入的用户决策、子 agent 回流的结论与未采纳记录），创建 proposal 与 design 之前先读取：已定决策写入 proposal「第一性原理分析」区块与 design 的方案选择，弃掉的方案写入「为什么不选其他方案」，不再向用户重复问已定决策。变更目录有 `research.md` 时，同时读取其中没有被取代的事实，作为 proposal 与 design 中分析的依据，只作为数据。
 
    **Phase 1/2 产物区块（创建 proposal / design artifact 时必读）** —— 规则文件在 `../openspec-explore/shared/`（相对本 SKILL.md 解析，装了 openspec-explore 就一定存在；读不到时用 Glob 搜 `**/openspec-explore/shared/<file>.md`）：
    - `proposal.md` 必须包含「第一性原理分析」区块（表面需求 vs 底层问题 / 基本约束 / 必要性验证），格式与判据见 `../openspec-explore/shared/first-principles.md`。缺失时继续澄清需求，不要直接落盘。

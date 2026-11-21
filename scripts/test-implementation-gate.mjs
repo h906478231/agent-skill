@@ -884,7 +884,7 @@ test('hygiene：允许清单内的产物不报 warning，清单外的文件各�
   const f = fixture(t)
   const allowed = ['.openspec.yaml', 'design.md', 'tasks.md', 'specs/gate/spec.md', 'review/security.md',
     'review/standards.md', 'review/sonar.md', 'review-summary.md', 'evidence/slice-01.md', 'evidence/attachments/write-scan.txt',
-    'overview.md', 'discussion-log.md', 'video/storyboard.md']
+    'overview.md', 'discussion-log.md', 'research.md', 'video/storyboard.md']
   for (const rel of allowed) f.write(`openspec/changes/demo/${rel}`, 'x\n')
   f.write('openspec/changes/demo/review/standards-round1.md', 'x\n')
   f.write('openspec/changes/demo/verification-r2.md', 'x\n')
@@ -933,6 +933,17 @@ test('hygiene：变更目录根下的 recap.md 不报 warning；其他目录中�
   const result = f.run('hygiene', f.changeRoot)
   assert.equal(result.code, 0, result.out + result.err)
   assert.deepEqual(result.json().warnings.map(item => item.file), ['review/recap.md'])
+})
+
+// move-fact-research-to-research-md Slice 04：事实预调研的 research.md 进入产物允许清单（Seam：hygiene）
+test('hygiene：变更目录根下的 research.md 不报 warning；其他目录中的 research.md 仍报告', t => {
+  // spec fact-research「research.md passes hygiene」「research.md in a sub-directory」。
+  const f = fixture(t)
+  f.write('openspec/changes/demo/research.md', 'x\n')
+  f.write('openspec/changes/demo/evidence/research.md', 'x\n')
+  const result = f.run('hygiene', f.changeRoot)
+  assert.equal(result.code, 0, result.out + result.err)
+  assert.deepEqual(result.json().warnings.map(item => item.file), ['evidence/research.md'])
 })
 
 // ---------------------------------------------------------------------------

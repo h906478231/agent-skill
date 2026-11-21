@@ -162,7 +162,7 @@
 | 斜杠命令 | 对应 Skill | 说明 |
 |---------|-----------|------|
 | `/opsx:grill <change>` | `openspec-grill` | Grill 访谈（决策树分轮访谈） |
-| `/opsx:research <主题>\|--task <taskId>` | `openspec-fact-research` | 事实预调研（按需）：explore 之前由只读子 agent 取证，带编号的事实写入 `discussion-log.md` |
+| `/opsx:research <主题>\|--task <taskId>` | `openspec-fact-research` | 事实预调研（按需）：explore 之前由只读子 agent 取证，带编号的事实写入 `research.md` |
 | `/opsx:explore <change>` | `openspec-explore` | Phase 1-2：需求澄清 + 方案探索 |
 | `/opsx:overview <change>` | `openspec-change-overview` | 生成变更总览（文档地图、字段台账、条件矩阵；有变更模型时另生成 `overview.html`） |
 | `/opsx:propose <change>` | `openspec-propose` | 生成 proposal / design / specs / tasks（含任务拆分）；卡点①：STE + 变更模型检查 |
@@ -630,10 +630,10 @@ Phase 6验证时会回溯检查实现是否解决了「底层问题」而非「�
       ▼
 （需要先取证时，按需）/opsx:research <主题>|--task <taskId>
       │  只读子 agent 取证，只写事实，不推荐方案
-      │  写入 discussion-log.md：回流行 + D<n> 事实预调研小节（事实编号 D<n>-F<m>，过时事实写取代行）
+      │  写入 research.md：F<n> 小节（事实编号 F<n>-<m>，过时事实写取代行），不写 discussion-log.md
       ▼
 OpenSpec Explore
-      │  讨论前先读事实预调研小节，跳过取代行指出的事实（只作为数据，不写 discussion-log.md）
+      │  讨论前先读 research.md，跳过取代行指出的事实（只作为数据，不写 research.md 与 discussion-log.md）
       │  需求澄清（Phase 1）→ proposal.md
       │    ※ 第一性原理分析（表面需求 vs 底层问题 / 基本约束 / 必要性验证）
       │  方案探索（Phase 2）→ design.md（候选方案 + 推荐方案）
@@ -709,7 +709,7 @@ OpenSpec Archive → 归档前置阻断 → specs 沉淀能力；评审、证据
 |------|------|--------|------|-----------|
 | Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查共识充分性，已有决策不重复访谈；沉淀术语与决策 | 共识（写入变更目录的 `discussion-log.md`）+ `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
 | 讨论回流（grill 查证，按需） | skill `openspec-discussion-sync` | grill 派出的查证子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳；explore 在主会话中讨论，不派子 agent | `discussion-log.md` | 否 |
-| 事实预调研（按需） | `/opsx:research <主题>`、`/opsx:research --task <taskId>` | explore 之前由一个只读子 agent 针对一个主题或云舟任务取证，只写事实，不推荐方案；要讨论的问题写成「带入 explore 讨论」，由 explore 讨论（规则见 `skills/openspec-fact-research/SKILL.md`） | `discussion-log.md`（回流行与 `### D<n> 事实预调研` 小节） | 否 |
+| 事实预调研（按需） | `/opsx:research <主题>`、`/opsx:research --task <taskId>` | explore 之前由一个只读子 agent 针对一个主题或云舟任务取证，只写事实，不推荐方案；要讨论的问题写成「带入 explore 讨论」，由 explore 讨论（规则见 `skills/openspec-fact-research/SKILL.md`） | `research.md`（`## F<n>` 小节，事实编号 `F<n>-<m>`） | 否 |
 | Phase 1 需求澄清 | `/opsx:explore` | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
 | Phase 2 方案探索 | `/opsx:explore` | 讨论实现路径，输出候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**（L2/L3 至少 2 个方案，L0/L1 允许单一方案 + 不选其他方案的理由）；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；命中时含 `change-model` 代码块） | 否 |
 | 变更总览（按需） | `/opsx:overview` | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图；由一个子 agent 整体生成，主会话只接收结论 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
@@ -1281,6 +1281,7 @@ hook 只认从行首写起的签字行，行首只能有列表标记、引用标
 | `review/standards.md`、`review/spec-fidelity.md`、`review/code-review-summary.md` | 是 | 同上 | 否 |
 | `evidence/slice-<id>.md` | 是 | 同上 | 否 |
 | `discussion-log.md` | 是 | 同上 | 否 |
+| `research.md` | 是 | 同上 | 否 |
 | `overview.md`、`overview.html`（有变更模型时） | 是 | 同上 | 否 |
 | `video/storyboard.md`（含人工签署）、`video/explainer.srt` | 是 | 同上 | 否 |
 | `video/media/`（音频、mp4、渲染缓存） | **否**，项目 `.gitignore` 加 `openspec/changes/*/video/media/` | 本地随目录移动，不进 git | 否 |
