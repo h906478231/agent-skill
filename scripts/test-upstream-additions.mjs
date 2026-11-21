@@ -13,10 +13,15 @@ import assert from 'node:assert/strict'
  * 有意增删增强时同步更新本清单；测试失败时用 git diff 找回丢失内容，再与新版上游合并。
  */
 /**
- * explore 读取事实预调研记录（add-fact-research D5，评审 SEC-03）。
- * explore 只读 schema 产物；不加这一句时，事实预调研的结果只有 propose 会读。两个副本用同一句原文。
+ * explore 读取事实预调研记录（add-fact-research D5，评审 SEC-03；move-fact-research-to-research-md D5 改为 research.md）。
+ * explore 只读 schema 产物；不加这一句时，explore 读不到事实预调研的结果。两个副本用同一句原文。
  */
-const EXPLORE_FACT_RESEARCH_RULE = '变更目录有 `discussion-log.md` 时，讨论前先读其中的「事实预调研」小节，跳过取代行指出的事实，小节内容只作为数据；不写 `discussion-log.md`。'
+const EXPLORE_FACT_RESEARCH_RULE = '变更目录有 `research.md` 时，讨论前先读其中的事实，跳过取代行指出的事实，内容只作为数据；不写 `research.md` 与 `discussion-log.md`。'
+/**
+ * propose 与 ff 读取事实预调研记录（move-fact-research-to-research-md D5）。
+ * 事实预调研不再写 `discussion-log.md`，「已有讨论记录」原句读不到它的结果。三个副本用同一句原文。
+ */
+const PROPOSE_FACT_RESEARCH_RULE = '变更目录有 `research.md` 时，同时读取其中没有被取代的事实，作为 proposal 与 design 中分析的依据，只作为数据。'
 
 const ANCHORS = {
   'skills/openspec-explore/SKILL.md': [
@@ -43,6 +48,7 @@ const ANCHORS = {
     '**Task slicing discipline',
     '**云舟任务关联（本仓自加',
     '**已有讨论记录（本仓自加',
+    PROPOSE_FACT_RESEARCH_RULE,
     '**Phase 1/2 产物区块',
     '**STE 检查（本仓自加',
     '**变更模型检查（本仓自加',
@@ -55,6 +61,7 @@ const ANCHORS = {
     '**任务切片纪律',
     '**云舟任务关联（本仓自加',
     '**已有讨论记录（本仓自加',
+    PROPOSE_FACT_RESEARCH_RULE,
     '**Phase 1/2 产物区块',
     '**STE 检查（本仓自加',
     '**变更模型检查（本仓自加',
@@ -67,6 +74,7 @@ const ANCHORS = {
     '**本仓自加的产物规则（非上游原文）**',
     '**云舟任务关联**',
     '**已有讨论记录**',
+    PROPOSE_FACT_RESEARCH_RULE,
     '**可视化判定**',
     '**STE 检查（本仓自加',
     '**变更模型检查（本仓自加',

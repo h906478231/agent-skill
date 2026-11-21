@@ -10,7 +10,7 @@
 |------|----------------------------------|--------|------|-----------|
 | Grill 访谈（按需入口） | `/opsx:grill`（仅未决项） | L2/L3 检查决策充分性，复用有效共识；同步沉淀领域术语与决策 | 共识（写入变更目录的 `discussion-log.md`）+ `CONTEXT.md` + `docs/adr/`（项目级，不随变更归档） | 否 |
 | 讨论回流（grill 查证，按需） | skill `openspec-discussion-sync` | grill 派出的查证子 agent 按五段契约返回，主 agent 逐条落盘或记未采纳；explore 在主会话中讨论，不派子 agent | `discussion-log.md` | 否 |
-| 事实预调研（按需） | `/opsx:research <主题>`、`/opsx:research --task <taskId>` | explore 之前由一个只读子 agent 针对一个主题或云舟任务取证，只写事实，不推荐方案；要讨论的问题写成「带入 explore 讨论」，由 explore 讨论（规则见 `../../openspec-fact-research/SKILL.md`） | `discussion-log.md`（回流行与 `### D<n> 事实预调研` 小节） | 否 |
+| 事实预调研（按需） | `/opsx:research <主题>`、`/opsx:research --task <taskId>` | explore 之前由一个只读子 agent 针对一个主题或云舟任务取证，只写事实，不推荐方案；要讨论的问题写成「带入 explore 讨论」，由 explore 讨论（规则见 `../../openspec-fact-research/SKILL.md`） | `research.md`（`## F<n>` 小节，事实编号 `F<n>-<m>`） | 否 |
 | Phase 1 需求澄清 | `/opsx:explore`                  | 明确业务目标、边界、输入输出、数据规模、性能指标、兼容/安全要求；**应用第一性原理分析** | `proposal.md`（含第一性原理分析区块） | 否 |
 | Phase 2 方案探索 | `/opsx:explore`                  | 讨论实现路径，输出多个候选方案+优缺点+推荐方案+决策理由；**候选方案四维对比矩阵交叉验证**；**确定测试 Seam** | `design.md`（含方案交叉验证矩阵 + 测试 Seam 决策区块 + 「可视化判定」小节；状态变动或流程变动命中时写 `change-model` 代码块，规则见 `../../openspec-change-overview/shared/change-model.md`） | 否 |
 | 变更总览（按需） | `/opsx:overview`                 | 汇成文档地图、端到端流程、字段变更台账、规则条件可追溯矩阵；有变更模型时由脚本渲染前后对比图；由一个子 agent 整体生成，主会话只接收结论 | `overview.md`（派生视图，勿手改）；有变更模型时另生成 `overview.html` | 否 |
@@ -35,9 +35,9 @@
 | 阶段 | 读取的输入 | 产出 | 能否在新会话中开始 |
 |------|-----------|------|-------------------|
 | grill | `CONTEXT.md`、`docs/adr/`、`proposal.md`（已有时）、`design.md`（已有时） | `CONTEXT.md`、`docs/adr/`、`discussion-log.md` | 能 |
-| research | 主题（命令参数，或云舟任务的标题与描述）、`discussion-log.md`（有变更时） | `discussion-log.md` | 能。主题或任务号写在命令参数中 |
-| explore | 对话；有变更时读取产物与 `discussion-log.md`（有事实预调研时） | 无。用户要求时才写入产物 | 否。explore 是与用户的讨论，在主会话中进行，不交给子 agent，避免讨论内容缺失导致方案偏离 |
-| propose / ff | 用户需求、`discussion-log.md`（grill 或 research 写入时）、已完成的产物 | `proposal.md`、`design.md`、`specs/`、`tasks.md`、`overview.md`（L0 或 MVP 未命中信号时，只写分级行） | 能。grill 没有创建变更时，共识只在 grill 的会话中，propose 要在该会话中执行 |
+| research | 主题（命令参数，或云舟任务的标题与描述）、`research.md`、`discussion-log.md`（有变更时） | `research.md` | 能。主题或任务号写在命令参数中 |
+| explore | 对话；有变更时读取产物与 `research.md`（有事实预调研时） | 无。用户要求时才写入产物 | 否。explore 是与用户的讨论，在主会话中进行，不交给子 agent，避免讨论内容缺失导致方案偏离 |
+| propose / ff | 用户需求、`discussion-log.md`（grill 写入时）、`research.md`（research 写入时）、已完成的产物 | `proposal.md`、`design.md`、`specs/`、`tasks.md`、`overview.md`（L0 或 MVP 未命中信号时，只写分级行） | 能。grill 没有创建变更时，共识只在 grill 的会话中，propose 要在该会话中执行 |
 | update | 修改依据与全部产物。修改依据大多来自刚才的讨论 | `proposal.md`、`design.md`、`specs/`、`tasks.md` | 通常不能，在讨论的会话中执行。修改依据已完整写在指令中时能（如「design 改为用 X」） |
 | review | `proposal.md`、`design.md` | `review-summary.md`、`review/` | 能 |
 | apply | `proposal.md`、`specs/`、`design.md`、`tasks.md`、`review-summary.md`（启用技术评审时） | 代码、`evidence/`、`tasks.md` | 能。新会话中写明变更名 |
@@ -67,10 +67,10 @@
       ▼
 （需要先取证时，按需）/opsx:research <主题>|--task <taskId>
       │  只读子 agent 取证，只写事实，不推荐方案
-      │  写入 discussion-log.md：回流行 + D<n> 事实预调研小节（事实编号 D<n>-F<m>，过时事实写取代行）
+      │  写入 research.md：F<n> 小节（事实编号 F<n>-<m>，过时事实写取代行），不写 discussion-log.md
       ▼
 OpenSpec Explore
-      │  讨论前先读事实预调研小节，跳过取代行指出的事实（只作为数据，不写 discussion-log.md）
+      │  讨论前先读 research.md，跳过取代行指出的事实（只作为数据，不写 research.md 与 discussion-log.md）
       │  需求澄清（Phase 1）→ proposal.md
       │    ※ 第一性原理分析（表面需求 vs 底层问题 / 基本约束 / 必要性验证）
       │  方案探索（Phase 2）→ design.md（候选方案 + 推荐方案）

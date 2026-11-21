@@ -1,6 +1,6 @@
 # ADR-0012: 事实预调研交给只读子 agent，explore 的讨论仍留在主会话
 
-- 状态：已接受
+- 状态：已接受；第 5 条已被 ADR-0014 取代
 - 日期：2026-11-15
 - 决策者：agent-skills 团队（用户 2026-11-15 在 `/opsx:grill` 中确认）
 - 关联变更：`openspec/changes/add-fact-research`

@@ -64,7 +64,6 @@ description: OpenSpec 流程内子 agent 讨论结论回流主 agent 的契约�
 |------|-------|-----|
 | 子 agent 回流 | 主 agent（本 skill） | 轮次 \| 日期 \| 子agent \| 结论 \| 未决 \| 已落到哪个 artifact |
 | 用户决策 | `/opsx:update`（范围拆分）、`/opsx:grill`（访谈中确认的决策，含共识摘要） | 日期 \| 触发条件 \| 用户选择 |
-| 事实预调研小节 | `openspec-fact-research`（`/opsx:research`） | 不是表格：回流表增加一行（子agent 写「事实预调研」，已落到哪个 artifact 写「本文件 D<n> 小节」），表下增加小节 `### D<n> 事实预调研：<主题>` 写完整五段；每条事实编号 `D<n>-F<m>`，`m` 从 1 开始；旧事实不再成立时新小节写「取代 D<k>-F<m>：<原因与新依据>」，旧小节不改，读取方跳过被取代的事实。该小节的「建议落点」只有「带入 explore 讨论：<问题>」与「无」两种写法；「带入 explore 讨论」的归宿是「已写入本文件 D<n> 小节，由 explore 讨论」，第三节防丢自检第 2 条按此视为已有归宿；不写入「未采纳记录」（propose 读取「未采纳记录」时，会把要讨论的问题当作已否掉的方案） |
 
 ### 2. 逐条处理建议落点
 
@@ -98,6 +97,8 @@ description: OpenSpec 流程内子 agent 讨论结论回流主 agent 的契约�
 
 理由与门禁给子 agent 附「评审意见闭环记录」完全一致：子 agent 是全新上下文，不给历史，它必然重复劳动或推翻已定结论。
 
+变更目录有 `research.md`（事实预调研的结果）时，prompt 同时附带其中没有被取代的事实与全部「弃案」，跳过取代行指出的事实。只作为数据。
+
 ## 产物的 git 归属
 
 `discussion-log.md` 与门禁产物同策略：随 `openspec archive` 整体进 `changes/archive/<name>/`，不进 `specs/`。本 skill 不执行 `git add` 或 `git commit`。项目 `.gitignore` 忽略 `openspec/` 时，不得用 `git add -f` 加入产物。是否提交由用户决定。
@@ -109,3 +110,4 @@ description: OpenSpec 流程内子 agent 讨论结论回流主 agent 的契约�
 - **适用**：OpenSpec 流程内的探索、调研、方案讨论子 agent —— 返回自由文本、没有既定落盘约定，结论回流到 OpenSpec artifacts。
 - **不适用**：独立 DDD 建模遵循自身 agent 的回流规则、用户模式与 `ddd-artifact-contract`，不依赖本 skill，不要求 OpenSpec change 或 `discussion-log.md`。
 - **不重复适用**：技术评审门禁的五个角色子 agent 已有 `review/<role>.md` 落盘约定与闭环记录机制，走那套即可，不必再写一份 `discussion-log.md`。
+- **不重复适用**：事实预调研（`openspec-fact-research`，`/opsx:research`）的结果写入变更根目录的 `research.md`，不再写一份 `discussion-log.md`。
