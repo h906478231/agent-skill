@@ -20,7 +20,7 @@ runner SHALL 为每次评测运行创建一个临时目录。runner SHALL 把评
 
 ### Requirement: 评测运行只加载项目级配置
 
-runner SHALL 用 `claude -p --setting-sources project --output-format stream-json` 启动 Claude Code。runner SHALL 用 `--disallowedTools` 拒绝读取与修改 `~/.claude`、`~/.cc-switch`、`~/.codex`、`~/.config/opencode` 与本仓库。runner SHALL 从运行轨迹的 `init` 事件读取 `skills` 与 `slash_commands`。如果其中出现临时目录 `.claude/` 以外的 `openspec-*` skill 或 `opsx:*` 命令，runner MUST 把本次评测运行判为环境错误。
+runner SHALL 用 `claude -p --setting-sources project --output-format stream-json` 启动 Claude Code。runner SHALL 用 `--disallowedTools` 拒绝读取与修改 `~/.claude`、`~/.cc-switch`、`~/.codex`、`~/.config/opencode`、`~/.tigger`、`~/.agents` 与本仓库。runner SHALL 从运行轨迹的 `init` 事件读取 `skills` 与 `slash_commands`。如果其中出现临时目录 `.claude/` 以外的 `openspec-*` skill 或 `opsx:*` 命令，runner MUST 把本次评测运行判为环境错误。
 
 #### Scenario: 隔离自检通过
 
@@ -35,7 +35,7 @@ runner SHALL 用 `claude -p --setting-sources project --output-format stream-jso
 
 #### Scenario: 拒绝读取全局 skill 目录
 
-- **WHEN** agent 按 skill 的后备规则读取 `~/.claude/skills` 或 `~/.cc-switch` 下的文件
+- **WHEN** agent 按 skill 的后备规则读取 `~/.claude/skills`、`~/.cc-switch`、`~/.tigger` 或 `~/.agents/skills` 下的文件
 - **THEN** Claude Code 按 `--disallowedTools` 拒绝该调用
 - **AND** runner 把被拒绝的调用次数写入告警
 
