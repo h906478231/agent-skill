@@ -1699,6 +1699,7 @@ const ARTIFACT_ALLOWLIST = [
   /^research\.md$/, // openspec-fact-research（事实预调研，只在变更根目录下）
   /^video\/(storyboard\.md|explainer\.srt)$/, /^video\/media\/.+$/, // openspec-explainer-video
   /^recap\.md$/, // openspec-change-recap（归档后生成，只在变更的归档目录根下）
+  /^deployment\.md$/, // openspec-apply-change（验收部署文档，只在变更根目录下）
   /^decisions\/(autopilot|D-\d{4})\.json$/, // openspec-autopilot（托管记录与托管决策）
 ]
 
