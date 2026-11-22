@@ -50,13 +50,63 @@ npx skills add h906478231/agent-skill -g -a codex
 npx skills add h906478231/agent-skill -g -a opencode
 ```
 
-### 自己开发使用（符号链接，改完即时生效）
+### 本机集中安装到 ~/.tigger（手动同步当前仓库）
+
+`migrate-skills.sh` 把当前仓库的受管资产复制到 `~/.tigger`，包含未提交修改与新增 skill。仓库保留开发源。工具入口使用安装副本的软链接；后续仓库修改要再次手动同步才生效。脚本需要 Node.js >= 16.15，低于该版本时在写入前退出。
+
+首次合并已有安装，先退出 cc-switch 与资产更新进程，再预览：
+
+```bash
+bash migrate-skills.sh --migrate-legacy --dry-run
+```
+
+预览逐行列出候选的原路径、实际来源、目标、版本和内容摘要。核对候选后，将 `PLAN_FINGERPRINT` 替换为预览输出的 `sha256:…` 指纹：
+
+```bash
+bash migrate-skills.sh --migrate-legacy --expect-plan PLAN_FINGERPRINT
+```
+
+如果来源、目标或入口在确认后发生变化，脚本会停止。重新预览并核对后再执行。
+
+没有旧安装时，或以后更新仓库内容时，手动同步：
+
+```bash
+bash migrate-skills.sh
+```
+
+只读核验当前文件与入口：
+
+```bash
+bash migrate-skills.sh --check
+```
+
+实际文件集中在 `~/.tigger/{skills,commands,agents/<tool>,workflows}`。`~/.agents/skills` 整目录链接到 `~/.tigger/skills`，Codex 经该入口读取全部普通 skill。Claude Code 与 opencode 使用逐项链接；新增普通 skill 后再次运行脚本补齐入口。
+
+首次迁移会合并其他目录的同名 skill，并把独有 skill 迁入后在原入口建链接。首次及后续同步都禁止旧版覆盖新版：例如本仓 `flows-role-comment` v7 不覆盖已安装 v8。版本或来源无法判定的差异会阻断写入；按输出创建 JSON 对象，将目标相对路径映射到本次候选来源的绝对路径，然后运行：
+
+```bash
+bash migrate-skills.sh --migrate-legacy --dry-run --resolutions /absolute/path/resolutions.json
+```
+
+使用这次预览的指纹和同一份来源选择执行：
+
+```bash
+bash migrate-skills.sh --migrate-legacy --resolutions /absolute/path/resolutions.json --expect-plan PLAN_FINGERPRINT
+```
+
+来源选择不能绕过已确认的版本防降级。备份与操作记录位于 `~/.tigger/.backups/<run-id>`，可按输出的运行编号恢复；后续修改会阻止覆盖式回滚：
+
+```bash
+bash migrate-skills.sh --rollback RUN_ID
+```
+
+飞书仍使用 `npx skills` 更新，`~/.agents/.skill-lock.json` 留在原位。云舟仍使用自身更新机制。仓库同步保留外部独有资产，不自动跟踪仓库，也不卸载 cc-switch。文件核验通过后，还需在实际工具中检查加载与第三方更新；供应商备份和卸载由用户完成。
+
+也可直接使用安装器的链接模式；该布局由安装器管理，与上面的 tigger 安装布局分别使用：
 
 ```bash
 npx skills add ./ -g -a claude-code -a codex -a opencode
 ```
-
-符号链接是默认模式，三个 agent 共享同一份源文件，编辑 `skills/` 后无需重装。
 
 ### 只装其中几个
 
