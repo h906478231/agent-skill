@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
 import { snapshot } from './lib/fs-snapshot.mjs'
 import { GATE_TRACE_SAMPLES, STANDARD_TRACE_REPORT } from './lib/gate-trace-samples.mjs'
 import { STORYBOARD_SIGNATURE_SAMPLES } from './lib/storyboard-signature-samples.mjs'
@@ -36,11 +37,12 @@ function fixture(t) {
   git('add', '-A')
   git('commit', '-qm', 'init')
   const changeRoot = join(repo, 'openspec/changes/demo')
-  const run = (...args) => {
-    const result = spawnSync(process.execPath, [gate, ...args], { cwd: repo, encoding: 'utf8' })
+  const runWithEnv = (env, ...args) => {
+    const result = spawnSync(process.execPath, [gate, ...args], { cwd: repo, encoding: 'utf8', env: { ...process.env, ...env } })
     return { code: result.status, out: result.stdout, err: result.stderr, json: () => JSON.parse(result.stdout) }
   }
-  return { repo, changeRoot, write, git, run }
+  const run = (...args) => runWithEnv({}, ...args)
+  return { repo, changeRoot, write, git, run, runWithEnv }
 }
 
 /** 从 baseline 输出中提取 `- Key: value` 字段。 */
@@ -2146,7 +2148,7 @@ test('facts：存在阻断项时退出码 0，archive 与 archive 子命令的�
   assert.equal(result.code, 0, result.err)
   const facts = result.json()
   assert.deepEqual(Object.keys(facts).sort(),
-    ['archive', 'change', 'command', 'currentFingerprint', 'openQuestions', 'technicalReview', 'tier', 'verification'])
+    ['archive', 'change', 'changeDirectory', 'changeState', 'changeStateVersion', 'command', 'currentFingerprint', 'openQuestions', 'technicalReview', 'tier', 'verification'])
   assert.equal(facts.command, 'facts')
   assert.equal(facts.change, 'demo')
   assert.equal(facts.currentFingerprint, fingerprintOf(f))
@@ -2157,6 +2159,220 @@ test('facts：存在阻断项时退出码 0，archive 与 archive 子命令的�
   delete archive.change
   assert.deepEqual(facts.archive, archive)
   assert.deepEqual(snapshot(f.changeRoot), before)
+})
+
+test('facts 暂缓：已核验的目录缺少状态文件时继续推进，不创建文件', t => {
+  const f = fixture(t)
+  const before = snapshot(f.changeRoot)
+  const facts = factsOf(f)
+  assert.equal(facts.changeStateVersion, 1)
+  assert.deepEqual(facts.changeState, { state: 'enabled', reason: null, updatedAt: null, error: null, digest: null })
+  assert.match(facts.changeDirectory.path, /\/openspec\/changes\/demo$/)
+  assert.match(facts.changeDirectory.dev, /^\d+$/)
+  assert.match(facts.changeDirectory.ino, /^\d+$/)
+  assert.deepEqual(snapshot(f.changeRoot), before)
+})
+
+const stateRelative = 'openspec/changes/demo/change-state.json'
+const pausedState = { version: 1, state: 'paused', reason: '保留已有工作', updatedAt: '2026-11-23T08:00:00.000Z' }
+
+test('STD-01：未提供 Array.prototype.at 时仍能查询活跃和归档变更', t => {
+  const f = fixture(t)
+  const archived = 'openspec/changes/archive/2026-11-23-demo'
+  f.write(`${archived}/change-state.json`, JSON.stringify(pausedState))
+  // 仅在门禁子进程模拟 Node.js 16.0–16.5 缺少的 API，不改变测试进程。
+  f.write('node16.cjs', 'delete Array.prototype.at\n')
+  const env = { NODE_OPTIONS: `--require "${join(f.repo, 'node16.cjs')}"` }
+  for (const command of ['state', 'facts']) {
+    for (const [dir, expected] of [[f.changeRoot, 'enabled'], [join(f.repo, archived), 'paused']]) {
+      const result = f.runWithEnv(env, command, dir)
+      assert.equal(result.code, 0, result.err)
+      assert.equal(result.json().changeState.state, expected, `${command}: ${dir}`)
+    }
+  }
+})
+
+test('facts 暂缓：合法文件保留状态，摘要覆盖原始字节', t => {
+  const f = fixture(t)
+  const text = JSON.stringify(pausedState)
+  f.write(stateRelative, `${text}\n`)
+  const first = factsOf(f).changeState
+  assert.deepEqual(first, {
+    state: 'paused', reason: pausedState.reason, updatedAt: pausedState.updatedAt,
+    error: null, digest: '9686df70072fc40606d9e039838b133cbcd5df1dda6bb7946fa0f4d47828ad9a',
+  })
+  assert.deepEqual(factsOf(f).changeState, first)
+  f.write(stateRelative, text)
+  assert.notEqual(factsOf(f).changeState.digest, first.digest)
+})
+
+test('facts 暂缓：根目录的状态文件允许保留，归档阻断和实现指纹不变', t => {
+  const f = fixture(t)
+  const fingerprint = fingerprintOf(f)
+  writeVerification(f, fingerprint, ['- Verify-Verdict: FAIL', '- Critical-Count: 1'])
+  const before = f.run('archive', f.changeRoot)
+  const text = `${JSON.stringify(pausedState)}\n`
+  f.write(stateRelative, text)
+  f.write('openspec/changes/demo/other/change-state.json', text)
+  const hygiene = f.run('hygiene', f.changeRoot).json()
+  assert.deepEqual(hygiene.warnings.map(item => item.file), ['other/change-state.json'])
+  assert.equal(fingerprintOf(f), fingerprint)
+  const after = f.run('archive', f.changeRoot)
+  assert.equal(after.code, 1)
+  assert.deepEqual(after.json(), before.json())
+  assert.ok(after.json().blockers.some(item => item.startsWith('verify 报告：')))
+})
+
+test('facts 暂缓：状态内容无效时保留原裁决和原始摘要，不输出原因', t => {
+  const f = fixture(t)
+  writeSummary(f, 'Gate-Verdict: BLOCKED')
+  for (const text of [
+    '{', Buffer.from([0xff]), `${JSON.stringify(pausedState)}\r\n`,
+    JSON.stringify({ ...pausedState, extra: true }), JSON.stringify({ ...pausedState, version: 2 }),
+    JSON.stringify({ ...pausedState, state: 'unknown' }), JSON.stringify({ ...pausedState, reason: '　' }),
+    JSON.stringify({ ...pausedState, updatedAt: '2026-02-30T08:00:00Z' }),
+    JSON.stringify({ ...pausedState, updatedAt: '2026-11-23T08:00:00+08:00' }),
+  ]) {
+    f.write(stateRelative, text)
+    const facts = factsOf(f)
+    assert.equal(facts.technicalReview.gateVerdict, 'BLOCKED')
+    assert.equal(facts.changeState.state, 'unknown')
+    assert.equal(facts.changeState.reason, null)
+    assert.equal(facts.changeState.updatedAt, null)
+    assert.match(facts.changeState.error, /change-state\.json/u)
+    assert.match(facts.changeState.digest, /^[a-f0-9]{64}$/u)
+  }
+})
+
+test('facts 暂缓：顶层成员名重复时状态未知，错误含文件路径，仍输出原始摘要（DB-15）', t => {
+  const f = fixture(t)
+  const { version, reason, updatedAt } = pausedState
+  const members = (...pairs) => `{${pairs.map(([key, value]) => `${key}:${JSON.stringify(value)}`).join(',')}}\n`
+  // JSON.parse 只保留重复成员的后一个值，键集合仍为四项；两种键顺序与转义写法的成员名都要识别。
+  for (const text of [
+    members(['"version"', version], ['"state"', 'enabled'], ['"reason"', reason], ['"updatedAt"', updatedAt], ['"state"', 'paused']),
+    members(['"state"', 'paused'], ['"version"', version], ['"reason"', reason], ['"updatedAt"', updatedAt], ['"state"', 'enabled']),
+    members(['"version"', version], ['"state"', 'enabled'], ['"reason"', reason], ['"updatedAt"', updatedAt], ['"st\\u0061te"', 'paused']),
+  ]) {
+    f.write(stateRelative, text)
+    for (const command of ['facts', 'state']) {
+      const result = f.run(command, f.changeRoot)
+      assert.equal(result.code, 0, result.err)
+      const { changeState } = result.json()
+      assert.equal(changeState.state, 'unknown', `${command}：${text}`)
+      assert.equal(changeState.reason, null)
+      assert.match(changeState.error, /change-state\.json.*重复/u)
+      assert.equal(changeState.digest, createHash('sha256').update(text).digest('hex'))
+    }
+  }
+  // 对照：原因文本中出现的成员名不是顶层成员，合法文件仍按暂缓读取。
+  f.write(stateRelative, members(['"version"', version], ['"state"', 'paused'], ['"reason"', '"state":重复'], ['"updatedAt"', updatedAt]))
+  assert.equal(factsOf(f).changeState.state, 'paused')
+})
+
+test('facts 暂缓：文件与原因的上限按字节计算，超限不返回截断摘要', t => {
+  const f = fixture(t)
+  const reason = '界'.repeat(341) + 'A'
+  const json = JSON.stringify({ ...pausedState, reason: ` ${reason} ` })
+  const atLimit = json + ' '.repeat(16 * 1024 - Buffer.byteLength(json))
+  f.write(stateRelative, atLimit)
+  const facts = factsOf(f)
+  assert.equal(facts.changeState.state, 'paused')
+  assert.equal(facts.changeState.reason, ` ${reason} `)
+  f.write(stateRelative, atLimit + '\n')
+  const large = factsOf(f)
+  assert.equal(large.changeState.state, 'unknown')
+  assert.equal(large.changeState.digest, null)
+  assert.equal(large.currentFingerprint, facts.currentFingerprint)
+  f.write(stateRelative, JSON.stringify({ ...pausedState, reason: reason + 'B' }))
+  const reasonLarge = factsOf(f).changeState
+  assert.equal(reasonLarge.state, 'unknown')
+  assert.match(reasonLarge.digest, /^[a-f0-9]{64}$/u)
+})
+
+test('facts 暂缓：软链接与非普通状态文件不读取内容', t => {
+  const f = fixture(t)
+  const target = join(f.changeRoot, 'change-state.json')
+  f.write('src/state.json', JSON.stringify(pausedState))
+  symlinkSync(join(f.repo, 'src/state.json'), target)
+  assert.equal(factsOf(f).changeState.state, 'unknown')
+  assert.equal(factsOf(f).changeState.digest, null)
+  rmSync(target)
+  mkdirSync(target)
+  assert.equal(factsOf(f).changeState.state, 'unknown')
+  assert.equal(factsOf(f).changeState.digest, null)
+})
+
+test('facts 暂缓：调用方选择项目，拒绝跨项目和目录软链接，仅读取合法归档项', t => {
+  const f = fixture(t)
+  const other = fixture(t)
+  other.write(stateRelative, JSON.stringify(pausedState))
+  const crossed = f.run('facts', other.changeRoot, '--repo', f.repo).json()
+  assert.equal(crossed.changeDirectory, null)
+  assert.equal(crossed.changeState.state, 'unknown')
+  assert.equal(crossed.changeState.digest, null)
+  const link = join(f.repo, 'openspec/changes/alias')
+  symlinkSync(other.changeRoot, link)
+  const linked = f.run('facts', link, '--repo', f.repo).json()
+  assert.equal(linked.changeDirectory, null)
+  assert.equal(linked.changeState.state, 'unknown')
+  f.write('openspec/changes/archive/2026-11-23-demo/change-state.json', JSON.stringify(pausedState))
+  const archived = f.run('facts', join(f.repo, 'openspec/changes/archive/2026-11-23-demo'), '--repo', f.repo).json()
+  assert.equal(archived.changeState.state, 'paused')
+  assert.match(archived.changeDirectory.path, /\/archive\/2026-11-23-demo$/u)
+})
+
+test('facts 暂缓：读取期间目录实例改变时丢弃状态和摘要', t => {
+  const f = fixture(t)
+  f.write(stateRelative, JSON.stringify(pausedState))
+  f.write('move.cjs', `const fs = require('node:fs')
+const open = fs.openSync
+let moved = false
+fs.openSync = (file, ...args) => {
+  const fd = open(file, ...args)
+  if (!moved && String(file).endsWith('/change-state.json')) {
+    moved = true
+    const target = require('node:path').dirname(file)
+    fs.renameSync(target, target + '-moved')
+    fs.mkdirSync(target)
+  }
+  return fd
+}
+require('node:module').syncBuiltinESMExports()
+`)
+  const result = f.runWithEnv({ NODE_OPTIONS: `--require ${join(f.repo, 'move.cjs')}` }, 'facts', f.changeRoot)
+  assert.equal(result.code, 0, result.err)
+  assert.equal(result.json().changeDirectory, null)
+  assert.equal(result.json().changeState.state, 'unknown')
+  assert.equal(result.json().changeState.digest, null)
+})
+
+/** 对象库中的松散对象与打包对象合计；用于证明只读查询没有写入 Git 对象。 */
+function objectCount(f) {
+  const stats = Object.fromEntries(f.git('count-objects', '-v').split('\n').map(line => line.split(': ')))
+  return Number(stats.count) + Number(stats['in-pack'])
+}
+
+test('state 暂缓：只读子命令与 facts 的状态字段相同，且不写 Git 对象', t => {
+  const f = fixture(t)
+  f.write(stateRelative, JSON.stringify(pausedState))
+  f.write('src/unrecorded.js', 'export const unrecorded = true\n')
+  const before = objectCount(f)
+  const result = f.run('state', f.changeRoot, '--repo', f.repo)
+  assert.equal(result.code, 0, result.err)
+  assert.equal(objectCount(f), before)
+  const state = result.json()
+  assert.deepEqual(Object.keys(state).sort(), ['change', 'changeDirectory', 'changeState', 'changeStateVersion', 'command'])
+  assert.equal(state.command, 'state')
+  assert.equal(state.changeState.state, 'paused')
+  const facts = factsOf(f)
+  for (const key of ['changeStateVersion', 'changeDirectory', 'changeState']) assert.deepEqual(state[key], facts[key])
+  const other = fixture(t)
+  const crossed = f.run('state', other.changeRoot, '--repo', f.repo)
+  assert.equal(crossed.code, 0, crossed.err)
+  assert.equal(crossed.json().changeDirectory, null)
+  assert.equal(crossed.json().changeState.state, 'unknown')
+  assert.equal(f.run('state', f.changeRoot, '--rev', 'HEAD').code, 2)
 })
 
 test('facts：tier 读取 overview.md 的分级行，没有 overview.md 时为 null', t => {

@@ -11,8 +11,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { writeJsonAtomic } from './atomic-write.mjs'
 
-/** 开机时间与当前时间相差超过这个秒数时，锁按上次开机留下的处理（design D12）。 */
-const BOOT_TIME_TOLERANCE = 60
+/**
+ * 开机时间与当前时间相差超过这个秒数时，锁按上次开机留下的处理（design D12）。
+ * 托管准入用同一容差判断已撤回的批次是否在写为 void 之后重启过（add-change-pause design D4「未决出口」）。
+ */
+export const BOOT_TIME_TOLERANCE = 60
 
 /** 锁文件读不出内容时，按修改时间判断：不超过这个秒数按存活处理（design D12，评审 CONC-08）。 */
 const UNREADABLE_TOLERANCE = 60

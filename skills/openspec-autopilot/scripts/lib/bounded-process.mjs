@@ -21,7 +21,8 @@ export function runBounded(command, args, { timeout, maxBuffer, env = process.en
         }
         child.unref()
       }
-      resolve(code ? { status: null, stdout: '', stderr: '', error: { code } }
+      // pid 为空表示命令没有启动，调用方据此区分「确认未发出」与超时（add-change-pause design D5）。
+      resolve(code ? { status: null, stdout: '', stderr: '', error: { code }, pid: child.pid }
         : { status, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') })
     }
     const timer = setTimeout(() => complete(null, 'ETIMEDOUT'), timeout)

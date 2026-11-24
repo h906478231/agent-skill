@@ -19,13 +19,15 @@ const PROGRESS_ERROR_LIMIT = 300
  * 在项目目录中运行进度视图脚本，读取 JSON 输出。
  * @param {object} config 托管配置（取 progressBin）。
  * @param {string} root 项目根目录。
+ * @param {number} timeout 恢复时传入本轮剩余毫秒数，其他调用保持原有时限。
  * @returns {{ view: object|null, error: string|null }} 进度视图与错误说明。
  */
-export function readProgressView(config, root) {
+export function readProgressView(config, root, timeout = Infinity) {
   const args = [config.progressBin, '--json']
   if (config.gateBin) args.push('--gate', config.gateBin)
   const result = spawnSync(process.execPath, args, {
     cwd: root,
+    ...(Number.isFinite(timeout) ? { timeout, killSignal: 'SIGKILL' } : {}),
     encoding: 'utf8',
     env: { ...process.env, OPENSPEC_TELEMETRY: '0' },
     maxBuffer: 64 * 1024 * 1024,

@@ -45,7 +45,7 @@ openspec-technical-review/
 ├── roles/                            # 五个角色：只保留角色定位 + 审查清单 + 本维度差异
 │   ├── architecture.md  concurrency.md  performance.md  database.md  security.md
 ├── hooks/check-review-approval.sh    # PreToolUse 门禁 hook（拦截未签字的 openspec apply）
-├── scripts/implementation-gate.mjs   # 实现阶段确定性校验：实现指纹 / 评审基线 / 双轴评审 / 切片证据 / 归档阻断
+├── scripts/implementation-gate.mjs   # 实现阶段确定性校验：实现指纹 / 评审基线 / 双轴评审 / 切片证据 / 归档阻断 / 变更状态读取
 ├── agents/openai.yaml                # skill 接口描述
 └── technical-review-gate.workflow.js # Pi Workflow：并行 fan-out 五角色 + 结构化汇总
 ```
@@ -220,6 +220,7 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 - 本门禁：`/opsx:review`（本 skill）产出 `review/*.md` + `review-summary.md`，停在人工确认。
 - 下游：人工批准后 `/opsx:apply` 编码（切片证据先于勾选）→ `/opsx:quality` 实现后双轴独立评审 → `/opsx:verify`（交叉验证 III：实现与设计交叉核对）三维校验 → `openspec archive`。完整流程见 [研发流程 Phases 定义](shared/phases.md)。
 - 角色分工：OpenSpec = 流程与设计文档中心；本门禁 = AI 评审编排；Coding Agent = 代码执行者。
+- 变更状态：变更根目录的 `change-state.json` 记录推进意愿（`enabled` 继续推进，`paused` 暂缓），读取规则只在 `scripts/implementation-gate.mjs` 中。`facts` 输出 `changeStateVersion: 1`、`changeState`（`state`、`reason`、`updatedAt`、`error`、`digest`）与 `changeDirectory`（`path`、`dev`、`ino`，目录无法核实时为 `null`）；只读子命令 `state <changeRoot> --repo <项目根>` 只输出这三项，不计算实现指纹，不写 Git 对象。缺文件按 `enabled` 读取；文件损坏、顶层成员名重复、超过 16 KiB、是软链接或目录、项目归属或目录实例无法核实时为 `unknown`。暂缓不改变实现指纹、签字、切片证据与归档阻断。该文件在产物允许清单中，只由 skill `openspec-autopilot` 的 `pause`、`resume` 写入。
 
 ## 交叉验证机制说明
 

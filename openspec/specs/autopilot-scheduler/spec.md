@@ -66,7 +66,7 @@ After it chooses a change, the scheduler SHALL write the real project root, chan
 
 For each project in the configuration, the scheduler SHALL read `progress.mjs --json` (configuration key `progressBin`). It SHALL apply the original-start recovery requirement before normal candidate or action selection. It SHALL check terminal return-to-session handoffs before filtering normal candidates. Normal candidate handling SHALL require an `active` or `exiting` record and apply the same-batch early-archive guard. An early-archive block SHALL permit only the return-to-session handoff, not an existing exit decision or another continuation. For a batch not blocked by either requirement it SHALL check the decisions in this order:
 
-1. A decision with `status` `pending` and no `card.messageId`: send its card again.
+1. A decision with `status` `pending` and no `card.messageId`: use the send state in the execution-boundary requirement. A missing message ID alone SHALL NOT permit a send. The pending decision SHALL continue to block this batch.
 2. A decision with `status` `pending` and a `card.messageId`: skip the change in this round.
 3. A question decision with `status` `answered`, or a session alert decision with `request.sessionId`, `status` `answered` and the choice `补充说明后继续`: resume its session (Requirement «The scheduler SHALL void a decision that cannot be used»).
 4. A session alert decision with `status` `answered` and the choice `回会话处理`: finish the same-batch return-to-session protocol below and do not start `claude`.
@@ -75,7 +75,7 @@ For each project in the configuration, the scheduler SHALL read `progress.mjs --
 
 For a verified ordinary or early-archive return-to-session answer, the scheduler SHALL write `void` and the decision ID in `returnHandoff` in the same record replacement under project protection. It SHALL verify that record before setting the decision to `used`. After interruption, the terminal handoff check SHALL use the shared batch-identity scan and read the saved decision ID directly under the same protection. Only a verified session alert of that batch with the return-to-session answer and state `answered` may be changed to `used`; a verified `used` decision is already complete. If ownership, state or the referenced decision cannot be verified, retain the record and report the cause. This path SHALL create no decision, run no stage, and perform no exit action. The scheduler SHALL read back the batch's `void` and that alert's `used` before sending the completion notice with its stable key. A failed notice SHALL NOT undo the terminal states.
 
-When the progress entry of the change has no key `reviewStale`, or `reviewStale` is `null`, the scheduler SHALL set the autopilot record to `void`, send a notice card that asks the user to sync the installed copies of `openspec-change-progress` and `openspec-technical-review` together, and SHALL NOT run a stage. Otherwise it SHALL choose the action by the rule of the progress entry:
+Before this rule, the scheduler SHALL apply the state check of the execution-boundary requirement. When the progress view has no `changeStateVersion` of `1` or the entry has no `changeState`, the scheduler SHALL only send the deduplicated notice of that requirement and SHALL NOT write `void`, even when the entry also has no key `reviewStale` (review DB-14). When the state contract is complete and the progress entry of the change has no key `reviewStale`, or `reviewStale` is `null`, the scheduler SHALL set the autopilot record to `void`, send a notice card that asks the user to sync the installed copies of `openspec-change-progress` and `openspec-technical-review` together, and SHALL NOT run a stage. Otherwise it SHALL choose the action by the rule of the progress entry:
 
 | Rule | Action |
 |---|---|
@@ -129,8 +129,13 @@ The prompt of a new stage SHALL name the skill, the change and the absolute path
 - **THEN** the autopilot record has `status` `void` and the notice card lists both blockers
 
 #### Scenario: Progress entry without reviewStale voids the autopilot
-- **WHEN** the `progressBin` test double writes an entry of the change without the key `reviewStale`
+- **WHEN** the `progressBin` test double writes an entry of the change with the state contract and without the key `reviewStale`
 - **THEN** the autopilot record has `status` `void`, one notice card names both skills, and the scheduler does not start `claude`
+
+#### Scenario: Missing state contract takes precedence over missing reviewStale
+- **WHEN** the `progressBin` test double writes a view without `changeStateVersion` and an entry of the change without `changeState` and without the key `reviewStale`
+- **THEN** the bytes of `decisions/autopilot.json` are unchanged, the scheduler does not start `claude`
+- **AND** one deduplicated notice asks the user to sync the autopilot, progress view and gate copies together
 
 #### Scenario: Pending decision blocks the change
 - **WHEN** a change under autopilot is at rule `R6` and has a `pending` decision with a `card.messageId`
@@ -370,7 +375,7 @@ Each archived candidate in later rounds SHALL carry its concrete archive directo
 
 ### Requirement: The scheduler SHALL turn a deferred question into a pending decision
 
-When a result has `stop_reason` `tool_deferred` and `deferred_tool_use.name` `AskUserQuestion`, the scheduler SHALL create `decisions/D-<next four digits>.json` only when the allocator in the unfinished-check requirement returns a legal unused ID with `kind` `question`, `status` `pending`, `stage`, and `request` with `sessionId`, `toolUseId`, `fingerprint` (the first 12 hexadecimal characters of the SHA-256 of the JSON text of `deferred_tool_use.input`) and `questions`. It SHALL send the decision card to `ownerOpenId` through `lark-cli` (configuration key `larkBin`) as the bot, and SHALL write the returned message id to `card.messageId`. When the card cannot be sent, `card.messageId` SHALL stay `null`. When the deferred tool is not `AskUserQuestion`, the scheduler SHALL create a session alert decision.
+When a result has `stop_reason` `tool_deferred` and `deferred_tool_use.name` `AskUserQuestion`, the scheduler SHALL create `decisions/D-<next four digits>.json` only when the allocator in the unfinished-check requirement returns a legal unused ID with `kind` `question`, `status` `pending`, `stage`, and `request` with `sessionId`, `toolUseId`, `fingerprint` (the first 12 hexadecimal characters of the SHA-256 of the JSON text of `deferred_tool_use.input`) and `questions`. It SHALL create the decision with `card.sendState` `unclaimed`. It SHALL use the execution-boundary requirement to send the card to `ownerOpenId` through `lark-cli` (configuration key `larkBin`) as the bot. It SHALL write the returned message ID and `sent` only after verifying the same send claim; when delivery cannot be confirmed, it SHALL NOT infer delivery from the claim alone. When the deferred tool is not `AskUserQuestion`, the scheduler SHALL create a session alert decision.
 
 #### Scenario: Deferred question becomes a card
 - **WHEN** the `claude` test double returns `tool_deferred` with an `AskUserQuestion` input of one question and two options
@@ -378,9 +383,9 @@ When a result has `stop_reason` `tool_deferred` and `deferred_tool_use.name` `As
 - **AND** the `lark-cli` test double receives one card whose text contains the question and both option labels
 
 #### Scenario: Failed card send is retried
-- **WHEN** the `lark-cli` test double fails on the first send
-- **THEN** the decision has `status` `pending` and `card.messageId` `null`
-- **AND** the next round sends the card again and does not start `claude`
+- **WHEN** the scheduler can prove the send request did not start and records `card.sendState` as `not-sent`
+- **THEN** the decision stays `pending` with `card.messageId` `null`
+- **AND** after checking the same batch and decision, the next round reuses its original recipient, content and key without starting `claude`
 
 #### Scenario: No decision is created after the final four-digit ID
 - **WHEN** a batch needs to reserve a new decision and a legal file name already occupies `D-9999`
@@ -738,7 +743,7 @@ The scheduler SHALL limit each `traceBefore` and optional `traceAfter` to 4 MiB 
 
 Admission and updates SHALL charge 16 KiB for the global envelope, and 16 KiB per entry including key and separators, plus the actual embedded UTF-8 bytes of its snapshots. Keys and the cursor value SHALL each fit in 8 KiB of serialized JSON. Both reads and replacements SHALL verify each metadata envelope and the charged size; it SHALL NOT exceed 64 MiB. The reserved envelope SHALL cover mandatory identity, cursor, recovery and decision-reservation metadata; the scheduler SHALL check required identity at admission and discard oversized optional session data by recording the session as unavailable. If `traceAfter` cannot fit, it SHALL NOT create the normal question, SHALL retain `traceBefore`, and SHALL use the reserved space to persist a recovery handoff. It SHALL NOT remove other unfinished entries to fit a write.
 
-Before writing a normal decision, the scheduler SHALL reserve its ID and kind, and for a question SHALL also save the accepted `traceAfter`. A normal question SHALL contain `request.pendingTraceKey` and `request.pendingTraceDigest` (`{ version: 1, algo: 'sha256', value }`); `value` is the lowercase SHA-256 hex of canonical compact UTF-8 JSON of `traceBefore`, with recursively code-point-sorted object keys and unchanged array order including `resumedDecisionIds`; string and number encoding follow JSON and numeric-looking object keys still follow code-point order. A question SHALL NOT contain the full start. A normal stage alert, a normal check alert, a recovery alert, and an early-archive alert SHALL retain `request.pendingTraceKey` and full `request.traceBefore`; a digest SHALL NOT substitute for that start. The reservation SHALL distinguish `question`, `stage-alert`, `check-alert`, `recovery-alert` and `early-archive-alert`. A check or recovery alert SHALL carry its `comparisonState`. If an alert has a continuation boundary it SHALL use a digest of that boundary in the reservation and verify it against the full value in the eligible decision. A stage alert describes a stage error or no progress, not a failed check. Early-archive alerts and alerts without a trusted session SHALL NOT permit continuation. A normal question SHALL transfer only when a fresh trace equals the saved `traceAfter`. If it has changed, the scheduler SHALL void that question before recovery using the original start. A failed read retains the entry. Transfer SHALL read the exact saved decision ID without reading historical contents, check the same batch, ID, kind, key, eligible status and type-specific fields, verify the digest for a question or the full start and any continuation boundary for an alert, and recheck identity before its card. The scheduler SHALL distinguish confirmed absence from read, parse, ownership and identity failures. Only confirmed absence permits the missing-file recovery path. Verification that the same recheck voided the original question permits the separate transition defined below.
+Before writing a normal decision, the scheduler SHALL reserve its ID and kind, and for a question SHALL also save the accepted `traceAfter`. A normal question SHALL contain `request.pendingTraceKey` and `request.pendingTraceDigest` (`{ version: 1, algo: 'sha256', value }`); `value` is the lowercase SHA-256 hex of canonical compact UTF-8 JSON of `traceBefore`, with recursively code-point-sorted object keys and unchanged array order including `resumedDecisionIds`; string and number encoding follow JSON and numeric-looking object keys still follow code-point order. A question SHALL NOT contain the full start. A normal stage alert, a normal check alert, a recovery alert, and an early-archive alert SHALL retain `request.pendingTraceKey` and full `request.traceBefore`; a digest SHALL NOT substitute for that start. The reservation SHALL distinguish `question`, `stage-alert`, `check-alert`, `recovery-alert` and `early-archive-alert`. A check or recovery alert SHALL carry its `comparisonState`. If an alert has a continuation boundary it SHALL use a digest of that boundary in the reservation and verify it against the full value in the eligible decision. A stage alert describes a stage error or no progress, not a failed check. Early-archive alerts and alerts without a trusted session SHALL NOT permit continuation. Before applying the ordinary trace mismatch rule, the scheduler SHALL read and verify the original reserved decision and classify its send state under the execution-boundary requirement. When delivery is unknown, that rule takes precedence even if a fresh trace differs from the saved `traceAfter`: keep the original decision, reservation and unfinished check; do not void or consume it, allocate a replacement, resume a stage or execute an exit. The early-archive guard SHALL still save and enforce the block. Its unconfirmed-delivery exception SHALL take precedence over voiding or replacing the original decision. This does not change the verified withdrawal path. Otherwise a normal question SHALL transfer only when a fresh trace equals the saved `traceAfter`; if it differs, the scheduler SHALL void that question before recovery using the original start. A failed read retains the entry. Transfer SHALL read the exact saved decision ID without reading historical contents, check the same batch, ID, kind, key, eligible status and type-specific fields, verify the digest for a question or the full start and any continuation boundary for an alert, and recheck identity before its card. The scheduler SHALL distinguish confirmed absence from read, parse, ownership and identity failures. Only confirmed absence permits the missing-file recovery path. Verification that the same recheck voided the original question permits the separate transition defined below.
 
 For a saved version mismatch, while holding `run.lock` the scheduler SHALL verify the source batch, original alert ID, `answered` state and `补充说明后继续` choice under project protection. Before updating the source alert, it SHALL atomically admit one entry with `mode` `version-handoff`, the verified batch and directory, `sourceDecisionId`, one unique replacement `alertId`, and the complete original `traceBefore`. The entry SHALL use the same capacity, recovery-budget and same-name blocking rules. It SHALL preserve the old JSON value and any recorded `resumedDecisionIds` for evidence, without interpreting it as the current trace schema or adding a resumed ID. If the source evidence cannot be verified, the ID space is exhausted, capacity is insufficient or the reservation cannot be written, the scheduler SHALL retain the original answered alert and evidence and issue a deduplicated no-ID notice for manual handling. It SHALL run no stage and advance no exit for that batch. An existing entry for the same batch SHALL be recovered first.
 
@@ -746,11 +751,11 @@ The same transfer procedure SHALL run initially and after restart. It SHALL read
 
 When a normal decision cannot be continued, the scheduler SHALL recover against the saved start and SHALL NOT run `claude` or replay the old result. A trace failure SHALL retain the entry. A generic recovery alert SHALL retain failures, original and current paths, `request.traceBefore`, `resumedDecisionIds`, any deferred-question ID and `request.pendingTraceKey`. Only a trusted resumable session and matching trace version permit `补充说明后继续`; otherwise it SHALL offer only `回会话处理`. The early-archive requirement takes precedence and permits only `回会话处理`.
 
-The scheduler SHALL finish the consumed decision by expected status before creating a recovery alert. For a version handoff, the durable replacement reservation precedes that status update. Another open decision SHALL block generic recovery and SHALL NOT be executed in its place; early-archive exit decisions follow the early-archive requirement. The entry SHALL hold only one reservation. Only a question verified as void specifically by the same recheck is eligible for the void transition. Its persisted void state takes precedence even if a fresh trace now matches; another void cause does not authorize handoff. After confirmed absence of the normal result file or that verified void, the scheduler SHALL atomically replace the normal reservation (including kind and `traceAfter`) with `alertId`, keeping the same start. After interruption it SHALL validate only the persisted reservation and SHALL NOT create a second decision. To allocate an ID it SHALL enumerate legal files `D-0001.json` through `D-9999.json` by name and accept no number after the maximum. A legal file name occupies its number even if its content is damaged. Preflight the availability of a new ID before stage start or resume and before any exit draft or retry that needs a new decision. No ID SHALL mean no run, draft or overwrite. A verified saved ID or approved exit action does not need new admission. If an approved exit fails without an available alert ID, retain its completed steps and failure, stop the exit sequence, and do not retry it automatically. In all no-ID paths retain any existing start and send a deduplicated notice without a decision ID directing the user to withdraw that batch and return to the session. The notice SHALL NOT count as a completed handoff.
+The scheduler SHALL finish the consumed decision by expected status before creating a recovery alert. For a version handoff, the durable replacement reservation precedes that status update. Another open decision SHALL block generic recovery and SHALL NOT be executed in its place; early-archive exit decisions follow the early-archive requirement. The entry SHALL hold only one reservation. Only a question verified as void specifically by the same recheck is eligible for the void transition, and the unconfirmed-delivery rule SHALL take precedence over voiding or replacing the reservation. Its persisted void state takes precedence even if a fresh trace now matches; another void cause does not authorize handoff. After confirmed absence of the normal result file or that verified void, the scheduler SHALL atomically replace the normal reservation (including kind and `traceAfter`) with `alertId`, keeping the same start. After interruption it SHALL validate only the persisted reservation and SHALL NOT create a second decision. To allocate an ID it SHALL enumerate legal files `D-0001.json` through `D-9999.json` by name and accept no number after the maximum. A legal file name occupies its number even if its content is damaged. Preflight the availability of a new ID before stage start or resume and before any exit draft or retry that needs a new decision. No ID SHALL mean no run, draft or overwrite. A verified saved ID or approved exit action does not need new admission. If an approved exit fails without an available alert ID, retain its completed steps and failure, stop the exit sequence, and do not retry it automatically. In all no-ID paths retain any existing start and send a deduplicated notice without a decision ID directing the user to withdraw that batch and return to the session. The notice SHALL NOT count as a completed handoff.
 
-The card send key SHALL be a stable digest of the verified real project root, change name, `startedAt` and decision ID. Sending again for the same reservation SHALL use the same key and the same content. A timeout or changed batch SHALL NOT record a `messageId` from the send. Serialized card content SHALL fit a local maximum of 24 KiB in UTF-8. An oversized check alert SHALL keep full local evidence and send a summary on the same decision: item count, batch, local evidence location, and only return to the session. A summary SHALL NOT authorize continuation. If the summary cannot be sent, keep the unresolved handoff, attempt a bounded no-ID notice, and retain a local diagnostic. In recovery the budget also applies to preparation and sending of cards and notices.
+The card send key SHALL be a stable digest of the verified real project root, change name, `startedAt` and decision ID. Sending again for the same reservation SHALL follow the execution-boundary requirement, reuse the same key, recipient and content, and require proof that the preceding request did not start. A timeout or changed batch SHALL NOT record a `messageId` from the send. An unconfirmed send SHALL retain the same decision and any unfinished entry; a no-ID manual notice SHALL NOT complete the transfer. Serialized card content SHALL fit a local maximum of 24 KiB in UTF-8. An oversized check alert SHALL keep full local evidence and send a summary on the same decision: item count, batch, local evidence location, and only return to the session. A summary SHALL NOT authorize continuation. If the summary cannot be sent, keep the unresolved handoff, attempt a bounded no-ID notice, and retain a local diagnostic. In recovery the budget also applies to preparation and sending of cards and notices.
 
-For a stage entry the scheduler SHALL first prove the previous writer stopped. It SHALL remove an entry only when one of the following holds: normal check and result handling with final record re-read completed; the same-batch alert was written, read back and checked before its card; or complete identity resolution proved withdrawal of this batch or supersession at its original directory. A failed removal SHALL preserve the entry and block the batch, checking the one stored reservation on retry without replaying the result. Removal SHALL NOT clear an early-archive marker. Before any normal exit the pending entry SHALL be removed and the separate early-archive guard SHALL pass.
+For a stage entry the scheduler SHALL first prove the previous writer stopped. It SHALL remove an entry only when one of the following holds: normal check and result handling with final record re-read completed; the same-batch decision was written and read back, and its card delivery was confirmed under the execution-boundary requirement; or complete identity resolution proved withdrawal of this batch or supersession at its original directory. A failed removal SHALL preserve the entry and block the batch, checking the one stored reservation on retry without replaying the result. Removal SHALL NOT clear an early-archive marker. Before any normal exit the pending entry SHALL be removed and the separate early-archive guard SHALL pass.
 
 #### Scenario: Pending trace is stored before a run
 - **WHEN** a start or resume is about to clear `rerunStage` or write the implementation snapshot
@@ -765,7 +770,7 @@ For a stage entry the scheduler SHALL first prove the previous writer stopped. I
 #### Scenario: Interrupted version handoff keeps the same replacement
 - **WHEN** the scheduler persists a version-handoff entry and stops either before marking the original alert `used` or afterwards before writing the replacement alert
 - **THEN** the next process finishes the original alert and writes or verifies only the reserved replacement ID, with the complete original start and only `回会话处理`
-- **AND** it does not run a stage or an exit action during the handoff and does not clear the entry before the required read-back and pre-send identity check
+- **AND** it does not run a stage or an exit action during the handoff and does not clear the entry before verifying the same decision and confirming the recorded card delivery
 
 #### Scenario: Recovered record is checked before exit actions
 - **WHEN** a run changed `STD-02` to `risk-accepted` without an answer, the record could not be read afterwards, and the original record becomes readable in the next scheduler process
@@ -787,7 +792,7 @@ For a stage entry the scheduler SHALL first prove the previous writer stopped. I
 #### Scenario: Normal result decision survives an interrupted cleanup
 - **WHEN** a normal result has written a question or trace alert and the scheduler stops before removing its pending entry, or entry removal fails
 - **THEN** the next process verifies the saved result decision ID, kind, pending key and original start, and completes the same transfer without a second decision or a new run
-- **AND** a question is released only when a fresh trace equals the saved successful post-run trace; otherwise a failed read keeps it blocked, or a changed trace voids it before recovery from the original start
+- **AND** a question is released only when a fresh trace equals the saved successful post-run trace; otherwise a failed read or unknown delivery keeps it blocked; with delivery not unknown, a changed trace voids it before recovery from the original start
 
 #### Scenario: Cleanup failure before exit does not draft an exit
 - **WHEN** a normal run passes its trace check but its completed entry cannot be removed
@@ -907,7 +912,9 @@ For a stage entry the scheduler SHALL first prove the previous writer stopped. I
 
 ### Requirement: The scheduler SHALL block exit when a run archives the change outside the archive stage
 
-The scheduler SHALL store the actual stage and before-run location class. When the same batch moved from active to archived in a stage other than `archive`, the scheduler SHALL persist `exitBlock` with reason `early-archive` and its stage in the batch record before issuing a decision. Normal handling and restart recovery SHALL share this guard and it SHALL take precedence over ordinary results and existing exit decisions. The marker SHALL survive handoff and pending-entry removal. The scheduler SHALL refuse exit drafts, existing exit execution, retries and exit completion notices, and SHALL void existing open exit decisions by expected status. Failed marker write, identity recheck or void SHALL NOT permit exit; the original start SHALL remain pending until handoff is verified. The scheduler SHALL offer only `回会话处理`, naming the actual stage, quality or verify without evidence of completion, and known check failures. It SHALL NOT replay the result. The block ends only when the original batch is proved `void` after withdrawal or return-to-session handling; the old batch SHALL NOT continue exit. Normal `archive` and resume of an already-archived batch without this marker keep their existing behavior.
+The scheduler SHALL store the actual stage and before-run location class. When the same batch moved from active to archived in a stage other than `archive`, the scheduler SHALL persist `exitBlock` with reason `early-archive` and its stage in the batch record before issuing a decision. Normal handling and restart recovery SHALL share this guard and it SHALL take precedence over ordinary results and existing exit decisions. The marker SHALL survive handoff and pending-entry removal. The scheduler SHALL refuse exit drafts, existing exit execution, retries and exit completion notices, and SHALL void existing open exit decisions by expected status, subject to the unconfirmed-delivery exception below. Failed marker write, identity recheck or void SHALL NOT permit exit; the original start SHALL remain pending until handoff is verified. Unless the exception below applies, the scheduler SHALL offer only `回会话处理`, naming the actual stage, quality or verify without evidence of completion, and known check failures. It SHALL NOT replay the result. The block ends only when the original batch is proved `void` after withdrawal or return-to-session handling; the old batch SHALL NOT continue exit. Normal `archive` and resume of an already-archived batch without this marker keep their existing behavior.
+
+Before voiding, consuming or replacing an original open decision because of early archive, the scheduler SHALL verify the original decision and classify delivery under the execution-boundary requirement. If delivery is unknown, the scheduler SHALL retain that decision, its reservation and any unfinished check. It SHALL NOT void or consume it, resend its card, create a replacement decision or alert, resume a stage, prepare a push list or run any exit action. It SHALL only issue a deduplicated no-ID notice for return to the session or verified withdrawal. The notice SHALL NOT complete the handoff or clear `exitBlock`. The verified withdrawal procedure SHALL remain available.
 
 #### Scenario: Self-archive in apply blocks the exit
 - **WHEN** an apply run moves the change into its archive directory and the trace check has no failure
@@ -921,3 +928,122 @@ The scheduler SHALL store the actual stage and before-run location class. When t
 #### Scenario: Early archive remains blocked after recovery and handoff
 - **WHEN** an early archive is recognized only after restart, or its handoff is done while a prior exit decision exists
 - **THEN** the batch remains blocked across subsequent rounds and entry cleanup, only return-to-session handling is offered, and no exit draft, execution, retry or exit completion notice runs
+
+#### Scenario: 提前归档且原卡片发送结果未知
+- **WHEN** 原批次提前归档，原待处理决策的卡片发送结果未知
+- **THEN** 调度器保存并保留 `exitBlock`，不生成推送清单，不执行出口或恢复阶段
+- **AND** 原决策、预留和未完成核对保持不变，不重发、不作废、不消费、不创建替代告警
+- **AND** 只发送去重的无决策编号通知，按原协议核实撤回仍可执行
+
+### Requirement: 调度器 SHALL 在执行边界核对变更状态
+
+调度器 SHALL 在发送或消费阶段决策、启动阶段、恢复会话、起草或执行出口动作之前读取变更状态契约。对活跃变更 SHALL 验证 `changeStateVersion`、目录身份与状态字段。对归档后仍在托管的变更 SHALL 按批次定位唯一归档目录，使用同一门禁规则。定位失败 SHALL 不按缺状态文件处理。
+
+版本缺失或不为 1、字段缺失、状态为 `unknown` 时 SHALL 不执行上述动作，通知用户同步副本或修复状态。状态为 `paused` 而托管记录仍为 `active` 或 `exiting` 时 SHALL 视为不一致，通知回会话处理，不自动恢复、不直接开始下一步，也不把托管记录改成正常结束。相同项目、批次、文件摘要与错误类别 SHALL 仅成功通知一次。摘要或错误类别变化后 SHALL 允许再次通知。缺摘要时使用空值，不重新读取超限文件。通知失败 SHALL 保留再次通知的机会。状态异常与发送结果未知的通知 SHALL 每轮最多 3 条、合计最多 60 秒；超限的通知 SHALL 推迟到下一轮，不记录去重，不解除阻断。
+
+调度 SHALL 在保护外取得快照。归档出口 SHALL 复用本轮候选扫描已核实的目录，不另外定位；同一轮内的归档状态读取 SHALL 共用 10 秒截止时间，用尽后未读取的批次本轮 SHALL 不启动出口，保留核对起点。领取动作时 SHALL 在项目写保护内复核批次、目录、状态摘要和动作身份。调度器 SHALL 不因暂缓而停止一个正在执行的进程，不豁免运行后的核对，不删除或跳过未完成核对，也不作废未完成决策。若已有未完成核对，SHALL 先沿用原恢复协议核实旧写者已停止，完成核对或交回会话，在之前始终阻断新动作。恢复协议不得因此恢复阶段会话或执行出口。
+
+启动阶段或恢复会话 SHALL 先保存原协议的核对起点，保存成功才算领取。出口起草 SHALL 先核实该动作尚无待处理决策。只读起草会话 SHALL 不运行写入 Git 的命令。起草不授权执行，创建出口决策前 SHALL 重新复核。
+
+生成推送清单或处理已回复的出口动作前，调度器 SHALL 复核批次、状态及原有阻断条件。复核通过才 SHALL 按 `autopilot-exit-actions` 继续。只读起草会话不得生成推送清单。生成清单及执行出口中的 Git 调用 SHALL 留在项目写保护外。
+
+暂缓 SHALL 不改变原有撤回、拉取、Git 自动维护和出口恢复规则。`paused`、`void` 或进度显示 SHALL 不作为运行者已停止的证明。原有占用检查不能确认时 SHALL 不放行。
+
+新决策 SHALL 使用 `card.sendState: unclaimed`。发卡前，调度 SHALL 在项目写保护内复核批次、目录、状态摘要和原待回复决策。调度 SHALL 原子保存 `claimed` 领取记录。记录 SHALL 绑定原批次、决策编号、本次领取的唯一标识、收件人、内容摘要和原幂等键。保存失败 SHALL 不调用飞书。发送发生在保护外。回写 SHALL 复核同一批次、原决策及同一次领取，不覆盖回复或决策终态。
+
+同次发送确认取得合法消息编号时，调度 SHALL 原子保存 `sent` 与 `card.messageId`。合法消息编号 SHALL 为非空字符串，最多 128 字节，只含可打印 ASCII（0x21–0x7E）；发送回写、调度、恢复和桥接 SHALL 共用同一判据；不合法时 SHALL 不保存 `sent`，按结果未知处理。只有确认请求未发出时才 SHALL 保存 `not-sent`。`not-sent` 分支 SHALL 在复核后重新领取，沿用原决策、收件人、内容和幂等键；任一不符则不发送。超时、中断、普通非零退出、结果无法读取或保存均不证明请求未发出。
+
+`claimed` 且没有可核实送达结果，或发送记录无法核对时，调度 SHALL 将结果按未知处理。无发送状态也无消息编号的旧决策 SHALL 按未知处理；带有可核实消息编号的旧决策 SHALL 继续等待原回复。结果未知时，调度 SHALL 保留原决策与未完成核对，发送去重的无决策编号通知，提示回会话核对或按既有流程撤回。SHALL 不自动重发原卡片、不分配替代决策、不恢复阶段、不执行出口。通知不得视为原卡片送达或核对完成。
+
+人工修改状态 SHALL 从下一次领取复核生效，不撤回已经开始的动作，不删除未完成核对。已开始的提交与合并、推送 SHALL 不在内部复核状态；推送前对托管记录的复核保持原规则。
+
+无法核验辅助脚本来源时，调度 SHALL 只在全局锁内读取本机待核对记录。保留原记录；报告受影响的变更、批次、待核对动作或本机记录不可读。诊断 SHALL 只写本机日志或标准错误。该轮 SHALL 退出 2，不运行未核验脚本或通知命令，不做比较、启动或恢复阶段、执行出口。
+
+状态异常与发送结果未知的处理通知 SHALL 只带变更名、批次开始时间、固定错误类别、固定处理提示，以及需要时的决策编号，不带可回复操作。既有正常决策卡片的契约不变。发卡结果未知的通知不带决策编号。原始暂缓原因、绝对路径和原始诊断不得外发。全部无决策编号的通知 SHALL 只在确认发送成功后记录去重，原有的核对未完成通知也按此处理；状态核对的错误 SHALL 只通过固定字段的处理通知外发。
+
+仅用 `--change-state-version` 启动时，调度器 SHALL 在读取项目或托管配置前输出 `{"changeStateVersion":1}` 并退出 0。探测 SHALL 不取得运行锁、不发送通知、不启动阶段。该参数与其他参数混用时 SHALL 拒绝，不进入常规调度。
+
+#### Scenario: 只读探测不进入调度
+- **WHEN** 用户调用 `scheduler.mjs --change-state-version`，本机尚无托管配置
+- **THEN** 退出 0，只输出约定的 JSON，不取得锁或发送通知
+
+#### Scenario: 异常暂缓标记阻止阶段启动
+- **WHEN** 托管记录为 `active`，文件被外部改为合法的 `paused`
+- **THEN** 调度不启动阶段，通知状态不一致
+- **AND** 保留托管记录、决策与核对数据
+
+#### Scenario: 暂缓检查早于恢复会话
+- **WHEN** 状态为 `paused`，存在已回复且能恢复会话的决策
+- **THEN** 调度不恢复会话，不把该决策标为已使用
+
+#### Scenario: 已归档变更的出口仍检查状态
+- **WHEN** 已归档变更的托管记录为 `exiting`，状态文件为 `paused`
+- **THEN** 调度不提交、合并或推送，通知状态不一致
+
+#### Scenario: 门禁来源失败保留本机待核对记录
+- **WHEN** 本机存在未完成核对且调度无法核实辅助脚本来源
+- **THEN** 调度在本机报告批次与待核对动作，保留原记录
+- **AND** 退出 2，不比较、不通知外部、不启动阶段或出口
+
+#### Scenario: 状态异常通知只带必要字段
+- **WHEN** 调度通知用户处理状态异常，且本机有暂缓原因和原始诊断
+- **THEN** 通知只带明确允许的字段，不包含原因原文、绝对路径或原始诊断
+
+#### Scenario: 暂缓不能删除未完成核对
+- **WHEN** 批次有未完成核对，外部又写入 `paused`
+- **THEN** 调度保留原起点，按原协议核实旧写者并核对或交回会话
+- **AND** 不启动阶段、恢复阶段会话或执行出口
+
+#### Scenario: 旧副本不能启动新动作
+- **WHEN** 进度视图没有 `changeStateVersion` 或条目没有 `changeState`
+- **THEN** 调度本轮不启动新动作，通知同步托管、进度视图和门禁副本
+
+#### Scenario: 相同不一致原因不反复通知
+- **WHEN** 相同批次的状态文件摘要与错误类别连续三轮不变
+- **THEN** 成功发送一次通知后不再发送相同通知
+- **AND** 不因去重而放行新动作
+
+#### Scenario: 阶段领取前状态异常
+- **WHEN** 调度取得快照后、保存核对起点前发现状态已变成 `paused`
+- **THEN** 本轮不保存新的阶段核对起点，不启动或恢复会话，不消费原回复
+
+#### Scenario: 阶段领取后状态异常
+- **WHEN** 新阶段已领取，用户然后手改为 `paused`
+- **THEN** 不用暂缓撤回该动作，保留并完成核对或交回会话
+- **AND** 下次复核不再领取新动作
+
+#### Scenario: 推送清单开始前复核状态
+- **WHEN** 调度器按原出口规则准备生成推送清单，但原批次已暂缓或状态无法核实
+- **THEN** 不启动清单准备、不创建推送托管决策、不推送
+
+#### Scenario: 归档出口不使用同名活跃目录的状态
+- **WHEN** 原归档批次的状态无法核实，同时有一个同名活跃变更处于 `enabled`
+- **THEN** 调度不以活跃变更的状态放行出口，保留原批次的未完成核对
+
+#### Scenario: 请求确认未发出时恢复原发送
+- **WHEN** 飞书命令未能启动，发送记录保存为 `not-sent`
+- **THEN** 下一轮在复核通过后用相同编号、收件人、内容和幂等键发送
+- **AND** 不启动阶段或创建另一决策
+
+#### Scenario: 卡片已送达但未回写时中断
+- **WHEN** 已保存 `claimed`，飞书收到卡片，调度在回写消息编号前退出
+- **THEN** 下一轮不重发原卡片，不创建另一决策
+- **AND** 保留原决策和未完成核对，通知回会话处理，不推进阶段或出口
+
+#### Scenario: 发送结果未知且核对内容变化
+- **WHEN** 原提问的卡片发送结果未知，重新读取的 `trace` 与原 `traceAfter` 不一致
+- **THEN** 保留原提问、预留及核对起点，不作废、不消费、不创建替代决策
+- **AND** 只发送不带决策编号的处理通知，不恢复阶段或执行出口
+
+#### Scenario: 旧待回复决策没有发送记录
+- **WHEN** 旧待回复决策没有发送状态，也没有消息编号
+- **THEN** 调度按发送结果未知处理，不把该决策当成首次发送
+
+#### Scenario: 确认送达后不再发送
+- **WHEN** 原决策保存了同次领取的 `sent` 与合法的 `card.messageId`
+- **THEN** 调度等待原回复，不重发卡片
+- **AND** 只在原核对条件满足时完成交接
+
+#### Scenario: 发送领取无法保存
+- **WHEN** 发送领取未能写入原决策
+- **THEN** 调度不调用飞书，不改原决策的待回复状态

@@ -140,3 +140,61 @@ White space in these rules SHALL be the white space of the JavaScript `\s` class
 #### Scenario: No open questions
 - **WHEN** the section contains only `无。`
 - **THEN** `openQuestions` is `{ "pending": 0, "total": 0 }`
+
+### Requirement: facts SHALL 统一输出变更的推进意愿
+
+`implementation-gate.mjs facts <changeRoot>` SHALL 按 `change-pause` 的文件契约读取推进意愿，在原有字段之外输出 `changeStateVersion: 1` 与 `changeState`。`changeState` SHALL 为 `{ state, reason, updatedAt, error, digest }`。`digest` SHALL 为状态文件原始字节的 SHA-256，小写十六进制共 64 个字符，不归一化。状态文件缺失、非普通文件、超限或字节不能完整读取时 `digest` SHALL 为 `null`。`digest` 只用于写入前的一致性复核，SHALL 不作为签署字段或门禁证据。状态文件缺失时 SHALL 输出 `enabled` 和四个 `null`（原因、时间、错误、摘要）。文件合法时 SHALL 输出其中的状态、原因、时间、摘要及 `error: null`。文件无效时 SHALL 输出 `state: unknown`、原因为 `null`、时间为 `null`，以及包含文件路径与具体原因的 `error`，仅在字节完整读取且未超限时仍输出摘要。
+
+`facts` SHALL 同时输出 `changeDirectory: { path, dev, ino }`。路径为核对后的绝对目录路径，设备号与 inode 为十进制字符串。读取前后 SHALL 核对目录实例。路径不可定位、目录缺失或实例变化时 SHALL 输出 `changeDirectory: null` 与 `state: unknown`。只在已核对目录内缺少状态文件时按 `enabled` 读取。
+
+变更状态无效时 `facts` SHALL 仍输出其他可读事实并退出 0。其他参数与环境错误 SHALL 沿用原规则。`facts` SHALL 不因暂缓改变 `archive`、指纹或技术评审字段。读取状态文件的规则 SHALL 只在门禁模块中定义，进度视图与托管管理不得另写一套解析规则。
+
+读取前 SHALL 确认状态目录属于项目真实根：活跃目录为 `openspec/changes` 的直接子目录，归档目录为 `openspec/changes/archive` 下符合 `YYYY-MM-DD-<name>` 的直接子目录。SHALL 不跟随目录软链接。归属不明时 SHALL 不读取状态正文，也不解释为缺文件；可读的其他门禁事实仍按原规则输出。
+
+#### Scenario: 缺少状态文件的事实
+- **WHEN** 变更没有状态文件，其他事实可读
+- **THEN** `facts` 退出 0，输出版本 1 与 `state: enabled`
+- **AND** 不创建状态文件
+
+#### Scenario: 目录缺失不等于状态文件缺失
+- **WHEN** 门禁无法核实原目录，或读取前后目录实例不一致
+- **THEN** 输出 `changeDirectory: null` 和 `state: unknown`，不回退为 `enabled`
+
+#### Scenario: 超限状态仍保留其他门禁事实
+- **WHEN** 已确认归属的状态文件超过 16 KiB
+- **THEN** 状态为 `unknown`，原因与摘要为 `null`
+- **AND** 其他可读门禁事实仍输出，不计算截断摘要
+
+#### Scenario: 摘要随文件字节变化
+- **WHEN** 同一变更的状态文件内容改变一个字节
+- **THEN** 两次 `facts` 的 `changeState.digest` 不同，文件未修改时两次相同
+- **AND** 文件缺失时 `digest` 为 `null`
+
+#### Scenario: 状态错误不覆盖门禁事实
+- **WHEN** 状态文件是无效 JSON，且技术评审为 `BLOCKED`
+- **THEN** `facts` 退出 0，状态为 `unknown`，错误包含文件路径
+- **AND** 技术评审仍为 `BLOCKED`
+
+### Requirement: 门禁 SHALL 提供只读状态子命令
+
+`implementation-gate.mjs state <changeRoot> [--repo <dir>]` SHALL 使用与 `facts` 相同的读取函数，只输出 `changeStateVersion`、`changeDirectory` 与 `changeState`，字段含义与 `facts` 相同。`state` SHALL 不计算实现指纹，不读取评审、任务或证据，不向 Git 对象库写入对象。状态无效时 SHALL 输出 `state: unknown` 并退出 0。参数与环境错误 SHALL 沿用 `facts` 的规则。
+
+#### Scenario: state 与 facts 给出相同的状态
+- **WHEN** 同一变更分别运行 `state` 与 `facts`，状态文件没有改变
+- **THEN** 两次输出的 `changeStateVersion`、`changeDirectory` 与 `changeState` 相同
+
+#### Scenario: state 不写 Git 对象
+- **WHEN** 工作区有未入库的修改，运行 `state`
+- **THEN** 运行前后对象库的对象数相同
+
+### Requirement: 门禁 SHALL 接受变更状态文件而不豁免检查
+
+产物允许清单 SHALL 接受变更根目录唯一的 `change-state.json`。其他路径中的同名文件 SHALL 不因此取得允许。该文件只属于规划数据，SHALL 沿用规划目录的指纹排除规则。`archive`、`review`、`evidence` 和 `trace` 的原有业务检查 SHALL 不因文件存在或状态为 `paused` 而通过。
+
+#### Scenario: 状态文件是合法产物
+- **WHEN** 变更根目录有一份合法 `change-state.json`
+- **THEN** 产物检查不报告该文件为清单外文件
+
+#### Scenario: 暂缓不改变归档阻断
+- **WHEN** 变更状态为 `paused`，verify 结论为 `FAIL`
+- **THEN** 归档检查仍报告 verify 结论的阻断

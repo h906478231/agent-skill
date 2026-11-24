@@ -248,23 +248,72 @@ export function expiredCard({ title, text }) {
  * 通过 lark-cli 发送一张卡片。
  * @param {object} options larkBin 为 lark-cli 路径；ownerOpenId 为收卡人；card 为卡片对象；
  *   idempotencyKey 为幂等键；home 为托管目录（草稿文件写在那里）。
- * @returns {{ ok: boolean, messageId: string|null, reason: string|null }} 发送结果。
+ * @returns {{ ok: boolean, messageId: string|null, notSent: boolean, reason: string|null }} 发送结果；
+ *   messageId 只在合法时非空，notSent 为 true 表示确认请求未发出。
  */
 function sendArguments({ ownerOpenId, idempotencyKey }, file) {
   return ['im', '+messages-send', '--as', 'bot', '--user-id', ownerOpenId,
     '--msg-type', 'interactive', '--content', `@${file}`, '--idempotency-key', idempotencyKey]
 }
 
+/** 合法消息编号的字节上限（add-change-pause design D5，评审 SEC-15）。 */
+export const MESSAGE_ID_LIMIT = 128
+
+/**
+ * 合法消息编号的唯一判据：非空字符串，最多 128 字节，只含可打印 ASCII（0x21–0x7E）。
+ * 发送回写、调度、恢复和桥接共用（评审 SEC-15）：命令退出 0 但返回数字、对象或超长编号时，不能当作已送达。
+ * @param {unknown} value 待判断的编号。
+ * @returns {boolean} 合法时为 true。
+ */
+export function isMessageId(value) {
+  return typeof value === 'string' && value.length > 0 && value.length <= MESSAGE_ID_LIMIT && /^[\x21-\x7e]+$/.test(value)
+}
+
+/**
+ * 按决策的 card 字段判断发送结果（add-change-pause design D5「决策卡片的发送记录」）。
+ * @param {object|undefined} card 决策的 card 字段。
+ * @returns {'unclaimed'|'not-sent'|'sent'|'unknown'} unclaimed 与 not-sent 允许领取发送；sent 等待原回复；
+ *   unknown 表示请求可能已发出，不重发。
+ */
+export function deliveryOf(card) {
+  const state = card?.sendState
+  // 旧决策没有发送状态：已记录合法消息编号时沿用已送达的处理，否则按结果未知处理，不当作首次发送。
+  if (state === undefined || state === 'sent') return isMessageId(card?.messageId) ? 'sent' : 'unknown'
+  if ((state === 'unclaimed' || state === 'not-sent') && card.messageId === null) return state
+  // claimed 没有送达结果，或发送记录无法核对。
+  return 'unknown'
+}
+
+/**
+ * 归一发送命令的结果。notSent 只在命令没有启动（spawn 报错且没有进程号）时为 true：
+ * 超时、中断与普通非零退出都不能证明请求未发出（design D5）。
+ */
 function sendResult(result) {
-  if (result.status !== 0) return { ok: false, messageId: null, reason: result.error?.code || `lark-cli 退出码 ${result.status}` }
+  if (result.error && !result.pid) return { ok: false, messageId: null, notSent: true, reason: result.error.code || 'lark-cli 未能启动' }
+  if (result.status !== 0) {
+    return { ok: false, messageId: null, notSent: false, reason: result.error?.code || `lark-cli 退出码 ${result.status}` }
+  }
   let parsed
   try { parsed = JSON.parse(result.stdout) } catch { parsed = null }
-  return { ok: true, messageId: parsed?.message_id || parsed?.data?.message_id || null, reason: null }
+  const messageId = parsed?.message_id || parsed?.data?.message_id || null
+  // 进程退出 0 不能代替送达回执；通知可以用原键重试，但决策卡片的投递结果仍是未知。
+  if (!isMessageId(messageId)) return { ok: false, messageId: null, notSent: false, reason: '未取得可核对的消息编号' }
+  return { ok: true, messageId, notSent: false, reason: null }
+}
+
+/** 卡片文件写不出时还没有启动发送命令，可以确认请求未发出。 */
+function cardFileOrNotSent(card) {
+  try {
+    return { file: writeCardFile(card) }
+  } catch (error) {
+    return { failed: { ok: false, messageId: null, notSent: true, reason: error.code || error.message } }
+  }
 }
 
 export function sendCard(options) {
   const { larkBin, card, timeout = 60_000 } = options
-  const file = writeCardFile(card)
+  const { file, failed } = cardFileOrNotSent(card)
+  if (failed) return failed
   try {
     return sendResult(spawnSync(larkBin, sendArguments(options, file), { encoding: 'utf8', timeout, killSignal: 'SIGKILL' }))
   } finally {
@@ -275,7 +324,8 @@ export function sendCard(options) {
 /** 恢复时不等待超时的发送进程退出。调用方在预算到期后不写 messageId。 */
 export async function sendRecoveryCard(options) {
   const { larkBin, card, timeout = 60_000 } = options
-  const file = writeCardFile(card)
+  const { file, failed } = cardFileOrNotSent(card)
+  if (failed) return failed
   try {
     return sendResult(await runBounded(larkBin, sendArguments(options, file), { timeout, maxBuffer: 1024 * 1024 }))
   } finally {
