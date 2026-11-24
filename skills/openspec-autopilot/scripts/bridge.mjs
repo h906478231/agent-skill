@@ -12,7 +12,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FORM_FIELDS, expiredCard, recordedCard } from './lib/card.mjs'
+import { FORM_FIELDS, expiredCard, isMessageId, recordedCard } from './lib/card.mjs'
 import { decisionFile, decisionsDir, readDecision, scanDecisions, transition } from './lib/decisions.mjs'
 import { batchOf, enumerateBatches, withVerifiedBatch } from './lib/batch.mjs'
 import { canonicalJson } from './lib/pending-trace.mjs'
@@ -56,7 +56,8 @@ function markEvent(eventId) {
  * @returns {{ decision: object, changeDir: string }|null} 决策与变更目录。
  */
 function findDecision(config, messageId) {
-  if (typeof messageId !== 'string' || !messageId) return null
+  // 与调度和恢复共用合法编号判据：不合法的编号不能证明卡片已送达，不按它对应回复（add-change-pause 评审 SEC-15）。
+  if (!isMessageId(messageId)) return null
   let found = null
   for (const project of config.projects) {
     const changesDir = path.join(project.root, 'openspec', 'changes')

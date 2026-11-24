@@ -7,8 +7,14 @@ export function sameObject(left, right) {
   return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode
 }
 
-/** 只有已经验证的父目录下缺少目标时，才返回 null。 */
-export function readBoundedJson(file, maxBytes) {
+/**
+ * 只有已经验证的父目录下缺少目标时，才返回 null。
+ * @param {string} file 文件路径。
+ * @param {number} maxBytes 单文件字节上限。
+ * @param {Function} [charge] 累计读取额度：读取前以文件字节数调用，额度不足时由它抛出，不读取内容
+ *   （add-change-pause design D0 第 3 条，评审 PERF-12）。
+ */
+export function readBoundedJson(file, maxBytes, charge) {
   const parent = path.dirname(file)
   const dir = lstatSync(parent)
   if (!dir.isDirectory()) throw new Error('父目录类型无效')
@@ -25,6 +31,7 @@ export function readBoundedJson(file, maxBytes) {
     const opened = fstatSync(fd)
     if (!sameObject(before, opened) || opened.nlink !== 1) throw new Error('文件对象已改变')
     if (opened.size > maxBytes) throw new Error('文件超过字节上限')
+    charge?.(opened.size)
     const contents = Buffer.allocUnsafe(opened.size + 1)
     let offset = 0
     while (offset < contents.length) {

@@ -1,6 +1,6 @@
 ---
 name: openspec-change-progress
-description: OpenSpec 进度视图：只读当前项目的 openspec/，为每个活跃变更输出一行分级、阶段、任务勾选数、待决定条数、卡点与下一步命令，已归档变更只列名称与日期；两个以上变更已开始实现时提示同一检出只实现一个变更。阶段按 progress.mjs 的 RULES 常量顺序推导，分级、签字、证据、双轴评审与 verify 报告的指纹和结论字段读取门禁脚本 implementation-gate.mjs facts 的输出。用于会话开始、切换会话后接续变更前，回答「每个变更走到哪、卡在哪、下一步跑哪个命令」。输出终端表格，--json 供 agent 读取。不写变更目录，不解析 verify 报告（verify 结论由门禁脚本读取），不改变任何门禁。
+description: OpenSpec 进度视图：只读当前项目的 openspec/，为每个活跃变更输出一行分级、变更状态、阶段、任务勾选数、待决定条数、卡点与下一步命令，已归档变更只列名称与日期；两个以上变更已开始实现时提示同一检出只实现一个变更。阶段按 progress.mjs 的 RULES 常量顺序推导，分级、签字、证据、双轴评审与 verify 报告的指纹和结论字段读取门禁脚本 implementation-gate.mjs facts 的输出。用于会话开始、切换会话后接续变更前，回答「每个变更走到哪、卡在哪、下一步跑哪个命令」。输出终端表格，--json 供 agent 读取。不写变更目录，不解析 verify 报告（verify 结论由门禁脚本读取），不改变任何门禁。
 ---
 
 # OpenSpec 进度视图（Progress View）
@@ -13,7 +13,7 @@ description: OpenSpec 进度视图：只读当前项目的 openspec/，为每个
 
 - **只读**。不写变更目录，不运行写入 git 引用、索引与工作区的命令。门禁脚本计算实现指纹时向 git 对象库写入不可达对象，与门禁脚本的其他子命令相同，由 `git gc` 回收。
 - **推导规则只有一份**：`scripts/progress.mjs` 的 `RULES` 常量，按顺序判断，命中第一条就停。本文件不复制规则表，要了解某条规则时读该常量与它的中文注释。
-- **判定规则不在本 skill 中**。分级行、`Gate-Verdict` 行、签字行、切片证据、双轴评审与 verify 报告的指纹和结论字段的读取规则只在门禁脚本 `implementation-gate.mjs` 中实现，本 skill 只读 `facts` 子命令的 JSON。
+- **判定规则不在本 skill 中**。分级行、`Gate-Verdict` 行、签字行、切片证据、双轴评审与 verify 报告的指纹和结论字段，以及变更状态文件 `change-state.json` 的读取规则只在门禁脚本 `implementation-gate.mjs` 中实现，本 skill 只读 `facts` 子命令的 JSON。
 - **verify 结论由门禁脚本读取，本 skill 不解析报告**。报告的 `Verify-Verdict` 为 `FAIL` 或 `Critical-Count` 大于 0 时，门禁 `archive` 有 `verify 报告：` 开头的阻断项，规则为 R10；报告有结论字段并且到了 R11 时，下一步为 `/opsx:archive <name>`。没有结论字段的旧报告，下一步仍写「先确认 `verification.md` 没有 CRITICAL」，由用户或 agent 打开报告确认。
 - **不放行任何门禁**。apply 前的签字校验仍按 `../openspec-technical-review/shared/apply-gate-check.md` 执行，归档前的阻断仍由 `/opsx:archive` 判断。
 
@@ -25,13 +25,15 @@ description: OpenSpec 进度视图：只读当前项目的 openspec/，为每个
 node <PROGRESS> [--json] [--gate <path>]   # 在项目目录中运行
 ```
 
-- 门禁脚本的缺省位置是 `../openspec-technical-review/scripts/implementation-gate.mjs`（相对本 skill 目录解析，`progress.mjs` 按同一位置查找）。缺省路径不存在（退出码 2，信息写出该路径）时，用 Glob 搜 `**/openspec-technical-review/scripts/implementation-gate.mjs`，再用 `--gate` 传入。
+- 门禁脚本的缺省候选是 `../openspec-technical-review/scripts/implementation-gate.mjs`（相对本 skill 目录解析，`progress.mjs` 按同一位置查找）。缺省路径不存在（退出码 2，信息写出该路径）时，用 Glob 搜 `**/openspec-technical-review/scripts/implementation-gate.mjs`，再用 `--gate` 传入。
+- **门禁来源**：缺省候选与 `--gate` 都只选择候选，不授予信任；本脚本自身的位置也不是信任依据。运行门禁之前，候选的真实路径须为某个可信安装根中约定位置的普通文件（与缺省候选相对其安装根的位置相同），且不在本项目检出（含 git 检出根）与托管配置 `projects` 所列的检出中。可信安装根只有两种：统一安装根 `~/.tigger/skills`，以及本机托管配置（`OPENSPEC_AUTOPILOT_HOME` 或 `~/.openspec-autopilot` 下的 `config.json`）中 `trustedSkillRoots` 登记的根。托管配置不存在时只认可统一安装根。直接在仓库副本中运行、门禁也在该仓库中时同样退出码 2。核验失败时不运行门禁，按提示把 skill 同步到统一安装根，或在托管配置中登记安装根；同步与登记前先问用户。
 - 门禁脚本的用法文本中没有 `facts` 时退出码 2，提示同步 `openspec-technical-review`。已安装的 skill 是各自独立的副本，只同步本 skill、不同步门禁脚本时会出现这种情况。同步副本前先问用户。
+- 读取 `facts` 时以 `openspec list` 给出的项目根传 `--repo`。该项目根不是所在 git 检出的根时，条目状态为 `unknown`。
 
 | 退出码 | 含义 |
 |---|---|
-| `0` | 已输出视图。单个变更读取失败也是 `0`，原因写在该条目的 `error` |
-| `2` | 参数错误、openspec CLI 无法运行、找不到项目的 `openspec/`、找不到门禁脚本，或门禁脚本不支持 `facts`。原样告诉用户原因 |
+| `0` | 已输出视图。单个变更读取失败也是 `0`，原因写在该条目的 `error`；单个变更状态无法核验也是 `0`，原因写在该条目的 `changeState.error` |
+| `2` | 参数错误、openspec CLI 无法运行、找不到项目的 `openspec/`、找不到门禁脚本、门禁来源无法核验、托管配置无法读取或解析（含 `trustedSkillRoots` 不是绝对路径数组），或门禁脚本不支持 `facts`。原样告诉用户原因 |
 
 每个活跃变更约 1 秒（`openspec status` 与门禁 `facts` 各一次），按需运行一次，不轮询。
 
@@ -43,9 +45,9 @@ node <PROGRESS> [--json] [--gate <path>]   # 在项目目录中运行
 
 ## 如何阅读输出
 
-默认输出 Markdown 表格，列为变更、分级、阶段、任务、待决定、卡点、下一步。卡点只写第一条，多于一条时附「（共 N 条）」。表格下方列出各变更的告警；两个以上变更已开始实现时输出一行「提示：」；最后一行写已归档变更数与最近一个。原样显示给用户，不改写。
+默认输出 Markdown 表格，列为变更、分级、变更状态、阶段、任务、待决定、卡点、下一步。卡点只写第一条，多于一条时附「（共 N 条）」。表格下方列出各变更的告警，再在「变更状态：」下列出暂缓变更的原因与时间、状态无法核验的变更与原因（原因按普通文本显示，转义换行、控制字符与表格分隔符）；两个以上未暂缓的变更已开始实现时输出一行「提示：」；最后一行写已归档变更数与最近一个。原样显示给用户，不改写。
 
-`--json` 输出 `{ root, active, implementing, archived }`。`implementing` 是已开始实现的变更名（阶段为 quality、verify、archive，或阶段为 apply 并且已有勾选任务），有两个以上时告诉用户：同一检出同一时间只实现一个变更，规则见 `../openspec-technical-review/shared/phases.md`「同一检出只实现一个变更」。这只是提示，不改变阶段与下一步，不阻断任何命令。`active` 中每个条目的字段：
+`--json` 输出 `{ root, active, implementing, archived, changeStateVersion }`。`implementing` 是已开始实现的变更名（阶段为 quality、verify、archive，或阶段为 apply 并且已有勾选任务），暂缓的历史变更仍在其中。除暂缓的变更外仍有两个以上时告诉用户：同一检出同一时间只实现一个变更，规则见 `../openspec-technical-review/shared/phases.md`「同一检出只实现一个变更」。这只是提示，不改变阶段与下一步，不阻断任何命令。`changeStateVersion` 只在每次成功读取的门禁都提供状态契约时为 `1`，否则为 `null`。`active` 中每个条目的字段：
 
 | 字段 | 读法 |
 |---|---|
@@ -57,8 +59,10 @@ node <PROGRESS> [--json] [--gate <path>]   # 在项目目录中运行
 | `reviewStale` | 双轴评审适用时为门禁 `archive.review.stale`（评审后实现有变化，R8 据此在裁决为 `PASSED` 时也回到 quality）；不适用时为 `false`；门禁副本没有给出该字段时为 `null`，R8 成立，卡点提示同步 `openspec-technical-review` 副本 |
 | `notes` | 说明。例如没有分级行、已有勾选的变更按历史变更处理，以及门禁的「不适用」理由 |
 | `openQuestions` | `{ pending, total }`：`design.md`「## Open Questions」中的条目数与没写「结论」的条目数。**只展示，不参与推导，不作为卡点**；由用户或 agent 看过条目后判断是否阻断 |
-| `next` | 下一步命令或人工动作 |
-| `error` | 读取失败的原因；此时 `stage`、`rule`、`next` 为 `null`，其他变更照常推导 |
+| `next` | 下一步命令或人工动作。暂缓时为 `node <AUTOPILOT>/autopilot.mjs resume <变更名>`；状态无法核验时提示修复状态或同步 `openspec-technical-review` 副本，不推荐 apply |
+| `changeState` | `{ state, reason, updatedAt, error, digest }`，从门禁 `facts` 原样复制。`state` 为 `enabled`、`paused` 或 `unknown`。暂缓只覆盖 `next`，阶段、规则、任务与卡点不变；门禁副本没有状态契约时为 `unknown`，`error` 提示同步副本 |
+| `changeDirectory` | `{ path, dev, ino }`：门禁核实的变更目录与目录实例（十进制字符串）；目录无法核实时为 `null` |
+| `error` | 读取失败的原因；此时 `stage`、`rule`、`next`、`changeState`、`changeDirectory` 为 `null`，其他变更照常推导 |
 
 - `archived` 只有 `name` 与 `date`（目录名不是 `YYYY-MM-DD-<名称>` 时 `date` 为 `null`）。已归档变更不运行门禁：归档后的提交会让切片证据过期，在已归档变更上运行门禁只会得到假阻断项。
 - `next` 是建议，不是指令。签字、变更终点、risk accepted 等只能由用户决定的动作，下一步只写「人工……」，agent 不代做。

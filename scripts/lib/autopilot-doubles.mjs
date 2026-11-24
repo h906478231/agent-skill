@@ -3,10 +3,11 @@
  *
  * 所属：仓库测试脚本。调用方：scripts/test-autopilot.mjs 的各用例脚手架。
  * 用途：临时目录与临时 git 仓库、托管配置、变更目录文件，以及代替 `progress.mjs`、`claude` 与 `lark-cli` 的替身。
- *   - progress 替身：原样输出视图文件的内容，用例改写视图文件即可改变进度视图。
+ *   - progress 替身：输出视图文件的内容，并按门禁契约补齐活跃条目的变更状态；用例改写视图文件即可改变进度视图。
  *   - claude 替身：记录参数与环境变量，按替身目录中的文件模拟运行副作用、睡眠与输出。
  *     调度脚本只给 claude 传 6 个环境变量（design D4），替身的控制项因此放在替身目录的文件中，不放在环境变量中。
  *   - lark-cli 替身：记录参数与 `--content` 文件内容；`event` 子命令输出就绪行与事件序列。
+ *   - launchctl 替身：按服务配置文件输出 `launchctl print` 的程序、参数与环境变量，供托管入口核对已加载的服务。
  * 替身与配置只有这一份，各脚手架组合调用，配置字段与替身行为只改一处（quality R1 STD-06）。
  */
 
@@ -14,7 +15,8 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 /** claude 替身没有预设输出时的缺省输出：正常结束的一轮运行。 */
 const DEFAULT_CLAUDE_OUTPUT = { session_id: 'sess-1', stop_reason: 'end_turn', result: 'done' }
@@ -100,17 +102,88 @@ export function writeConfig(home, fields = {}) {
 
 /**
  * 写出进度视图替身。
+ * 活跃条目没有写 `changeState` 或 `changeDirectory` 时，替身按实际进度视图的状态契约补齐（add-change-pause design D2、D5）：
+ * 变更目录有 `change-state.json` 时运行 `--gate` 传来的门禁 `state` 子命令；没有状态文件时直接写继续推进与目录实例，
+ * 省去每次读取进度都启动门禁的时间。顶层没有写 `changeStateVersion` 时补为 1。视图写 `raw: true` 时原样输出（去掉该标记）。
+ * 替身目录中有 `progress-effect.json`（`[{ file, content }]`）时，输出视图后写这些文件并删除该控制文件，
+ * 模拟调度取得进度快照之后状态文件被修改。
  * @param {string} dir 替身目录。
  * @param {object} view 初始进度视图。
- * @returns {{ viewFile: string, progressBin: string }} 视图文件与替身的路径。
+ * @returns {{ viewFile: string, progressBin: string, skillRoot: string }} 视图文件、替身及其临时安装根。
  */
 export function progressDouble(dir, view) {
   const viewFile = join(dir, 'progress-output.json')
   writeFileSync(viewFile, JSON.stringify(view))
-  const progressBin = join(dir, 'progress-double.mjs')
-  writeFileSync(progressBin, `import { readFileSync } from 'node:fs'\n`
-    + `process.stdout.write(readFileSync(${JSON.stringify(viewFile)}, 'utf8'))\n`)
-  return { viewFile, progressBin }
+  // 与管理入口相同，调度替身也只从临时登记的安装根运行。
+  const skillRoot = join(dir, 'skills')
+  const progressBin = join(skillRoot, 'openspec-change-progress/scripts/progress.mjs')
+  mkdirSync(dirname(progressBin), { recursive: true })
+  writeFileSync(progressBin, `import { existsSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import path from 'node:path'
+const view = JSON.parse(readFileSync(${JSON.stringify(viewFile)}, 'utf8'))
+const raw = view.raw === true
+delete view.raw
+const at = process.argv.indexOf('--gate')
+if (!raw) {
+  for (const item of view.active || []) {
+    if ('changeState' in item && 'changeDirectory' in item) continue
+    const target = path.join(process.cwd(), 'openspec', 'changes', item.change)
+    let value
+    if (at > 0 && existsSync(path.join(target, 'change-state.json'))) {
+      value = JSON.parse(spawnSync(process.execPath, [process.argv[at + 1], 'state', target, '--repo', process.cwd()], { encoding: 'utf8' }).stdout)
+    } else {
+      try {
+        const stat = statSync(target, { bigint: true })
+        value = { changeDirectory: { path: realpathSync.native(target), dev: String(stat.dev), ino: String(stat.ino) },
+          changeState: { state: 'enabled', reason: null, updatedAt: null, error: null, digest: null } }
+      } catch {
+        value = { changeDirectory: null, changeState: { state: 'unknown', reason: null, updatedAt: null, error: '变更目录不存在', digest: null } }
+      }
+    }
+    if (!('changeState' in item)) item.changeState = value.changeState
+    if (!('changeDirectory' in item)) item.changeDirectory = value.changeDirectory
+  }
+  if (!('changeStateVersion' in view)) view.changeStateVersion = 1
+}
+process.stdout.write(JSON.stringify(view))
+const effect = ${JSON.stringify(join(dir, 'progress-effect.json'))}
+if (existsSync(effect)) {
+  for (const item of JSON.parse(readFileSync(effect, 'utf8'))) writeFileSync(item.file, item.content)
+  rmSync(effect)
+}
+`)
+  return { viewFile, progressBin, skillRoot }
+}
+
+/** 托管入口核对的两项 launchd 服务标签（add-change-pause design D4「实际调度入口」）。 */
+export const LAUNCHD_LABELS = Object.freeze({
+  scheduler: 'com.openspec.autopilot.scheduler',
+  bridge: 'com.openspec.autopilot.bridge',
+})
+
+/**
+ * 写出 `launchctl` 替身：`print` 按服务配置文件输出已加载服务的程序、参数与环境变量（add-change-pause design D4）。
+ * 缺省的两项服务使用本仓库的托管副本、当前 Node.js 与给定的托管目录；用例改写服务配置文件即可构造不匹配的服务。
+ * @param {string} dir 替身目录，入口写在其下的 bin/launchctl。
+ * @param {string} home 服务使用的托管目录。
+ * @returns {{ bin: string, servicesFile: string, services: Function }} 入口目录、服务配置文件与读取函数。
+ */
+export function launchdDouble(dir, home) {
+  const scripts = fileURLToPath(new URL('../../skills/openspec-autopilot/scripts/', import.meta.url))
+  const servicesFile = join(dir, 'launchd-services.json')
+  const environment = { PATH: '/usr/bin:/bin', OPENSPEC_AUTOPILOT_HOME: home }
+  writeFileSync(servicesFile, `${JSON.stringify({
+    [LAUNCHD_LABELS.scheduler]: { program: process.execPath, arguments: [process.execPath, join(scripts, 'scheduler.mjs'), '--once'], environment },
+    [LAUNCHD_LABELS.bridge]: { program: process.execPath, arguments: [process.execPath, join(scripts, 'bridge.mjs')], environment },
+  }, null, 2)}\n`)
+  const bin = join(dir, 'bin')
+  mkdirSync(bin, { recursive: true })
+  const impl = fileURLToPath(new URL('./launchctl-double.mjs', import.meta.url))
+  writeFileSync(join(bin, 'launchctl'),
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(impl)} ${JSON.stringify(servicesFile)} "$@"\n`)
+  chmodSync(join(bin, 'launchctl'), 0o755)
+  return { bin, servicesFile, services: () => JSON.parse(readFileSync(servicesFile, 'utf8')) }
 }
 
 /**

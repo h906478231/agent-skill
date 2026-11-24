@@ -1,6 +1,6 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -14,6 +14,10 @@ import { snapshot } from './lib/fs-snapshot.mjs'
  */
 const progress = fileURLToPath(new URL('../skills/openspec-change-progress/scripts/progress.mjs', import.meta.url))
 const gate = fileURLToPath(new URL('../skills/openspec-technical-review/scripts/implementation-gate.mjs', import.meta.url))
+/** 本仓的 skill 目录：用例在临时托管配置中登记它，进度视图才认可本仓的门禁（add-change-pause design D2，评审 SEC-12）。 */
+const repoSkills = fileURLToPath(new URL('../skills/', import.meta.url))
+/** 门禁在可信安装根下的约定位置。 */
+const GATE_RELATIVE = 'openspec-technical-review/scripts/implementation-gate.mjs'
 
 /** openspec CLI 每次运行都等待使用统计上报完成，断网时会卡住，因此关闭。 */
 const CLI_ENV = { ...process.env, OPENSPEC_TELEMETRY: '0' }
@@ -25,9 +29,17 @@ function requireOpenspec() {
     `找不到可运行的 openspec CLI（${result.error ? result.error.message : result.stderr}）：进度视图的测试调用真实的 openspec CLI，请先安装`)
 }
 
-/** 创建带一次提交的临时 git 仓库；openspec 为 false 时不创建 openspec/ 目录。 */
+/**
+ * 创建带一次提交的临时 git 仓库；openspec 为 false 时不创建 openspec/ 目录。
+ * 同时创建临时托管目录与临时可信根：配置登记本仓 skill 目录和临时可信根，门禁替身写在临时可信根中，不在项目检出中。
+ */
 function project({ openspec = true } = {}) {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'progress-view-')))
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'progress-home-')))
+  const trusted = realpathSync(mkdtempSync(join(tmpdir(), 'progress-trusted-')))
+  const configure = fields => writeFileSync(join(home, 'config.json'), JSON.stringify(fields))
+  configure({ trustedSkillRoots: [repoSkills, trusted] })
+  const baseEnv = { ...CLI_ENV, OPENSPEC_AUTOPILOT_HOME: home }
   const write = (rel, text) => {
     mkdirSync(dirname(join(repo, rel)), { recursive: true })
     writeFileSync(join(repo, rel), text)
@@ -43,16 +55,18 @@ function project({ openspec = true } = {}) {
   if (openspec) mkdirSync(join(repo, 'openspec/changes/archive'), { recursive: true })
   git('add', '-A')
   git('commit', '-qm', 'init')
-  const run = (args = [], env = CLI_ENV) => {
-    const result = spawnSync(process.execPath, [progress, ...args], { cwd: repo, encoding: 'utf8', env, timeout: 300000 })
+  const runScript = (script, args = [], env = {}, cwd = repo) => {
+    const result = spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8', env: { ...baseEnv, ...env }, timeout: 300000 })
     return { code: result.status, out: result.stdout, err: result.stderr, json: () => JSON.parse(result.stdout) }
   }
+  const run = (args = [], env = {}) => runScript(progress, args, env)
   const fingerprint = () => {
     const result = spawnSync(process.execPath, [gate, 'fingerprint', join(repo, 'openspec/changes/archive')], { cwd: repo, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
     return result.stdout.trim()
   }
-  return { repo, write, git, run, fingerprint, cleanup: () => rmSync(repo, { recursive: true, force: true }) }
+  const cleanup = () => { for (const dir of [repo, home, trusted]) rmSync(dir, { recursive: true, force: true }) }
+  return { repo, home, trusted, configure, write, git, run, runScript, fingerprint, cleanup }
 }
 
 /** 运行 --json 并解析；退出码不是 0 时直接失败。 */
@@ -74,10 +88,10 @@ const evidence = fingerprint => [
 
 /**
  * 写一个规划产物齐全的变更。tasks 为每个任务的勾选状态；slice 为 true 时任务写在 Slice 01 下并声明 Evidence；
- * tier 写入 overview.md 分级行；files 为变更目录下的其他文件（相对路径 → 内容）。
+ * tier 写入 overview.md 分级行；files 为变更目录下的其他文件（相对路径 → 内容）；base 为项目根相对仓库的前缀。
  */
-function change(p, name, { tasks = [false], tier = null, slice = false, openQuestions = ['无。'], files = {} } = {}) {
-  const root = `openspec/changes/${name}`
+function change(p, name, { tasks = [false], tier = null, slice = false, openQuestions = ['无。'], files = {}, base = '' } = {}) {
+  const root = `${base}openspec/changes/${name}`
   p.write(`${root}/proposal.md`, '## Why\n\n测试用变更。\n\n## What Changes\n\n- 测试\n')
   p.write(`${root}/design.md`, ['## Context', '', '- 测试', '', '## Open Questions', '', ...openQuestions, ''].join('\n'))
   p.write(`${root}/specs/demo/spec.md`,
@@ -159,10 +173,15 @@ test('视图为每个活跃变更输出一个条目，字段齐全，不写变�
   assert.equal(view.active.length, 17)
   for (const item of view.active) {
     assert.deepEqual(Object.keys(item).sort(),
-      ['blockers', 'change', 'error', 'next', 'notes', 'openQuestions', 'reviewStale', 'rule', 'stage', 'tasks', 'tier', 'warnings'],
+      ['blockers', 'change', 'changeDirectory', 'changeState', 'error', 'next', 'notes', 'openQuestions', 'reviewStale', 'rule', 'stage',
+        'tasks', 'tier', 'warnings'],
       item.change)
     assert.equal(item.error, null, `${item.change}：${item.error}`)
+    // 没有状态文件的变更按继续推进读取，目录身份来自门禁（add-change-pause design D4）。
+    assert.equal(item.changeState.state, 'enabled', item.change)
+    assert.equal(item.changeDirectory.path, join(rules.repo, 'openspec/changes', item.change))
   }
+  assert.equal(view.changeStateVersion, 1)
   assert.deepEqual(entry('r6-l0').tasks, { done: 1, total: 3 })
   assert.deepEqual(snapshot(join(rules.repo, 'openspec')), changesBefore)
   assert.deepEqual([rules.git('rev-parse', 'HEAD'), rules.git('status', '--porcelain'), rules.git('show-ref')], gitBefore)
@@ -325,7 +344,7 @@ test('两个变更已开始实现时，表格在已归档行之前输出提示�
   change(p, 'alpha', { tier: 'L0', tasks: [true, false] })
   change(p, 'beta', { tier: 'L0', tasks: [true, false] })
   const json = viewOf(p)
-  assert.deepEqual(Object.keys(json).sort(), ['active', 'archived', 'implementing', 'root'])
+  assert.deepEqual(Object.keys(json).sort(), ['active', 'archived', 'changeStateVersion', 'implementing', 'root'])
   assert.deepEqual([...json.implementing].sort(), ['alpha', 'beta'])
   const result = p.run()
   assert.equal(result.code, 0, result.err)
@@ -384,7 +403,8 @@ test('门禁脚本的用法文本中没有 facts 时退出码 2，不输出任�
   const p = project()
   t.after(p.cleanup)
   change(p, 'alpha', { tier: 'L0' })
-  const oldGate = join(p.repo, 'old-gate.mjs')
+  const oldGate = join(p.trusted, GATE_RELATIVE)
+  mkdirSync(dirname(oldGate), { recursive: true })
   writeFileSync(oldGate, "process.stderr.write('用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive|hygiene> <changeRoot>\\n')\nprocess.exitCode = 2\n")
   const result = p.run(['--json', '--gate', oldGate])
   assert.equal(result.code, 2)
@@ -395,9 +415,10 @@ test('门禁脚本的用法文本中没有 facts 时退出码 2，不输出任�
 /**
  * 写一个只支持 facts 的假门禁：facts 输出固定的 facts，让 R1–R9 都不命中，archive 取 { ok, blockers }。
  * verification 没有 verdict、criticalCount、legacy，与 add-verify-verdict 之前的门禁脚本输出相同。
+ * contract 为 false 时不输出变更状态契约，与 add-change-pause 之前的门禁脚本输出相同。
  * @returns {string} 假门禁的路径。
  */
-function fakeGate(p, { ok, blockers, review = { applicable: false, verdict: null, issues: [] } }) {
+function fakeGate(p, { ok, blockers, review = { applicable: false, verdict: null, issues: [] }, contract = true }) {
   const fingerprint = `git-tree:${'0'.repeat(40)}`
   const facts = {
     tier: 'L0',
@@ -407,8 +428,11 @@ function fakeGate(p, { ok, blockers, review = { applicable: false, verdict: null
     currentFingerprint: fingerprint,
     archive: { ok, blockers, warnings: [], notes: [],
       review, evidence: { issues: [] } },
+    ...(contract ? { changeStateVersion: 1, changeDirectory: { path: join(p.repo, 'openspec/changes/fake'), dev: '1', ino: '1' },
+      changeState: { state: 'enabled', reason: null, updatedAt: null, error: null, digest: null } } : {}),
   }
-  const file = join(p.repo, 'fake-gate.mjs')
+  const file = join(p.trusted, GATE_RELATIVE)
+  mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, [
     "if (process.argv[2] !== 'facts') {",
     "  process.stderr.write('用法：node implementation-gate.mjs <fingerprint|facts> <changeRoot>\\n')",
@@ -529,7 +553,177 @@ test('openspec CLI 无法运行时退出码 2，信息写出原因', t => {
   t.after(p.cleanup)
   const empty = mkdtempSync(join(tmpdir(), 'progress-path-'))
   t.after(() => rmSync(empty, { recursive: true, force: true }))
-  const result = p.run(['--json'], { ...CLI_ENV, PATH: empty })
+  const result = p.run(['--json'], { PATH: empty })
   assert.equal(result.code, 2)
   assert.ok(result.err.includes('openspec'), result.err)
+})
+
+// ---------------------------------------------------------------------------
+// add-change-pause 任务 1.4：进度视图传播变更状态，独立查询先核验门禁来源（Seam：progress.mjs [--json]）
+// ---------------------------------------------------------------------------
+
+const pausedState = reason => JSON.stringify({ version: 1, state: 'paused', reason, updatedAt: '2026-11-23T08:00:00.000Z' })
+
+test('变更暂缓：暂缓的历史变更保留阶段、任务和 implementing，下一步提示恢复，不提示同时推进', t => {
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'ddd', { tasks: Array.from({ length: 109 }, (_, i) => i < 64) })
+  change(p, 'alpha', { tier: 'L0', tasks: [true, false] })
+  p.write('openspec/changes/ddd/change-state.json', pausedState('暂缓|保留\n已有工作'))
+  const before = snapshot(join(p.repo, 'openspec'))
+  const json = viewOf(p)
+  assert.equal(json.changeStateVersion, 1)
+  assert.deepEqual([...json.implementing].sort(), ['alpha', 'ddd'])
+  const ddd = json.active.find(item => item.change === 'ddd')
+  assert.equal(ddd.stage, 'apply')
+  assert.equal(ddd.rule, 'R6')
+  assert.deepEqual(ddd.tasks, { done: 64, total: 109 })
+  assert.deepEqual(ddd.blockers, ['已勾选 64/109'])
+  assert.equal(ddd.changeState.state, 'paused')
+  assert.equal(ddd.changeState.reason, '暂缓|保留\n已有工作')
+  assert.equal(ddd.changeDirectory.path, join(p.repo, 'openspec/changes/ddd'))
+  assert.equal(ddd.next, 'node <AUTOPILOT>/autopilot.mjs resume ddd')
+  const alpha = json.active.find(item => item.change === 'alpha')
+  assert.equal(alpha.changeState.state, 'enabled')
+  assert.equal(alpha.next, '/opsx:apply alpha')
+  const table = p.run()
+  assert.equal(table.code, 0, table.err)
+  const lines = table.out.split('\n')
+  assert.ok(lines.some(line => line.startsWith('| ddd |') && line.includes('| paused |') && line.includes('autopilot.mjs resume ddd')), table.out)
+  assert.ok(table.out.includes('- ddd：暂缓。原因：暂缓\\|保留\\n已有工作；时间：2026-11-23T08:00:00.000Z'), table.out)
+  assert.ok(!table.out.includes('提示：'), table.out)
+  assert.deepEqual(snapshot(join(p.repo, 'openspec')), before)
+})
+
+test('变更暂缓：单个变更的状态损坏时保留阶段并显示状态错误，其他变更照常，退出码 0', t => {
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'ddd', { tasks: [true, false] })
+  change(p, 'alpha', { tier: 'L0' })
+  p.write('openspec/changes/ddd/change-state.json', '{')
+  const before = snapshot(join(p.repo, 'openspec'))
+  const json = viewOf(p)
+  assert.equal(json.changeStateVersion, 1)
+  const ddd = json.active.find(item => item.change === 'ddd')
+  assert.equal(ddd.stage, 'apply')
+  assert.equal(ddd.rule, 'R6')
+  assert.equal(ddd.changeState.state, 'unknown')
+  assert.match(ddd.changeState.error, /change-state\.json/)
+  assert.match(ddd.next, /修复变更状态/)
+  assert.doesNotMatch(ddd.next, /opsx:apply/)
+  assert.equal(json.active.find(item => item.change === 'alpha').changeState.state, 'enabled')
+  const table = p.run()
+  assert.equal(table.code, 0, table.err)
+  assert.ok(table.out.includes('- ddd：状态无法核验。'), table.out)
+  assert.deepEqual(snapshot(join(p.repo, 'openspec')), before)
+})
+
+test('变更暂缓：未知字段、未知版本、超限与重复成员的状态文件都按未知显示，其他变更照常（任务 3.1）', t => {
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'ddd', { tasks: [true, false] })
+  change(p, 'alpha', { tier: 'L0' })
+  const valid = { version: 1, state: 'paused', reason: '保留', updatedAt: '2026-11-23T08:00:00.000Z' }
+  for (const [label, text] of [
+    ['未知字段', JSON.stringify({ ...valid, extra: true })],
+    ['未知版本', JSON.stringify({ ...valid, version: 2 })],
+    ['超过 16 KiB', JSON.stringify(valid) + ' '.repeat(16 * 1024)],
+    ['原因超过 1,024 字节', JSON.stringify({ ...valid, reason: 'x'.repeat(1025) })],
+    ['顶层成员名重复', `${JSON.stringify({ ...valid, state: 'enabled' }).slice(0, -1)},"state":"paused"}`],
+  ]) {
+    p.write('openspec/changes/ddd/change-state.json', text)
+    const json = viewOf(p)
+    assert.equal(json.active.length, 2, label)
+    const ddd = json.active.find(item => item.change === 'ddd')
+    assert.equal(ddd.changeState.state, 'unknown', label)
+    assert.equal(ddd.changeState.reason, null, label)
+    assert.equal(ddd.stage, 'apply', label)
+    assert.equal(ddd.rule, 'R6', label)
+    assert.match(ddd.next, /修复变更状态/, label)
+    const alpha = json.active.find(item => item.change === 'alpha')
+    assert.equal(alpha.changeState.state, 'enabled', label)
+    assert.doesNotMatch(alpha.next, /修复变更状态/, label)
+  }
+})
+
+test('变更暂缓：门禁副本没有状态契约时条目状态未知并提示同步，顶层不声明版本 1', t => {
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'alpha', { tier: 'L0', tasks: [true] })
+  const json = viewOf(p, ['--gate', fakeGate(p, { ok: true, blockers: [], contract: false })])
+  assert.equal(json.changeStateVersion, null)
+  const item = json.active.find(found => found.change === 'alpha')
+  assert.equal(item.changeState.state, 'unknown')
+  assert.match(item.changeState.error, /同步 openspec-technical-review/)
+  assert.equal(item.changeDirectory, null)
+  assert.match(item.next, /同步 openspec-technical-review/)
+  assert.equal(item.rule, 'R11')
+})
+
+test('变更暂缓：进度脚本与缺省门禁同在未登记的副本中、或门禁位于项目检出中时退出 2，不运行门禁', t => {
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'alpha', { tier: 'L0' })
+  const copy = realpathSync(mkdtempSync(join(tmpdir(), 'progress-copy-')))
+  t.after(() => rmSync(copy, { recursive: true, force: true }))
+  const marker = join(copy, 'ran')
+  const plantGate = file => {
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, '跑过')\n`)
+  }
+  const copiedProgress = join(copy, 'openspec-change-progress/scripts/progress.mjs')
+  mkdirSync(dirname(copiedProgress), { recursive: true })
+  writeFileSync(copiedProgress, readFileSync(progress))
+  plantGate(join(copy, GATE_RELATIVE))
+  const unregistered = p.runScript(copiedProgress, ['--json'])
+  assert.equal(unregistered.code, 2, unregistered.err)
+  assert.match(unregistered.err, /安装来源无法核验/)
+  assert.match(unregistered.err, /~\/\.tigger\/skills/)
+  assert.equal(unregistered.out, '')
+  const viaGate = p.run(['--json', '--gate', join(copy, GATE_RELATIVE)])
+  assert.equal(viaGate.code, 2, viaGate.err)
+  const inside = join(p.repo, 'vendor/skills')
+  plantGate(join(inside, GATE_RELATIVE))
+  p.configure({ trustedSkillRoots: [repoSkills, inside] })
+  const inCheckout = p.run(['--json', '--gate', join(inside, GATE_RELATIVE)])
+  assert.equal(inCheckout.code, 2, inCheckout.err)
+  assert.match(inCheckout.err, /项目检出/)
+  assert.equal(existsSync(marker), false)
+})
+
+test('变更暂缓：统一安装根中的门禁不需要登记；托管配置无法解析时退出 2', t => {
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'alpha', { tier: 'L0' })
+  const user = realpathSync(mkdtempSync(join(tmpdir(), 'progress-user-')))
+  const empty = realpathSync(mkdtempSync(join(tmpdir(), 'progress-empty-home-')))
+  t.after(() => { for (const dir of [user, empty]) rmSync(dir, { recursive: true, force: true }) })
+  const installed = join(user, '.tigger/skills', GATE_RELATIVE)
+  mkdirSync(dirname(installed), { recursive: true })
+  writeFileSync(installed, readFileSync(gate))
+  const env = { HOME: user, OPENSPEC_AUTOPILOT_HOME: empty }
+  const ok = p.run(['--json', '--gate', installed], env)
+  assert.equal(ok.code, 0, ok.err)
+  assert.equal(ok.json().active[0].changeState.state, 'enabled')
+  const repoGate = p.run(['--json', '--gate', gate], env)
+  assert.equal(repoGate.code, 2, repoGate.err)
+  writeFileSync(join(p.home, 'config.json'), '{')
+  const broken = p.run(['--json'])
+  assert.equal(broken.code, 2, broken.err)
+  assert.match(broken.err, /托管配置/)
+})
+
+test('变更暂缓：项目根不是检出根时条目状态未知，下一步提示修复', t => {
+  const p = project()
+  t.after(p.cleanup)
+  change(p, 'alpha', { tier: 'L0', tasks: [true, false], base: 'nested/' })
+  mkdirSync(join(p.repo, 'nested/openspec/changes/archive'), { recursive: true })
+  const result = p.runScript(progress, ['--json'], {}, join(p.repo, 'nested'))
+  assert.equal(result.code, 0, result.err)
+  const item = result.json().active.find(found => found.change === 'alpha')
+  assert.ok(item, result.out)
+  assert.equal(item.changeState.state, 'unknown')
+  assert.match(item.changeState.error, /不属于选定项目/)
+  assert.equal(item.changeDirectory, null)
+  assert.match(item.next, /修复变更状态/)
 })

@@ -112,11 +112,16 @@ function validate(store) {
   if (charged > FILE_LIMIT || bytes(JSON.stringify(store)) + 1 > FILE_LIMIT) throw new Error('核对文件超过 64 MiB')
 }
 
-export function readPendingTrace() {
+/**
+ * 读取并校验整份未完成核对文件。
+ * @param {Function} [charge] 管理命令在项目保护内的累计读取额度；调度不传（add-change-pause design D0 第 3 条）。
+ */
+export function readPendingTrace(charge) {
   let value
   try {
-    value = readBoundedJson(fileOf(), FILE_LIMIT) || DEFAULT()
+    value = readBoundedJson(fileOf(), FILE_LIMIT, charge) || DEFAULT()
   } catch (error) {
+    if (error.readBudget) throw error
     if (error.code !== 'ENOENT') throw new Error(error.code || error.message)
     // 管理命令可在尚未创建托管目录时读取。已存在的文件消失属于读取失败。
     if (error.path !== path.dirname(fileOf())) throw new Error('核对文件读取时消失')

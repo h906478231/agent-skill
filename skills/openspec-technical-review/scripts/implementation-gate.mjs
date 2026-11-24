@@ -20,6 +20,7 @@
  *   node implementation-gate.mjs evidence    <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs archive     <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs facts       <changeRoot> [--repo <dir>]
+ *   node implementation-gate.mjs state       <changeRoot> [--repo <dir>]
  *   node implementation-gate.mjs hygiene     <changeRoot>
  *   node implementation-gate.mjs trace       <changeRoot>
  *   node implementation-gate.mjs regress     --baseline <file> --actual <file>
@@ -31,6 +32,8 @@
  * hygiene 列出变更目录中允许清单外的产物，只给 warning，退出码恒为 0（参数错误除外）。
  * facts 输出一个变更的事实（分级、技术评审裁决与签字、verify 报告的指纹与结论字段、Open Questions 条数、archive 的检查结果），
  * 只报告不判定：存在阻断项时退出码仍为 0（参数或环境错误除外）。
+ * state 只输出 facts 中的推进意愿三项（changeStateVersion、changeDirectory、changeState），不计算实现指纹，
+ * 不写 Git 对象；状态无效时同样退出码 0。
  * 退出码：0 通过；1 存在阻断项；2 参数或环境错误（非 git 仓库、变更目录不存在等）。
  *
  * 实现指纹：在临时 index 中以 HEAD 为种子写入工作区全部改动（含未跟踪文件，遵守 .gitignore），
@@ -41,9 +44,9 @@
  * 提交指纹（fingerprint --rev）：算法相同，种子是该提交的树，不写入工作区的修改。
  */
 
-import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -1701,6 +1704,7 @@ const ARTIFACT_ALLOWLIST = [
   /^recap\.md$/, // openspec-change-recap（归档后生成，只在变更的归档目录根下）
   /^deployment\.md$/, // openspec-apply-change（验收部署文档，只在变更根目录下）
   /^decisions\/(autopilot|D-\d{4})\.json$/, // openspec-autopilot（托管记录与托管决策）
+  /^change-state\.json$/, // openspec-autopilot（仅在变更根目录记录推进意愿）
 ]
 
 /** 系统生成的文件，不计入产物检查。 */
@@ -1935,16 +1939,179 @@ function countOpenQuestions(changeRoot) {
   return { pending: items.filter(item => !item.text.includes(DECIDED_MARKER)).length, total: items.length }
 }
 
+/** 推进意愿契约版本和规划文件名；不参与编码前评审或归档判定。 */
+const CHANGE_STATE_VERSION = 1
+const CHANGE_STATE_FILE = 'change-state.json'
+
+/** 以独立选定的项目为准，仅允许活跃或归档目录的直接子项。 */
+function changeStateDirectory(repo, target) {
+  const parent = path.dirname(target)
+  const archived = path.basename(parent) === 'archive'
+  const changes = archived ? path.dirname(parent) : parent
+  const openspec = path.dirname(changes)
+  const name = path.basename(target)
+  if (path.basename(openspec) !== 'openspec' || path.basename(changes) !== 'changes'
+      || (archived ? !/^\d{4}-\d{2}-\d{2}-.+$/.test(name) : name === 'archive')
+      || realpathSync.native(path.dirname(openspec)) !== repo) {
+    throw new GateError('变更目录不属于选定项目')
+  }
+  // 系统路径可能含指向真实项目根的别名（例如 macOS 临时目录），但项目根以下不能跟随软链接。
+  const chain = [path.join(repo, 'openspec'), path.join(repo, 'openspec', 'changes')]
+  if (archived) chain.push(path.join(chain[chain.length - 1], 'archive'))
+  chain.push(path.join(chain[chain.length - 1], name))
+  return chain.map(file => {
+    const stat = lstatSync(file, { bigint: true })
+    if (!stat.isDirectory()) throw new GateError('变更目录链包含软链接或非目录对象')
+    return { path: file, dev: String(stat.dev), ino: String(stat.ino) }
+  })
+}
+
+/** 单份状态文件及其原因按 UTF-8 字节限制，而非字符数。 */
+const STATE_FILE_BYTES = 16 * 1024
+const STATE_REASON_BYTES = 1024
+const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/
+const stateResult = (state, error = null, digest = null) => ({ state, reason: null, updatedAt: null, error, digest })
+
 /**
- * 一个变更的事实（facts 子命令，add-change-progress-view design D2）：分级、技术评审裁决与签字、verify 报告的指纹与结论字段、
- * Open Questions 条数，以及与 archive 子命令相同的检查结果。只报告事实，不做门禁判定：阻断项不改变退出码，
- * 阶段与下一步由进度视图（openspec-change-progress 的 progress.mjs）推导。
- * @param {{ commit: string, fingerprint: string, decider: string }|null} head 变更终点（readChangeHead）。
- * @returns {object} tier、technicalReview、verification、openQuestions、currentFingerprint、archive。
+ * 列出已通过 JSON.parse 的对象文本的顶层成员名，保留重复项（add-change-pause design D1，评审 DB-15）。
+ * JSON.parse 只保留重复成员的后一个值，键集合检查发现不了重复。文本已是合法 JSON 且不超过 16 KiB，
+ * 只需跳过字符串并记录层级；成员名用 JSON.parse 解码，转义写法的同名成员也算重复。
+ * @param {string} text 合法的 JSON 对象文本。
+ * @returns {string[]} 顶层成员名，按出现顺序。
  */
-function collectFacts(repo, changeRoot, head) {
+function topLevelMemberNames(text) {
+  const names = []
+  let depth = 0
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    if (char === '"') {
+      let end = index + 1
+      while (text[end] !== '"') end += text[end] === '\\' ? 2 : 1
+      // 顶层对象内、后面第一个非空白字符为冒号的字符串才是成员名，不是值。
+      let next = end + 1
+      while (' \t\n\r'.includes(text[next])) next += 1
+      if (depth === 1 && text[next] === ':') names.push(JSON.parse(text.slice(index, end + 1)))
+      index = end
+    } else if (char === '{' || char === '[') {
+      depth += 1
+    } else if (char === '}' || char === ']') {
+      depth -= 1
+    }
+  }
+  return names
+}
+
+/** 字段错误不会丢失已经完整读取的字节摘要。 */
+function parseStateBytes(bytes, file) {
+  const digest = createHash('sha256').update(bytes).digest('hex')
+  const invalid = reason => stateResult('unknown', `${file}：${reason}`, digest)
+  let text
+  let value
+  try {
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+    if (text.includes('\r')) return invalid('文件必须使用 LF 换行')
+    value = JSON.parse(text)
+  } catch {
+    return invalid('文件不是合法的 UTF-8 JSON')
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return invalid('字段必须为 version、state、reason 和 updatedAt')
+  }
+  // 重复成员有歧义：手工合并可能留下两个 state，不能取其中一个当作合法暂缓（评审 DB-15）。
+  const names = topLevelMemberNames(text)
+  if (new Set(names).size !== names.length) return invalid('顶层成员名重复')
+  if (Object.keys(value).sort().join(',') !== 'reason,state,updatedAt,version') {
+    return invalid('字段必须为 version、state、reason 和 updatedAt')
+  }
+  if (value.version !== CHANGE_STATE_VERSION) return invalid('版本不支持')
+  if (value.state !== 'enabled' && value.state !== 'paused') return invalid('状态不支持')
+  if (typeof value.reason !== 'string' || !value.reason.trim() || Buffer.byteLength(value.reason.trim()) > STATE_REASON_BYTES
+      || Buffer.from(value.reason, 'utf8').toString('utf8') !== value.reason) {
+    return invalid('原因须为非空 UTF-8 文本，去除首尾空白后不超过 1,024 字节')
+  }
+  const time = value.updatedAt
+  const date = new Date(typeof time === 'string' ? time : NaN)
+  if (typeof time !== 'string' || !UTC_TIMESTAMP.test(time) || !Number.isFinite(date.getTime())
+      || time.slice(0, 19) !== date.toISOString().slice(0, 19)) {
+    return invalid('时间须为合法的 UTC ISO 8601 时间')
+  }
+  return { state: value.state, reason: value.reason, updatedAt: time, error: null, digest }
+}
+
+/** 先查类型，再从同一个描述符限量读取；同名路径或已打开对象发生变化均不返回部分摘要。 */
+function readStateFile(file, checkDirectory) {
+  let before
+  const stat = () => lstatSync(file, { bigint: true })
+  const invalid = reason => stateResult('unknown', `${file}：${reason}`)
+  try {
+    checkDirectory()
+    before = stat()
+  } catch (error) {
+    return error.code === 'ENOENT' ? stateResult('enabled') : invalid('状态文件不可读')
+  }
+  if (!before.isFile()) return invalid('状态文件不是普通文件')
+  if (before.size > BigInt(STATE_FILE_BYTES)) return invalid('状态文件超过 16 KiB')
+  try {
+    const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    try {
+      const verify = () => {
+        checkDirectory()
+        if (!sameTraceObject(before, stat()) || !sameTraceObject(before, fstatSync(fd, { bigint: true }))) {
+          throw new GateError('状态文件已改变')
+        }
+      }
+      verify()
+      const buffer = Buffer.alloc(STATE_FILE_BYTES + 1)
+      let size = 0
+      while (size < buffer.length) {
+        const count = readSync(fd, buffer, size, buffer.length - size, size)
+        if (count === 0) break
+        size += count
+      }
+      if (size > STATE_FILE_BYTES) return invalid('状态文件超过 16 KiB')
+      verify()
+      if (BigInt(size) !== before.size) return invalid('不能完整读取状态文件')
+      return parseStateBytes(buffer.subarray(0, size), file)
+    } finally {
+      closeSync(fd)
+    }
+  } catch (error) {
+    return invalid(error instanceof GateError ? error.message : '状态文件不可读或已改变')
+  }
+}
+
+/** 只有目录归属及实例可核实时，才能把缺文件解释为继续推进。 */
+function readChangeState(repo, target) {
+  const file = path.join(target, CHANGE_STATE_FILE)
+  const result = (changeDirectory, changeState) => ({ changeStateVersion: CHANGE_STATE_VERSION, changeDirectory, changeState })
+  let chain
+  try {
+    chain = changeStateDirectory(repo, target)
+  } catch (error) {
+    return result(null, stateResult('unknown', `${file}：${error instanceof GateError ? error.message : '无法核验变更目录'}`))
+  }
+  const directory = chain[chain.length - 1]
+  const checkDirectory = () => {
+    const after = changeStateDirectory(repo, target)
+    if (chain.some((before, i) => before.dev !== after[i].dev || before.ino !== after[i].ino)) {
+      throw new GateError('读取时变更目录已改变')
+    }
+  }
+  const changeState = readStateFile(path.join(directory.path, CHANGE_STATE_FILE), checkDirectory)
+  try {
+    checkDirectory()
+    return result(directory, changeState)
+  } catch {
+    // 读取期间原路径移走或已无法核验，不能用原结果解释新目录。
+  }
+  return result(null, stateResult('unknown', `${file}：读取时变更目录已改变`))
+}
+
+/** 只报告事实，不用推进意愿改变签字、指纹或归档判断。 */
+function collectFacts(repo, changeRoot, head, state) {
   const currentFingerprint = computeFingerprint(repo, changeRoot)
   return {
+    ...state,
     tier: readTier(changeRoot),
     technicalReview: readTechnicalReview(changeRoot),
     // verify 写指纹的规则（post-implementation-changes.md「变更终点」）：声明了变更终点时写终点指纹，否则写当前指纹。
@@ -2191,6 +2358,7 @@ const COMMAND_OPTIONS = {
   evidence: ['repo'],
   archive: ['repo'],
   facts: ['repo'],
+  state: ['repo'],
   hygiene: [],
   trace: [],
   regress: ['baseline', 'actual'],
@@ -2210,7 +2378,7 @@ function parseOptions(command, args) {
   return options
 }
 
-const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive|facts|hygiene> <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]'
+const USAGE = '用法：node implementation-gate.mjs <fingerprint|baseline|review|evidence|archive|facts|state|hygiene> <changeRoot> [--base <rev>] [--since <fingerprint>] [--repo <dir>]'
   + '\n      node implementation-gate.mjs fingerprint <changeRoot> --rev <commit> [--repo <dir>]'
   + '\n      node implementation-gate.mjs classify <changeRoot> --from <fingerprint> [--to <fingerprint>] [--repo <dir>]'
   + '\n      node implementation-gate.mjs trace <changeRoot>'
@@ -2244,6 +2412,12 @@ function run(argv) {
     return { code: EXIT.PASS, output: `${JSON.stringify({ command, change: path.basename(changeRoot), ok: true, ...checkHygiene(changeRoot) }, null, 2)}\n` }
   }
   const repo = resolveRepo(options.repo || process.cwd())
+  // 用原始目录参数核对归属，不能先解析链接再把目标当成选定变更。
+  const state = command === 'facts' || command === 'state' ? readChangeState(repo, target) : null
+  // 状态查询只用同一读取函数：计算指纹会向对象库写入工作区修改的对象（add-change-pause design D2，评审 ARCH-13）。
+  if (command === 'state') {
+    return { code: EXIT.PASS, output: `${JSON.stringify({ command, change: path.basename(changeRoot), ...state }, null, 2)}\n` }
+  }
 
   if (command === 'fingerprint') {
     if (options.rev === undefined) return { code: EXIT.PASS, output: `${computeFingerprint(repo, changeRoot)}\n` }
@@ -2256,7 +2430,7 @@ function run(argv) {
   // facts 只报告事实，阻断项不改变退出码（add-change-progress-view design D2）。
   if (command === 'facts') {
     return { code: EXIT.PASS,
-      output: `${JSON.stringify({ command, change: path.basename(changeRoot), ...collectFacts(repo, changeRoot, head) }, null, 2)}\n` }
+      output: `${JSON.stringify({ command, change: path.basename(changeRoot), ...collectFacts(repo, changeRoot, head, state) }, null, 2)}\n` }
   }
   if (command === 'baseline') {
     const { output, warnings } = renderBaseline(repo, changeRoot, options.base, options.since, head)

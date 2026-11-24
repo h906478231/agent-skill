@@ -5,7 +5,7 @@
 ## Requirements
 ### Requirement: The progress view SHALL list the active changes of the current project
 
-`progress.mjs` SHALL read the active changes and the project root from `openspec list --json`, and the completeness of the planning artifacts and the change root from `openspec status --change <name> --json`. It SHALL run the openspec CLI with `OPENSPEC_TELEMETRY=0` and a timeout of 60 seconds. For each active change it SHALL run `implementation-gate.mjs facts <changeRoot>` in the working directory of the view, without `--repo`, with a timeout of 60 seconds. It SHALL write one entry per active change with `change`, `tier`, `stage`, `tasks` (`done`, `total` from `completedTasks`, `totalTasks`), `openQuestions`, `rule`, `blockers`, `warnings`, `notes`, `next` and `error`. It SHALL NOT write files in the change directories and SHALL NOT run git commands that write refs, the index or the work tree.
+`progress.mjs` SHALL read the active changes and the project root from `openspec list --json`, and the completeness of the planning artifacts and the change root from `openspec status --change <name> --json`. It SHALL run the openspec CLI with `OPENSPEC_TELEMETRY=0` and a timeout of 60 seconds. For each active change it SHALL run `implementation-gate.mjs facts <changeRoot> --repo <projectRoot>` in the working directory of the view, with the project root from `openspec list --json` and a timeout of 60 seconds. It SHALL write one entry per active change with `change`, `tier`, `stage`, `tasks` (`done`, `total` from `completedTasks`, `totalTasks`), `openQuestions`, `rule`, `blockers`, `warnings`, `notes`, `next` and `error`. It SHALL NOT write files in the change directories and SHALL NOT run git commands that write refs, the index or the work tree.
 
 #### Scenario: Two active changes
 - **WHEN** the project has two active changes and one archived change
@@ -35,6 +35,8 @@ The view SHALL check the rules in this order and SHALL use the first rule that m
 | R11 | all other cases | `archive` | `/opsx:archive <name>` when `verification.legacy` is `false`; in all other cases, confirm that `verification.md` has no CRITICAL, then `/opsx:archive <name>` |
 
 The entry SHALL contain the rule ID in `rule`. For R10 the entry SHALL contain `archive.blockers` in `blockers`, including the blockers of the verify verdict. When `tier` is `null` and `tasks.done` is greater than 0, the entry SHALL contain a note that the change has no tier line and is handled as a historical change. `archive.warnings` SHALL be copied to `warnings` and SHALL NOT change the rule. The entry SHALL contain `reviewStale`: `archive.review.stale` when the review applies and that value is `true` or `false`, `false` when the review does not apply, and `null` when the review applies and the gate does not report a boolean `stale`. When `reviewStale` is `null` and R8 matches, the blockers SHALL contain a blocker that asks the user to sync the copy of `openspec-technical-review`.
+
+上表 SHALL 先计算原有的阶段、规则和阶段建议。通过文件契约检查的 `paused` 状态 SHALL 不改变阶段、规则、任务、卡点或门禁事实，但最终输出的 `next` SHALL 改为 `node <AUTOPILOT>/autopilot.mjs resume <name>`，其中 `<AUTOPILOT>` 表示已安装托管脚本的目录。若状态为 `unknown`，`next` SHALL 指向修复状态文件，不得推荐 apply 或托管。字段缺失也 SHALL 作为未知状态处理。状态只覆盖下一步的显示，不改变 R1–R11 的匹配顺序。
 
 #### Scenario: Planning artifacts are not complete
 - **WHEN** a change has `proposal.md` and no `tasks.md`
@@ -98,6 +100,16 @@ The entry SHALL contain the rule ID in `rule`. For R10 the entry SHALL contain `
 - **WHEN** all earlier rules do not match, `verification.current` is `true`, `verification.md` has no verdict field, and `archive.ok` is `true`
 - **THEN** `stage` is `archive`, `rule` is `R11`, and `next` tells the user to confirm that there is no CRITICAL before `/opsx:archive`
 
+#### Scenario: 暂缓仍保留历史阶段
+- **WHEN** 历史变更为 R6、64/109，状态为 paused
+- **THEN** stage 仍为 apply，rule 仍为 R6，tasks 仍为 64/109
+- **AND** next 提示先恢复，不直接推荐 apply
+
+#### Scenario: 暂缓期间评审过期仍然可见
+- **WHEN** 暂缓变更的事实命中 R8
+- **THEN** stage 为 quality，reviewStale 与卡点按原事实输出
+- **AND** next 仍提示先恢复
+
 ### Requirement: The progress view SHALL list archived changes without running the gate
 
 The view SHALL list each directory in `<planningHome.changesDir>/archive/` in `archived` with `name` and `date`. `planningHome` SHALL come from the `openspec status` output of an active change; when there is no active change, the view SHALL use `<root>/openspec/changes/archive/`. For a directory name `YYYY-MM-DD-<name>`, `date` SHALL be `YYYY-MM-DD` and `name` SHALL be `<name>`. For other directory names, `name` SHALL be the directory name and `date` SHALL be `null`. The view SHALL NOT run `implementation-gate.mjs` for archived changes.
@@ -109,12 +121,19 @@ The view SHALL list each directory in `<planningHome.changesDir>/archive/` in `a
 
 ### Requirement: The progress view SHALL write a table by default and JSON with --json
 
-Without `--json`, the view SHALL write one line per active change with the columns change, tier, stage, tasks, open questions, blocker and next step. The blocker column SHALL show one blocker and the total count when there is more than one. Below the lines the view SHALL write the warnings and one line with the number of archived changes and the latest archived change. With `--json`, the view SHALL write one JSON object with `root`, `active` and `archived`.
+Without `--json`, the view SHALL write one line per active change with the columns change, tier, change state, stage, tasks, open questions, blocker and next step. The blocker column SHALL show one blocker and the total count when there is more than one. Below the lines the view SHALL write the warnings and one line with the number of archived changes and the latest archived change. With `--json`, the view SHALL write one JSON object with `root`, `active`, `implementing`, `archived` and `changeStateVersion` (the number `1` when the contract is available).
+
+暂缓条目 SHALL 在同一行显示暂缓状态，在备注中显示原因与时间，不得从 `active` 隐藏。`implementing` SHALL 保留原判据生成的全部名称。多变更提示 SHALL 只统计其中未通过 `paused` 文件契约检查的条目，不得把历史实现事实的数组改成占用过滤结果。
 
 #### Scenario: Table output
 - **WHEN** `progress.mjs` runs without `--json` in a project with one active change
 - **THEN** the output contains the name of the change, its stage and its next step on one line
 - **AND** the output ends with the line about the archived changes
+
+#### Scenario: 两个已实现变更中一个明确暂缓
+- **WHEN** A 与 DDD 都符合 implementing 判据，DDD 为 paused，A 为 enabled
+- **THEN** JSON 的 implementing 保留两个名称
+- **AND** 默认表格显示 DDD 及暂缓原因，不提示两个变更同时推进
 
 ### Requirement: The progress view SHALL keep going when one change cannot be read and SHALL exit with code 2 on environment errors
 
@@ -141,3 +160,39 @@ When `openspec status` or `facts` fails or does not finish in 60 seconds for one
 #### Scenario: Stage handoff check passes
 - **WHEN** `npm run test:handoff` runs after the command file and the table row are added
 - **THEN** the check reports no issue for `progress.md`
+
+### Requirement: 进度视图 SHALL 传播变更状态而不另行解析
+
+进度视图 SHALL 从 `facts` 复制 `changeState` 和 `changeDirectory`，不得自行解析状态文件。只有每次成功读取的门禁结果都提供版本 1 和这两个字段时，SHALL 输出顶层 `changeStateVersion: 1`。任一必需字段缺失时，SHALL 将对应条目报告为 `unknown`，提示同步门禁，不声明顶层版本 1。明确的 `changeDirectory: null` 表示目录无法核实，不是缺字段，也不表示继续推进。
+
+状态读取错误 SHALL 不影响其他可读条目的阶段推导。若该条目的其他事实可读，SHALL 保留其阶段与任务，显示状态错误，进度视图仍退出 0。状态文件 SHALL 不被进度视图创建或修改。
+
+独立入口 SHALL 在执行门禁之前核验门禁候选的真实路径。可信安装根 SHALL 只有本机统一安装根 `~/.tigger/skills` 和本机托管配置 `trustedSkillRoots` 中登记的根。进度脚本自身的位置 SHALL 不作为信任依据。托管配置不存在时 SHALL 只认可统一安装根；配置存在但不能解析时 SHALL 退出 2。`--gate` 只选择路径，不授予信任。候选脚本 SHALL 为可信根下对应的普通脚本，不得位于当前或登记项目的检出中。来源无法核实时 SHALL 退出 2，不运行脚本或回退。进度视图 SHALL 以 `openspec list` 给出的项目根传 `--repo` 读取 `facts`。
+
+默认表格 SHALL 将原因作为普通文本显示，转义换行、控制字符和表格分隔符。机器输出中的原因为数据，不是命令或推进依据。
+
+#### Scenario: 门禁副本没有状态契约
+- **WHEN** 门禁输出没有 changeStateVersion 和 changeState
+- **THEN** 进度条目报告状态未知并提示同步门禁
+- **AND** 顶层不声明版本 1
+
+#### Scenario: 独立进度查询无法核实门禁来源
+- **WHEN** 独立调用的门禁候选不在可信安装根
+- **THEN** 进度视图退出 2，提示检查安装，不运行候选或替代门禁脚本
+
+#### Scenario: 进度脚本与门禁同在未登记的副本中
+- **WHEN** 进度脚本和旁边的门禁都在未登记的副本中，用户不带 `--gate` 运行
+- **THEN** 进度视图退出 2，不运行该门禁
+
+#### Scenario: 统一安装根中的门禁不需要登记
+- **WHEN** 门禁位于 `~/.tigger/skills` 下的对应位置，本机没有托管配置
+- **THEN** 进度视图正常输出
+
+#### Scenario: 项目根不是检出根
+- **WHEN** `openspec list` 给出的项目根位于另一检出之内，不是该检出的根
+- **THEN** 条目状态为 `unknown`，`next` 提示修复，不按 `enabled` 处理
+
+#### Scenario: 单个变更状态损坏
+- **WHEN** DDD 的状态文件损坏，另一个变更状态符合文件契约
+- **THEN** DDD 仍显示原阶段与状态错误，另一个变更照常显示
+- **AND** 进度视图退出 0，不写文件

@@ -10,18 +10,21 @@
  * 推导规则见下方 RULES 常量，它是推导规则的唯一事实源，SKILL.md 只说明如何运行与阅读输出。
  *
  * 用法：node progress.mjs [--json] [--gate <path>]（在项目目录中运行）
- *   --gate 缺省为相对本脚本的 ../../openspec-technical-review/scripts/implementation-gate.mjs。
+ *   --gate 缺省为相对本脚本的 ../../openspec-technical-review/scripts/implementation-gate.mjs。--gate 只选择候选，不授予信任：
+ *   门禁的真实路径须为可信安装根下的约定位置（统一安装根 ~/.tigger/skills，或本机托管配置 trustedSkillRoots 登记的根），
+ *   且不在项目检出中（add-change-pause design D2，评审 SEC-12）。
  *
- * 输出：默认 Markdown 表格，每个活跃变更一行，表格下方列出告警，两个以上变更已开始实现时输出提示，最后一行写已归档变更数与最近一个；
- *   --json 输出 { root, active, implementing, archived }。
+ * 输出：默认 Markdown 表格，每个活跃变更一行，表格下方列出告警与变更状态备注，两个以上变更已开始实现且未暂缓时输出提示，
+ *   最后一行写已归档变更数与最近一个；--json 输出 { root, active, implementing, archived, changeStateVersion }。
  * 退出码：0 已输出视图（单个变更读取失败也是 0，原因写入该条目的 error）；2 参数错误、openspec CLI 无法运行、
- *   找不到项目的 openspec/、找不到门禁脚本，或门禁脚本不支持 facts。
+ *   找不到项目的 openspec/、找不到门禁脚本、门禁来源无法核验、本机托管配置无法解析，或门禁脚本不支持 facts。
  * 只读：不写变更目录，不运行写入 git 引用、索引与工作区的命令。facts 计算实现指纹时向 git 对象库写入不可达对象，
  *   与门禁脚本的其他子命令相同，由 git gc 回收。
  */
 
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -36,6 +39,30 @@ const CLI_ENV = { ...process.env, OPENSPEC_TELEMETRY: '0' }
 
 /** 门禁脚本的缺省位置（design D6）：各 agent 的 skill 安装目录都保持 <skills>/<skill 名>/ 结构。 */
 const DEFAULT_GATE = fileURLToPath(new URL('../../openspec-technical-review/scripts/implementation-gate.mjs', import.meta.url))
+
+/** 门禁在可信安装根下的约定位置。 */
+const GATE_RELATIVE = path.join('openspec-technical-review', 'scripts', 'implementation-gate.mjs')
+
+/** 本机统一安装根（ADR-0013）：按操作系统的用户主目录定位，不按本脚本的位置推导（add-change-pause design D2，评审 SEC-12）。 */
+const UNIFIED_SKILLS = ['.tigger', 'skills']
+
+/** 本机托管目录的缺省名与环境变量，与 openspec-autopilot 的 lib/home.mjs 相同；独立查询只读其中的 config.json。 */
+const AUTOPILOT_HOME_NAME = '.openspec-autopilot'
+
+/** 门禁来源无法核验时的处理提示。 */
+const TRUST_HINT = '请把 skill 同步到 ~/.tigger/skills，或在本机托管配置（OPENSPEC_AUTOPILOT_HOME 或 ~/.openspec-autopilot 下的 config.json）的 trustedSkillRoots 中登记安装根'
+
+/** 变更状态契约版本，与门禁 facts 的 changeStateVersion 相同（add-change-pause design D2）。 */
+const CHANGE_STATE_VERSION = 1
+
+/** facts.changeState 必须包含的字段；进度视图只核对信封并复制，不解析状态文件。 */
+const CHANGE_STATE_KEYS = ['state', 'reason', 'updatedAt', 'error', 'digest']
+
+/** 门禁副本早于状态契约时条目的状态错误：两个副本只同步一个时，暂缓不能被识别。 */
+const STATE_CONTRACT_MISSING = '门禁脚本副本没有变更状态契约，同步 openspec-technical-review 副本'
+
+/** 暂缓条目的下一步（design D4）：先恢复推进；<AUTOPILOT> 表示已安装托管脚本的目录。 */
+const resumeCommand = name => `node <AUTOPILOT>/autopilot.mjs resume ${name}`
 
 /** 门禁脚本的用法文本中表示支持 facts 子命令的词：facts 之前的版本没有它（design D6 版本预检，评审 ARCH-02）。 */
 const FACTS_COMMAND = /\bfacts\b/
@@ -249,15 +276,81 @@ function parseArgs(argv) {
 }
 
 /**
- * 确认门禁脚本存在并支持 facts（design D6）。已安装的 skill 是各自独立的副本，只同步了本 skill 时，旧门禁脚本没有 facts，
- * 逐个变更调用只会得到用法文本；在这里收敛为一个环境错误。
- * 不带参数运行一次门禁脚本：它以退出码 2 结束，并在标准错误输出用法文本。
- * @throws {ViewError} 找不到门禁脚本，或用法文本中没有 facts。
+ * 读取本机托管配置中的可信安装根与项目检出。独立查询不要求配置项目或运行调度：配置文件不存在时两项都为空。
+ * @returns {{ trustedSkillRoots: string[], projects: string[] }}
+ * @throws {ViewError} 配置存在但不能读取、不是 JSON，或 trustedSkillRoots、projects 的格式无效。
  */
-function checkGate(gate) {
-  if (!existsSync(gate) || !statSync(gate).isFile()) {
+function autopilotConfig() {
+  const fromEnv = process.env.OPENSPEC_AUTOPILOT_HOME
+  const home = fromEnv && fromEnv.trim() ? path.resolve(fromEnv.trim()) : path.join(homedir(), AUTOPILOT_HOME_NAME)
+  const file = path.join(home, 'config.json')
+  let text
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch (error) {
+    if (error.code === 'ENOENT') return { trustedSkillRoots: [], projects: [] }
+    throw new ViewError(`本机托管配置无法读取：${file}（${error.code || error.message}）`)
+  }
+  let value
+  try {
+    value = JSON.parse(text)
+  } catch {
+    throw new ViewError(`本机托管配置不是合法 JSON：${file}`)
+  }
+  const roots = value?.trustedSkillRoots ?? []
+  const projects = value?.projects ?? []
+  if (!value || typeof value !== 'object' || !Array.isArray(roots) || roots.some(root => typeof root !== 'string' || !path.isAbsolute(root))
+      || !Array.isArray(projects) || projects.some(project => typeof project?.root !== 'string')) {
+    throw new ViewError(`本机托管配置的 trustedSkillRoots 或 projects 无效：${file}`)
+  }
+  return { trustedSkillRoots: roots, projects: projects.map(project => project.root) }
+}
+
+/** 解析真实路径；路径不存在时为 null（不存在的根或检出不能包含门禁）。 */
+function realOrNull(target) {
+  try {
+    return realpathSync.native(target)
+  } catch {
+    return null
+  }
+}
+
+/** 目标是否在目录之内（含目录本身）。 */
+function inside(target, dir) {
+  const relative = path.relative(dir, target)
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+}
+
+/**
+ * 在探测用法或执行 facts 之前核验门禁候选的来源（add-change-pause design D2，评审 SEC-12）。
+ * 进度脚本自身的位置不是信任依据：缺省门禁与本脚本同在未登记的副本中时，候选不在可信根下，同样拒绝。
+ * @param {string} gate 候选路径（缺省门禁或 --gate）。
+ * @param {string} root openspec list 给出的项目根；它与它所在 git 检出的根都不能包含门禁。
+ * @returns {string} 门禁的真实路径；之后只运行这个路径，不回退到其他门禁。
+ * @throws {ViewError} 找不到候选、候选不是普通文件、位于项目检出中，或不在可信根的约定位置。
+ */
+function verifyGateSource(gate, root) {
+  const actual = realOrNull(gate)
+  if (!actual || !statSync(actual).isFile()) {
     throw new ViewError(`找不到门禁脚本：${gate}。用 Glob 搜 **/openspec-technical-review/scripts/implementation-gate.mjs，再用 --gate 传入`)
   }
+  const config = autopilotConfig()
+  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8', timeout: TIMEOUT_MS })
+  const checkouts = [root, top.status === 0 ? top.stdout.trim() : null, ...config.projects].filter(Boolean).map(realOrNull).filter(Boolean)
+  const roots = [path.join(homedir(), ...UNIFIED_SKILLS), ...config.trustedSkillRoots].map(realOrNull).filter(Boolean)
+  const reason = checkouts.some(checkout => inside(actual, checkout)) ? '位于项目检出中'
+    : roots.some(trusted => actual === path.join(trusted, GATE_RELATIVE)) ? null : '不在可信安装根的约定位置'
+  if (reason) throw new ViewError(`门禁脚本 ${gate} 的安装来源无法核验（${reason}）。${TRUST_HINT}`)
+  return actual
+}
+
+/**
+ * 确认门禁脚本存在并支持 facts（design D6）。已安装的 skill 是各自独立的副本，只同步了本 skill 时，旧门禁脚本没有 facts，
+ * 逐个变更调用只会得到用法文本；在这里收敛为一个环境错误。
+ * 不带参数运行一次门禁脚本：它以退出码 2 结束，并在标准错误输出用法文本。调用前已由 verifyGateSource 核验来源。
+ * @throws {ViewError} 用法文本中没有 facts。
+ */
+function checkGate(gate) {
   const result = spawnSync(process.execPath, [gate], { encoding: 'utf8', timeout: TIMEOUT_MS })
   if (!FACTS_COMMAND.test(`${result.stdout || ''}${result.stderr || ''}`)) {
     throw new ViewError(`门禁脚本 ${gate} 不支持 facts 子命令，请同步 openspec-technical-review`)
@@ -280,21 +373,59 @@ function readProject() {
   return { root, changes: listed.value.changes || [] }
 }
 
+/** 状态不可读时的状态值：字段与门禁的 changeState 相同。 */
+const unknownState = error => ({ state: 'unknown', reason: null, updatedAt: null, error, digest: null })
+
+/**
+ * 从 facts 复制变更状态与目录身份，只核对跨进程信封，不解析状态文件（add-change-pause design D2、D4）。
+ * 契约字段缺失或格式不符时按未知状态处理；明确的 changeDirectory: null 表示目录无法核实，不是缺字段。
+ * @param {object} facts 门禁 facts 的输出。
+ * @returns {{ contract: boolean, changeState: object, changeDirectory: object|null }} contract 为门禁是否提供了契约 1。
+ */
+function stateOf(facts) {
+  const state = facts.changeState
+  const directory = facts.changeDirectory
+  const directoryOk = directory === null || (!!directory && typeof directory === 'object'
+    && ['path', 'dev', 'ino'].every(key => typeof directory[key] === 'string'))
+  const contract = facts.changeStateVersion === CHANGE_STATE_VERSION && !!state && typeof state === 'object'
+    && CHANGE_STATE_KEYS.every(key => Object.prototype.hasOwnProperty.call(state, key))
+    && ['enabled', 'paused', 'unknown'].includes(state.state) && Object.prototype.hasOwnProperty.call(facts, 'changeDirectory') && directoryOk
+    // 门禁只在目录实例核实后给出 enabled 或 paused；没有目录身份的可用状态不符合契约。
+    && (state.state === 'unknown' || directory !== null)
+  if (!contract) return { contract: false, changeState: unknownState(STATE_CONTRACT_MISSING), changeDirectory: null }
+  return { contract: true, changeState: state, changeDirectory: directory }
+}
+
+/**
+ * 暂缓与未知状态只覆盖显示的下一步，不改变阶段、规则、任务与卡点（add-change-pause design D4）。
+ * @returns {string} 条目最终的 next。
+ */
+function nextFor(name, changeState, ruleNext) {
+  if (changeState.state === 'paused') return resumeCommand(name)
+  if (changeState.state !== 'unknown') return ruleNext
+  // 状态未知时不推荐 apply 或托管：先修复状态，或同步早于契约的门禁副本。
+  return changeState.error === STATE_CONTRACT_MISSING ? '同步 openspec-technical-review 副本后重新运行进度视图'
+    : '修复变更状态（见状态备注）后重新运行进度视图'
+}
+
 /**
  * 推导一个活跃变更的条目。openspec status 或 facts 失败时，阶段与下一步为 null，error 写出原因（design D3）。
  * @param {string} name 变更名。
  * @param {{ done: number, total: number }} tasks 任务勾选数。
- * @param {string} gate 门禁脚本路径；facts 沿用本进程的工作目录、不传 --repo（design D5，评审 ARCH-03）。
- * @returns {{ entry: object, changesDir: string|null }} changesDir 为 openspec status 给出的规划目录，用于定位已归档变更。
+ * @param {string} gate 已核验来源的门禁脚本真实路径。
+ * @param {string} root openspec list 给出的项目根，显式传给 facts 的 --repo，不由变更目录推导（add-change-pause 评审 SEC-13）。
+ * @returns {{ entry: object, changesDir: string|null, contract: boolean|null }} changesDir 为 openspec status 给出的规划目录，
+ *   用于定位已归档变更；contract 为门禁是否提供状态契约 1，facts 读取失败时为 null。
  */
-function inspect(name, tasks, gate) {
+function inspect(name, tasks, gate, root) {
+  // 门禁读取失败的条目没有可用的状态与目录身份，两项为 null（design D4）。
   const entry = { change: name, tier: null, stage: null, tasks, openQuestions: null, rule: null,
-    blockers: [], warnings: [], notes: [], reviewStale: null, next: null, error: null }
+    blockers: [], warnings: [], notes: [], reviewStale: null, next: null, error: null, changeState: null, changeDirectory: null }
   const status = execJson('openspec', ['status', '--change', name, '--json'])
-  if (status.error) return { entry: { ...entry, error: `openspec status 失败：${status.error}` }, changesDir: null }
+  if (status.error) return { entry: { ...entry, error: `openspec status 失败：${status.error}` }, changesDir: null, contract: null }
   const changesDir = (status.value.planningHome && status.value.planningHome.changesDir) || null
-  const facts = execJson(process.execPath, [gate, 'facts', status.value.changeRoot])
-  if (facts.error) return { entry: { ...entry, error: `facts 失败：${facts.error}` }, changesDir }
+  const facts = execJson(process.execPath, [gate, 'facts', status.value.changeRoot, '--repo', root])
+  if (facts.error) return { entry: { ...entry, error: `facts 失败：${facts.error}` }, changesDir, contract: null }
 
   const artifacts = status.value.artifacts || []
   const done = id => artifacts.some(artifact => artifact.id === id && artifact.status === 'done')
@@ -305,13 +436,19 @@ function inspect(name, tasks, gate) {
   }
   const rule = RULES.find(item => item.when(ctx))
   const historical = isHistorical(facts.value.tier, tasks) ? [HISTORICAL_NOTE] : []
+  const { contract, changeState, changeDirectory } = stateOf(facts.value)
   return {
     entry: { ...entry, tier: facts.value.tier, stage: rule.stage, openQuestions: facts.value.openQuestions, rule: rule.id,
       blockers: rule.blockers(ctx), warnings: facts.value.archive.warnings, notes: [...historical, ...facts.value.archive.notes],
-      reviewStale: reviewStaleOf(facts.value.archive.review), next: rule.next(name, ctx) },
+      reviewStale: reviewStaleOf(facts.value.archive.review), next: nextFor(name, changeState, rule.next(name, ctx)),
+      changeState, changeDirectory },
     changesDir,
+    contract,
   }
 }
+
+/** 多变更提示只统计未暂缓的已实现条目；implementing 数组本身保留全部历史名称（design D4）。 */
+const occupying = view => view.implementing.filter(name => view.active.find(item => item.change === name)?.changeState?.state !== 'paused')
 
 /**
  * 列出已归档变更（design D1）：只读目录名，不运行门禁。归档后的提交会让切片证据过期，在已归档变更上运行门禁只会得到假阻断项。
@@ -331,6 +468,21 @@ function listArchived(changesDir) {
 /** 表格单元格：合并换行与连续空白，转义竖线，保证每个变更只占一行。 */
 const cell = value => String(value).replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim()
 
+/** 普通文本显示时的转义：原因与状态错误不能改变表格结构，也不能伪造出新行（add-change-pause design D1「原因的可见范围」）。 */
+const PLAIN_ESCAPES = { '\\': '\\\\', '|': '\\|', '\n': '\\n', '\r': '\\r', '\t': '\\t' }
+
+/** 转义反斜杠、换行、控制字符、行分隔符与表格分隔符，原因按普通文本显示，不作为指令。 */
+const plainText = text => String(text).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029|\\]/gu,
+  char => PLAIN_ESCAPES[char] ?? `\\u${char.codePointAt(0).toString(16).padStart(4, '0')}`)
+
+/** 变更状态备注：暂缓写原因与时间，状态未知写错误；继续推进与读取失败的条目不写。 */
+function stateNote(item) {
+  const state = item.changeState
+  if (!state || state.state === 'enabled') return null
+  if (state.state === 'paused') return `- ${item.change}：暂缓。原因：${plainText(state.reason)}；时间：${plainText(state.updatedAt)}`
+  return `- ${item.change}：状态无法核验。${plainText(state.error || '没有错误说明')}`
+}
+
 /** 卡点列只写一条，多于一条时附总数；读取失败时写失败原因。 */
 function blockerCell(item) {
   if (item.error) return `读取失败：${item.error}`
@@ -339,15 +491,15 @@ function blockerCell(item) {
 }
 
 /**
- * 渲染 Markdown 表格（design D5）：列为变更、分级、阶段、任务、待决定、卡点、下一步；表格下方列出告警，
- * 已开始实现的变更超过 MAX_IMPLEMENTING 时输出提示，最后一行写已归档变更数与最近一个。
+ * 渲染 Markdown 表格（design D5）：列为变更、分级、变更状态、阶段、任务、待决定、卡点、下一步；表格下方列出告警与变更状态备注，
+ * 未暂缓的已实现变更超过 MAX_IMPLEMENTING 时输出提示（add-change-pause design D4），最后一行写已归档变更数与最近一个。
  */
 function renderTable(view) {
   const lines = []
   if (view.active.length) {
-    lines.push('| 变更 | 分级 | 阶段 | 任务 | 待决定 | 卡点 | 下一步 |', '|---|---|---|---|---|---|---|')
+    lines.push('| 变更 | 分级 | 变更状态 | 阶段 | 任务 | 待决定 | 卡点 | 下一步 |', '|---|---|---|---|---|---|---|---|')
     for (const item of view.active) {
-      const row = [item.change, item.tier || '—', item.stage || '—', `${item.tasks.done}/${item.tasks.total}`,
+      const row = [item.change, item.tier || '—', item.changeState?.state || '—', item.stage || '—', `${item.tasks.done}/${item.tasks.total}`,
         item.openQuestions ? item.openQuestions.pending : '—', blockerCell(item), item.next || '—']
       lines.push(`| ${row.map(cell).join(' | ')} |`)
     }
@@ -356,8 +508,11 @@ function renderTable(view) {
   }
   const warnings = view.active.flatMap(item => item.warnings.map(text => `- ${item.change}：${cell(text)}`))
   if (warnings.length) lines.push('', '告警：', ...warnings)
-  if (view.implementing.length > MAX_IMPLEMENTING) {
-    lines.push('', `提示：${view.implementing.length} 个变更已开始实现（${view.implementing.join('、')}）。同一检出同一时间只实现一个变更：`
+  const notes = view.active.map(stateNote).filter(Boolean)
+  if (notes.length) lines.push('', '变更状态：', ...notes)
+  const busy = occupying(view)
+  if (busy.length > MAX_IMPLEMENTING) {
+    lines.push('', `提示：${busy.length} 个变更已开始实现（${busy.join('、')}）。同一检出同一时间只实现一个变更：`
       + '另一个变更修改代码会让本变更的切片证据过期，评审的 diff 也含对方的代码。先把一个变更做到归档，再继续另一个'
       + '（phases.md「同一检出只实现一个变更」）。')
   }
@@ -373,18 +528,24 @@ function renderTable(view) {
  */
 function main(argv) {
   const options = parseArgs(argv)
-  // 先预检门禁脚本：版本不匹配时不输出任何条目（design D6）。
-  checkGate(options.gate)
+  // openspec list 不运行门禁；先取项目根，才能确认门禁不在项目检出中（add-change-pause design D2）。
   const { root, changes } = readProject()
+  // 先核验来源，再预检门禁脚本：来源或版本不符时不运行候选、不输出任何条目（design D6，评审 SEC-12）。
+  const gate = verifyGateSource(options.gate, root)
+  checkGate(gate)
   let changesDir = null
+  const reads = []
   const active = changes.map(item => {
-    const result = inspect(item.name, { done: item.completedTasks, total: item.totalTasks }, options.gate)
+    const result = inspect(item.name, { done: item.completedTasks, total: item.totalTasks }, gate, root)
     changesDir = changesDir || result.changesDir
+    if (result.contract !== null) reads.push(result.contract)
     return result.entry
   })
   // 归档目录取 openspec status 的 planningHome.changesDir，与 openspec-archive-change 相同；没有活跃变更时退回项目根下的默认位置（评审 ARCH-03）。
+  // 只有每次成功读取的门禁都提供契约 1 时才声明顶层版本；没有成功读取时不能证明门禁副本支持契约（design D4）。
   const view = { root, active, implementing: active.filter(isImplementing).map(item => item.change),
-    archived: listArchived(changesDir || path.join(root, 'openspec', 'changes')) }
+    archived: listArchived(changesDir || path.join(root, 'openspec', 'changes')),
+    changeStateVersion: reads.length && reads.every(Boolean) ? CHANGE_STATE_VERSION : null }
   return options.json ? `${JSON.stringify(view, null, 2)}\n` : renderTable(view)
 }
 
