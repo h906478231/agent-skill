@@ -26,6 +26,8 @@ explore → propose（含 tasks） → 分级判定 → （纳入范围时）rev
 
 拿不准该用 `/opsx:explore` 还是 `/opsx:grill`？见 [工作流选择指南](../docs/openspec-workflow-guide.md)。
 
+想一页看完各阶段的分支与回路（含待上线的 `add-technical-review-convergence`、`add-review-assumptions`）？见 [OpenSpec 工作流速览](OpenSpec-工作流速览.md)。
+
 **按等级选路径**
 
 | 等级 | 典型变更 | 你要跑的 |
