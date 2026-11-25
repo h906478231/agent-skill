@@ -31,6 +31,8 @@ Implement tasks from an OpenSpec change.
 
    Full rules live in the sibling skill `openspec-technical-review`, file `../openspec-technical-review/shared/apply-gate-check.md` relative to this SKILL.md (all skills sit flat under one skills root). **Do not hardcode an absolute path** — the skills root differs per agent (`~/.claude/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `~/.cursor/skills/`, a project-level `.claude/skills/`, …). If the relative path does not resolve, Glob for `**/openspec-technical-review/shared/apply-gate-check.md`. **Read that file and follow it exactly.** In short: no `review-summary.md` → ALLOW (change has no gate enabled); has `review-summary.md` but blank sign-off placeholder or verdict `BLOCKED` → STOP, write no implementation code. Never sign on the user's behalf, edit the sign-off line, or talk the user into skipping this.
 
+   按 `../openspec-technical-review/shared/apply-gate-check.md` 核对规划与登记；如需人工确认，在确认返回后、首次写入前按同一规则重新读取并核对，不沿用已变化版本的确认。
+
    The `PreToolUse` hook cannot see skill/slash-command invocations — this step is the only check on that path, so do not skip it.
 
    **STE 检查（BLOCKING，本仓自加，非上游原文）** —— 开始任何任务前，先运行 `openspec status --change "<name>" --json` 取 `changeRoot`（Step 3 运行同一命令，可复用结果），再运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Apply」列处理结果（存在阻断项时停止，不开始任何任务）；找不到脚本时输出「STE 检查已跳过：未找到 openspec-ste（<原因>）」后继续，不得静默跳过。
@@ -78,7 +80,7 @@ Implement tasks from an OpenSpec change.
    - Remaining tasks overview
    - Dynamic instruction from CLI
 
-   **基线任务数（本仓自加，非上游原文）** —— 首次 apply（`tasks.md` 还没有任何 `- [x]`，且开头没有基线行）时，在 `tasks.md` 一级标题之后写一行 `基线任务数：N（YYYY-MM-DD 首次 apply）`，N 为当前 checkbox 总数。该行不是 checkbox，不影响进度解析，之后不修改。已有该行时，比较当前 checkbox 总数与 N：新增任务 > N × 50%，或新增能力、新增顶层模块，按 `../openspec-update-change/SKILL.md`「范围扩展拆分提示」询问用户并记录到 `discussion-log.md`。
+   **基线任务数（本仓自加，非上游原文）** —— 首次 apply（`tasks.md` 还没有任何 `- [x]`，且开头没有基线行）时，在 `tasks.md` 一级标题之后写一行 `基线任务数：N（YYYY-MM-DD 首次 apply）`，N 为当前 checkbox 总数。该行不是 checkbox，不影响进度解析，之后不修改。已有该行时，比较当前 checkbox 总数与 N：新增任务 > N × 50%，或新增能力、新增顶层模块，按 `../openspec-update-change/SKILL.md`「范围扩展拆分提示」询问用户并记录到 `discussion-log.md`。 将基线行插在一级标题下一行，不改变原有空行；评审版本的比较规则见 `../openspec-technical-review/shared/gate-policy.md` 第 5 节。
 
 7. **Implement tasks (loop until done or blocked)**
 

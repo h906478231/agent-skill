@@ -509,7 +509,7 @@ Skill(skill: "openspec-explore", args: "user-nickname-field")
 
 **A**: 不能。apply的前置校验会拦。
 
-BLOCKED必须先闭环Blocker并重走门禁 → 变成READY → 才能签字 → 才能apply。
+`BLOCKED` 时不能 apply。先按 [门禁规则第 6 节](../skills/openspec-technical-review/shared/gate-policy.md#6-收敛检查) 处理，再核对裁决；只有 `READY_FOR_HUMAN_APPROVAL` 且人工签字后才能 apply。
 </details>
 
 <details>
@@ -665,8 +665,8 @@ OpenSpec Explore
 评审汇总（Phase 4）→ review-summary.md（门禁裁决 + 修改建议）      │
       │  含业务影响地图、代码改动范围（v2.0）                     │
       │                                                        │
-      ├─ BLOCKED ─→ /opsx:update 回改 design.md（留闭环记录；     │
-      │             ◆ 卡点②：STE + 变更模型检查）─→ 重走门禁 ⟲    │
+      ├─ BLOCKED ─→ 按 gate-policy.md 第 6 节判断收敛选项        │
+      │             继续修复 → /opsx:update（卡点②）→ 重走门禁 ⟲ │
       │                                                        │
       ├─【可选】/opsx:explain                                   │
       │         → review/finding-details/<ID>.md（详细解析）     │
@@ -947,8 +947,8 @@ finding 的 10 个字段、五条硬规则与「建议修复」的写法由 `ski
 
 | 条件 | 裁决结果 | 下一步 |
 |------|---------|--------|
-| 任一维度 `verdict = 打回` **或** 有未闭环Blocker | 🚫 BLOCKED | 回改design.md + 填闭环记录 + 重走门禁 |
-| 全部 `通过/有条件通过` **且** 无未闭环Blocker | ✅ READY_FOR_HUMAN_APPROVAL | 人工签字确认 |
+| 任一维度 `verdict = 打回` **或** 有未闭环Blocker | 🚫 BLOCKED | 按门禁规则第 6 节判断收敛选项；继续修复时填写闭环记录并重走 |
+| 全部 `通过/有条件通过` **且** 无未闭环Blocker | ✅ READY_FOR_HUMAN_APPROVAL | 按门禁规则第 5 节处理开放 finding，再由人工签字 |
 
 ⚠️ **人工确认是硬门禁**：人工在 `review-summary.md` 写入 `Technical Review Approved` 前，禁止 `/opsx:apply`。
 
@@ -1440,7 +1440,10 @@ jq --version
 
 ## 🔄 重走门禁（迭代回路操作手册）
 
-**铁律**：门禁输入是 `design.md`（+ `proposal.md`）。输入变了且变在评审维度上 → 重走；没变 → 不重走。
+**定稿前后采用不同规则**。是否重走与如何留痕，见 [门禁规则第 2、3、5 节](../skills/openspec-technical-review/shared/gate-policy.md#2-什么时候重走门禁)。
+
+- [第 5 节「定稿与签字后修改」](../skills/openspec-technical-review/shared/gate-policy.md#5-定稿与签字后修改)：处理开放 finding，登记规划修改。apply 在签字校验后核对规划输入版本；仅更新任务进度不需要重新签字。
+- [第 6 节「收敛检查」](../skills/openspec-technical-review/shared/gate-policy.md#6-收敛检查)：轮次达到触发条件时，先展示选项，再由用户决定是否继续修复。
 
 **判断口诀**：宁可多跑一个维度，不可漏跑被牵连的维度。
 

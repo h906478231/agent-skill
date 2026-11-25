@@ -27,7 +27,7 @@ tags: [workflow, review, gate, experimental, cross-validation]
 |------|------|
 | finding 字段、五条硬规则、维度结论取值 | `shared/finding-format.md` |
 | 上轮闭环验证（重走门禁时） | `shared/closed-loop-verification.md` |
-| 门禁裁决、重走范围、牵连关系、驳回留痕 | `shared/gate-policy.md` |
+| 门禁裁决、重走范围、牵连关系、驳回留痕、定稿后处理、固定评审输入与登记核对（第 5 节）、同轮收窄重算（第 6 节） | `shared/gate-policy.md` |
 | 纳入范围的各维度的审查清单 | `roles/<role>.md` |
 
 ## 产物

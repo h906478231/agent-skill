@@ -74,6 +74,8 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
      openspec instructions <artifact-id> --change "<name>" --json
      ```
 
+   **定稿后登记（本仓自加）** —— 若 `review-summary.md` 有定稿轮，每次写入规划后按 `../openspec-technical-review/shared/gate-policy.md` 第 5 节新增一行登记，写明规划档位。写入前保留修改前内容；写入后按第 5 节逐处对照全部差异与登记，核对通过才记录已核对版本。只在本次登记了方案变更时，在 `tasks.md` 写「规划更新内容仍待技术评审和人工确认」，并提示重走受影响维度；不修改签字行。
+
    **STE 检查（本仓自加，非上游原文）** —— 修改产物后运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Update」列处理结果；找不到脚本时在输出中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
 
    **变更模型检查（本仓自加，非上游原文）** —— STE 检查之后（没有写入修改时不运行）运行 `node <CM> check <changeRoot>`（`<CM>` = `../openspec-change-overview/scripts/change-model.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-change-overview/scripts/change-model.mjs`），退出码按 `../openspec-ste/shared/gate-check.md` 的「Update」列处理，与 STE 检查相同；阻断项的修正与其他修改一样经用户确认后写入，重跑到退出码 `0`；修正方式见 `../openspec-change-overview/shared/change-model.md`「6 项检查」。找不到脚本时在输出中写明「变更模型检查已跳过：未找到 openspec-change-overview（<原因>）」，不得静默跳过。

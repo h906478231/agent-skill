@@ -117,7 +117,7 @@ done
      ```
      缺任一即中止，提示同第 3 步。
    - 判定不确定时取较大的范围。
-6. 在 `changeRoot` 下创建 `review/` 目录。
+6. 在 `changeRoot` 下创建 `review/` 目录。分发前按 `shared/gate-policy.md` 第 5 节固定评审输入和登记基线序号，保留本轮内容、哈希与序号；每个子 agent 使用分发的文本，不重新从磁盘读取方案作为评审输入。
 
 ## 执行步骤
 
@@ -184,19 +184,34 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 12. **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环，逐一给出对应的 `闭环状态` 取值。后者一律按未闭环 Blocker 计入裁决。
 13. **术语表**：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。
 14. **分级结论**：变更等级（L1/L2/L3，判定规则见 `shared/gate-levels.md`）+ 判定人 + 依据。L0 不进入本门禁，故此处的等级至少为 L1；MVP 且命中信号时写方案类型 MVP 与命中的信号。**同时确保变更目录 `overview.md` 开头有这一行**（没有该文件时创建只含文件头与分级行的最小 `overview.md`；已有分级行时改为本次判定，如 `/opsx:propose` 写的 L0 被本门禁判为 L2）—— 实现阶段的归档门禁从 `overview.md` 读等级，判定双轴评审是否必需（写法见 `shared/gate-levels.md`「分级决策责任」，文件头格式见 `../../openspec-change-overview/SKILL.md`）。
-15. **评审输入版本**：列出本轮评审依据的 `proposal.md` / `design.md` / `specs` / `tasks.md` 的版本依据（如 `git rev-parse HEAD` 或文件哈希），供重走门禁与恢复时判断输入是否已变化。
-16. **人工确认区**：人工确认区是最后一节，正文引用这几行时不从行首写起。不生成独立签字示例，代码块和 HTML 注释也不例外。签字说明使用普通文字，只在人工确认区保留待用户填写的签字行。先按 `shared/gate-policy.md`「机器可读裁决行」写 `Gate-Level: <L1|L2|L3|MVP>` 与 `Gate-Verdict: <第 5 项裁决>` 两行，再留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply；L3 追加一行 `复核: __________`（建议第二人复核，非必填）。
+15. **评审输入版本**：按 `shared/gate-policy.md` 第 5 节复核当前文件集合与原始 SHA-256，只转录分发前固定的逐文件原始 SHA-256、任务内容 SHA-256 与登记基线序号。输入不一致或无法确认子 agent 所用版本时，裁决为 `BLOCKED`，不发布可签字裁决。
+16. **定稿与签字后修改**：按 `shared/gate-policy.md` 第 5 节写 `定稿轮：R<n>` 和登记表，保留旧登记行。尚未达到定稿条件时不新写定稿轮。
+17. **收敛检查**：按 `shared/gate-policy.md` 第 6 节在第 3 轮起写入轮次统计；前两轮只在既有小节保留统计依据。
+18. **人工确认区**：人工确认区是最后一节，正文引用这几行时不从行首写起。不生成独立签字示例，代码块和 HTML 注释也不例外。签字说明使用普通文字，只在人工确认区保留待用户填写的签字行。先按 `shared/gate-policy.md`「机器可读裁决行」写 `Gate-Level: <L1|L2|L3|MVP>` 与 `Gate-Verdict: <第 5 项裁决>` 两行，再留一行 `Technical Review Approved: __________`（待人工填写），注明批准前禁止 apply；L3 追加一行 `复核: __________`（建议第二人复核，非必填）。
 
 裁决为 `BLOCKED` 时的告知内容与闭环记录格式，见 `shared/gate-policy.md`。
 
 ### Step 3 — 停在人工确认门禁
 
-输出汇总后**停止**。提示人工：
+输出汇总后，不进入 apply。裁决为 `READY_FOR_HUMAN_APPROVAL` 且有开放 Major 或 Minor 时，按 `shared/gate-policy.md` 第 5 节先用 AskUserQuestion 询问：Major 每条一问，Minor 可按维度合并。选项说明必须显示对应重走范围：
+
+- 在实现中修复：不重走；能写成任务时推荐。
+- risk accepted：不重走。
+- 移到后续变更：不重走；建议修复要求改变技术决策时推荐。
+- 改变技术决策：重走：列出按第 3 节确定的维度；不作为推荐项。
+
+按第 5 节写入用户选择。选择改变技术决策时，提示重走对应维度，不提示签字。其余处理完成且裁决保持 `READY_FOR_HUMAN_APPROVAL` 时，提示人工：
 - 审阅 `review-summary.md` 与 `review/*.md`；
 - 认可后在人工确认区写下 `Technical Review Approved`（可加签名/日期）；
 - 之后才可运行 `/opsx:apply` 进入实现。
 
-若门禁为 `BLOCKED`：
+若门禁为 `BLOCKED`，先判断是否命中 `shared/gate-policy.md` 第 6 节的收敛检查。命中时向用户列出：
+
+- 收窄范围：不重走；只对符合第 6 节关闭前提的 Blocker 提供。
+- risk accepted：不重走；按第 4 节留痕。
+- 继续修复：重走：按第 3 节列出受影响维度。
+
+选择收窄范围或 risk accepted 后，按事实源留痕并重新计算裁决，不启动评审子 agent。收窄范围必须先按第 5、6 节逐处核对全部差异并记录已核对版本，不替换原始输入。裁决同轮首次转为 `READY_FOR_HUMAN_APPROVAL` 时，按第 6 节写定稿轮、更新裁决，回到本节的定稿后处理。未命中收敛条件时，不提供收窄范围选项；需要继续修复时：
 
 1. 回 `design.md` 闭环 Blocker；
 2. **在 `design.md` 末尾登记「评审意见闭环记录」区块**（列定义与闭合判定见 `shared/closed-loop-verification.md`，格式见 `shared/gate-policy.md`）—— 这是重走门禁时唯一能让新子 agent 知道「上轮提过什么、这轮改了什么」的载体，漏登记会导致上轮 Blocker 被静默跳过或被重复发现；
@@ -204,7 +219,7 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 
 ## 重走门禁（迭代回路）
 
-判定规则、牵连关系表、驳回与 risk accepted 留痕格式，全部见 `shared/gate-policy.md`。执行层面：
+判定规则、牵连关系表、驳回与 risk accepted 留痕格式见 `shared/gate-policy.md`。定稿后先按第 5 节区分规划档位；方案变更才按第 3 节确定重走范围。执行层面：
 
 - **全量重走**：Workflow `{ "change": "<name>", "level": "L2" }`；交互式则重启全部纳入维度的子 agent。
 - **增量重走**：Workflow `{ "change": "<name>", "level": "L2", "roles": ["security"] }`（`roles` 必须在该等级的纳入维度内）；交互式只对指定维度重启子 agent，其余**纳入维度**读取上轮 `review/<role>.md` 参与汇总。未纳入维度不读取，在一览表标「未纳入」。

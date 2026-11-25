@@ -25,7 +25,9 @@ Implement tasks from an OpenSpec change.
 
 2. **技术评审门禁校验（BLOCKING —— 写任何代码之前必须做）**
 
-   完整规则见 skill `openspec-technical-review` 的 `shared/apply-gate-check.md`（该 skill 的实际安装目录随 agent 而不同，解析方式见其 SKILL.md「路径约定：`<SKILL_DIR>`」一节；找不到时用 Glob 搜 `**/openspec-technical-review/shared/apply-gate-check.md`），**先读取该文件并严格执行**。要点：无 `review-summary.md` → 放行（该变更未启用门禁）；有 `review-summary.md` 但签字行为空白占位或裁决为 `BLOCKED` → 停止，不写任何实现代码；禁止代替用户签字、禁止修改签字行、禁止劝说跳过。
+   完整规则见 skill `openspec-technical-review` 的 `shared/apply-gate-check.md`（该 skill 的实际安装目录随 agent 而不同，解析方式见其 SKILL.md「路径约定：`<SKILL_DIR>`」一节；找不到时用 Glob 搜 `**/openspec-technical-review/shared/apply-gate-check.md`），**先读取该文件并严格执行**。要点：无 `review-summary.md` → 放行（该变更未启用门禁）；有 `review-summary.md` 但签字行为空白占位或裁决为 `BLOCKED` → 停止，不写任何实现代码；签字校验通过后，按同一文件比较规划输入版本并核对登记；禁止代替用户签字、禁止修改签字行、禁止劝说跳过。
+
+   按 `openspec-technical-review/shared/apply-gate-check.md` 核对规划与登记；如需人工确认，在确认返回后、首次写入前按同一规则重新读取并核对，不沿用已变化版本的确认。
 
    Bash 侧的 `PreToolUse` hook 看不到 `/opsx:apply` 这条斜杠命令路径 —— 本步骤是该路径上唯一的检查点，不得跳过。
 
@@ -74,7 +76,7 @@ Implement tasks from an OpenSpec change.
    - Remaining tasks overview
    - Dynamic instruction from CLI
 
-   **基线任务数（本仓自加）** —— 首次 apply 时在 `tasks.md` 一级标题后写 `基线任务数：N（YYYY-MM-DD 首次 apply）`（非 checkbox，之后不改）；已有该行时，新增任务 > N × 50% 或新增能力 / 顶层模块，按 skill `openspec-update-change`「范围扩展拆分提示」询问用户并记录到 `discussion-log.md`。
+   **基线任务数（本仓自加）** —— 首次 apply 时在 `tasks.md` 一级标题后写 `基线任务数：N（YYYY-MM-DD 首次 apply）`（非 checkbox，之后不改）；已有该行时，新增任务 > N × 50% 或新增能力 / 顶层模块，按 skill `openspec-update-change`「范围扩展拆分提示」询问用户并记录到 `discussion-log.md`。 将基线行插在一级标题下一行，不改变原有空行；评审版本的比较规则见 `openspec-technical-review/shared/gate-policy.md` 第 5 节。
 
 7. **Implement tasks (loop until done or blocked)**
 

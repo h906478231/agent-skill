@@ -147,7 +147,36 @@ const mvpNote = mvp
   ? `本次评审使用 MVP 标准。必须先阅读 ${SD}/shared/mvp-review-standard.md 理解 MVP 评审原则，只报告阻断性问题，不报告 MVP 已接受的权衡。`
   : ''
 
-// 只对需要重跑的维度并行 fan-out。每个子 agent 自读角色准则 + 方案文档，产出结构化评审并覆写 review/<key>.md。
+// 角色与汇总共用同一份评审输入；文件读取交给子 agent，workflow 本身不访问文件系统。
+const baseline = await agent(
+  [
+    locateHint,
+    `按 ${SD}/shared/gate-policy.md 第 5 节，在分发前固定 ${base} 的规划内容与文件集合。`,
+    `从同一份内容计算 proposal.md、design.md、tasks.md 与 specs/ 下全部文件的原始 SHA-256、任务内容 SHA-256，并取登记基线序号（空表为 0）。`,
+    `只读，返回 proposal、design 的全文，以及 originalHashes（相对路径到哈希）、tasksHash、registrationBase。无法读取或验证时不要编造值。`,
+  ].join('\n'),
+  { label: 'capture-input', phase: 'Review', schema: {
+    type: 'object', additionalProperties: false,
+    required: ['proposal', 'design', 'originalHashes', 'tasksHash', 'registrationBase'],
+    properties: {
+      proposal: { type: 'string', minLength: 1 },
+      design: { type: 'string', minLength: 1 },
+      originalHashes: { type: 'object', additionalProperties: { type: 'string', pattern: '^[0-9a-f]{64}$' } },
+      tasksHash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+      registrationBase: { type: 'integer', minimum: 0 },
+    },
+  } }
+)
+const isHash = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+if (!baseline?.proposal?.trim() || !baseline?.design?.trim() || !isHash(baseline.tasksHash) ||
+    !Number.isSafeInteger(baseline.registrationBase) || baseline.registrationBase < 0 ||
+    !['proposal.md', 'design.md', 'tasks.md'].every(path => isHash(baseline.originalHashes?.[path])) ||
+    !Object.values(baseline.originalHashes).every(isHash)) {
+  throw new Error('无法固定评审输入和登记基线，停止评审，不发布可签字裁决')
+}
+const { proposal, design, ...inputVersion } = baseline
+
+// 只对待重跑维度分发固定的方案内容。角色准则仍由各子 agent 读取。
 const reviews = await parallel(rerun.map(r => () =>
   agent(
     [
@@ -161,7 +190,8 @@ const reviews = await parallel(rerun.map(r => () =>
       `  · ${SD}/roles/${r.key}.md —— 你的角色定位、审查清单、本维度闭环判据；`,
       `  · ${SD}/shared/finding-format.md —— finding 10 个字段、五条硬规则、维度结论取值；`,
       `  · ${SD}/shared/closed-loop-verification.md —— 上轮闭环验证规则。`,
-      `第二步：读取方案文档 ${base}/proposal.md（需求澄清结论）与 ${base}/design.md（已确定方案，可能是回改后的新版）。`,
+      `第二步：只使用下面传入的 proposal.md 与 design.md 正文；不重新读取磁盘上的方案。`,
+      JSON.stringify({ 'proposal.md': proposal, 'design.md': design }),
       `第三步（上轮闭环验证）：仅当 design.md 末尾存在「## 评审意见闭环记录」区块时执行，完全按 ${SD}/shared/closed-loop-verification.md 的规则处理其中「维度」属于你（${r.title}）的每一行，并结合角色文件里的「本维度闭环判据」判定。你是全新上下文，没有上轮记忆 —— 不做这一步就会重复报同一问题或漏掉验证。`,
       `第四步：围绕 ${r.focus} 逐项审查。每条 finding 含 id/severity(Blocker|Major|Minor)/location/plainLanguage/trigger/impact/fix，字段含义与硬规则以 ${SD}/shared/finding-format.md 为准 —— 特别是：写不出可复现触发场景的 Blocker 一律降级为 Major。新问题用新 ID，避免与闭环记录中的历史 ID 冲突。`,
       `第五步：把完整评审覆写到 ${base}/review/${r.key}.md（中文，Markdown），结构按 ${SD}/shared/finding-format.md 的输出骨架（上轮闭环验证（若适用）→ findings 表格 → 容量估算等你角色特有内容 → 末尾维度结论行）。`,
@@ -198,7 +228,7 @@ const summary = await agent(
     JSON.stringify(reviews, null, 2),
     ``,
     `裁决与留痕规则以 ${SD}/shared/gate-policy.md 为准，先读取它。`,
-    `请读取 ${base}/review/*.md（含重跑与沿用维度）补充细节，产出 ${base}/review-summary.md（中文）。汇总项与顺序必须与 ${SD}/SKILL.md 的 Step 2 一致（共 16 项）：`,
+    `请读取 ${base}/review/*.md（含重跑与沿用维度）补充细节，产出 ${base}/review-summary.md（中文）。汇总项与顺序必须与 ${SD}/SKILL.md 的 Step 2 一致（共 18 项）：`,
     `1) 摘要（给非设计者看）：三句话说清「发现了什么 / 能不能开工 / 卡在哪」，不使用专有名词。`,
     `2) 业务影响地图：按业务功能分组列出 Blocker/Major/Minor 数量与主要风险。`,
     `3) 代码改动范围：按代码模块聚合改动类型与预估影响，用于工作量评估。`,
@@ -213,14 +243,17 @@ const summary = await agent(
     `12) 上轮闭环验证结果（仅当各维度 review 中存在「上轮闭环验证」小节时）：汇总哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环，并给出各自的 status 取值。任何「声称已闭环但实际未闭环」的项一律按未闭环 Blocker 计入裁决。`,
     `13) 术语表：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。`,
     `14) 分级结论：方案类型（MVP / 完整方案）+ 命中的升级信号 + 变更等级（完整方案为 L1/L2/L3，必须与本轮的 ${mvp ? 'MVP 分层' : level} 一致）或纳入维度（MVP，按映射表）+ 判定人 + 依据，规则见 ${SD}/shared/gate-levels.md。同时确保变更目录 overview.md 开头也写有这一行（还没有该文件时，创建只含文件头与分级行的最小 overview.md）——实现阶段的归档门禁从 overview.md 读等级判定双轴评审是否必需。`,
-    `15) 评审输入版本：列出本轮依据的 proposal.md / design.md / specs / tasks.md 的版本依据（如 git rev-parse HEAD 或文件哈希），供重走与恢复时判断输入是否变化。`,
-    `16) 人工确认区：人工确认区是最后一节，正文引用这几行时不从行首写起。不生成独立签字示例，代码块和 HTML 注释也不例外。签字说明使用普通文字，只在人工确认区保留待用户填写的签字行。按 gate-policy.md「机器可读裁决行」的格式先写 "Gate-Level: ${mvp ? 'MVP' : level}" 与 "Gate-Verdict: <READY_FOR_HUMAN_APPROVAL 或 BLOCKED，取第 5 项裁决>" 两行，再留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply；L3 追加一行 "复核: __________"（建议第二人复核，非必填）。`,
-    `若本轮裁决为 BLOCKED，按 gate-policy.md 的闭环记录格式明确提示：回改 design.md 后必须登记每条 Blocker 的闭环记录，下一轮评审 Agent 依赖该区块验证闭环。`,
+    `15) 评审输入版本：按 gate-policy.md 第 5 节转录分发时固定的原始 SHA-256、任务内容 SHA-256 与登记基线序号，不用当前值替换。输入无法确认或当前文件集合或原始哈希不一致时，裁决为 BLOCKED，不发布可签字裁决。`,
+    `分发时固定的输入版本：${JSON.stringify(inputVersion)}`,
+    `16) 定稿与签字后修改：覆盖汇总前先读取既有 review-summary.md（如存在）。按 gate-policy.md 第 5 节写「定稿轮：R<n>」与登记表，保留旧登记行。尚未达到定稿条件时不新写定稿轮。`,
+    `17) 收敛检查：按 gate-policy.md 第 6 节，自第 3 轮起写表，列为轮次 | 纳入维度数 | 新增 Blocker | 新增 Major | 开放 Blocker。第 1、2 轮不写此节，只在既有小节保留统计依据。`,
+    `18) 人工确认区：人工确认区是最后一节，正文引用这几行时不从行首写起。不生成独立签字示例，代码块和 HTML 注释也不例外。签字说明使用普通文字，只在人工确认区保留待用户填写的签字行。按 gate-policy.md「机器可读裁决行」的格式先写 "Gate-Level: ${mvp ? 'MVP' : level}" 与 "Gate-Verdict: <READY_FOR_HUMAN_APPROVAL 或 BLOCKED，取第 5 项裁决>" 两行，再留一行 "Technical Review Approved: __________"（待人工填写），并注明批准前禁止 /opsx:apply；L3 追加一行 "复核: __________"（建议第二人复核，非必填）。`,
+    `若本轮裁决为 BLOCKED，按 gate-policy.md 第 6 节判断是否提供收敛选项；继续修复时，明确提示回改 design.md 后须登记 Blocker 的闭环记录。只给出决策所需的信息，不替用户选择。`,
   ].join('\n'),
   { label: 'summarize', phase: 'Summarize' }
 )
 
-log(`技术评审门禁完成（${mvp ? 'MVP 分层' : incremental ? '增量重走' : '全量'}），产物：review/*.md 与 review-summary.md。请人工审阅后在 review-summary.md 写入 Technical Review Approved，再运行 /opsx:apply。`)
+log(`技术评审门禁完成（${mvp ? 'MVP 分层' : incremental ? '增量重走' : '全量'}），产物：review/*.md 与 review-summary.md。请主会话按 SKILL.md 的 Step 3 处理开放 finding 与门禁裁决；可签字时请人工审阅并写入 Technical Review Approved，签字前不得运行 /opsx:apply。`)
 
 return { change, level: mvp ? 'MVP' : level, mode: mvp ? 'mvp' : incremental ? 'incremental' : 'full',
   rerun: rerun.map(r => r.key), reuse: reuse.map(r => r.key), notApplicable: excluded.map(r => r.key), reviews, summary }
