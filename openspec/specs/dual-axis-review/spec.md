@@ -30,7 +30,7 @@ The Standards Review SHALL assess project conventions, reuse, readability, dead 
 
 ### Requirement: Spec Fidelity Review SHALL only assess requirement and design fidelity
 
-The Spec Fidelity Review SHALL check the implementation against the proposal, design, specs, tasks, declared Seam, and scenarios. It SHALL identify missing requirements, uncovered scenarios, incomplete tasks, out-of-scope behavior, and deviations from recorded design decisions.
+The Spec Fidelity Review SHALL check the implementation against the proposal, design, specs, tasks, declared Seam, and scenarios. It SHALL identify missing requirements, uncovered scenarios, incomplete tasks, out-of-scope behavior, and deviations from recorded design decisions. The signed planning artifacts SHALL be the fixed reference of the review. The Spec Fidelity Review SHALL NOT require a planning artifact edit to close a finding. Each finding SHALL carry a root-cause category as defined by the capability `quality-finding-root-cause`.
 
 #### Scenario: A required scenario is not implemented
 - **WHEN** a spec scenario has no implementation or test evidence
@@ -38,7 +38,9 @@ The Spec Fidelity Review SHALL check the implementation against the proposal, de
 
 #### Scenario: Implementation deviates from a design decision
 - **WHEN** the code uses a different persistence, concurrency, or interface decision than `design.md`
-- **THEN** the Spec Fidelity Review records the deviation and requires the design or implementation to be reconciled before approval
+- **THEN** the Spec Fidelity Review records the deviation with the root-cause category B
+- **AND** the suggested fix changes the code to follow `design.md`, and the user can record risk accepted instead
+- **AND** the review does not require an edit of `design.md` before approval
 
 ### Requirement: A configured Sonar scan SHALL cover the changed lines after the two axes
 

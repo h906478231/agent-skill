@@ -316,7 +316,7 @@ Skill(skill: "openspec-explore", args: "user-nickname-field")
 #   → review/standards.md       Standards Review：重复/可读性/死代码/复杂度/测试可维护性/项目约定
 #   → review/spec-fidelity.md   Spec Fidelity Review：需求/场景/任务/设计决策/Seam 的实现忠实度
 #   → review/code-review-summary.md  汇总裁决：任一轴未闭环 Blocker 即 BLOCKED，不得归档
-#   → 收尾询问：open 的 Blocker、Major 与 Sonar 行逐条选 修复 / risk accepted / 误报（PASSED 时也问，Minor 不问）
+#   → 收尾询问：open 的 Blocker、Major 按根因类别询问，Sonar 未处理行另问（PASSED 时也问，Minor 不问）
 #   → review/sonar.md           项目配置了 Sonar 时：SonarScanner 扫描，只处理本次修改行上的问题
 #     （规则：skills/openspec-code-quality/shared/sonar-scan.md）
 #   （规则：skills/openspec-code-quality/shared/dual-axis-review.md）
@@ -1097,7 +1097,7 @@ AI 评审会误报。**被误报卡死不是流程的本意**，两条逃生通�
 - 任一轴存在未闭环 Blocker 即 `BLOCKED`，不得归档
 - Blocker 只能按判据 B1–B5 判定（写错数据 / 越权 / 假勾选 / 正常输入下已有功能失败 / 吞异常记成功），触发场景以 `[Bn]` 开头；只在依赖故障或边界输入下出现的问题为 Major
 - 修复走 `tasks.md` 勾选；门禁外提交等实现后修改按档位（`非行为` / `仅测试` / `等价` / `行为`）登记到 `tasks.md` 的 `## 实现后修改登记`，每行写登记指纹，同一文件再次修改时新增一行；`行为` 档位同时新增任务（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`）
-- 收尾询问处理方式：两轴台账中 `open` 的 Blocker 与 Major（裁决为 `PASSED` 时也问）、`review/sonar.md` 未处理的行，用 `AskUserQuestion` 逐条询问 `修复` / `risk accepted` / `误报`，Minor 不问。选 `修复` 才新增任务；另外两项由 agent 按该条回复写入接受人或驳回人（Sonar 为决策人）并加来源行，不改代码、不开新一轮；签署字段仍只能由用户写（规则：`skills/openspec-code-quality/SKILL.md`「Step 6」，决策见 ADR-0009）
+- 收尾用 `AskUserQuestion` 询问 `open` 的 Blocker 与 Major（裁决为 `PASSED` 时也问）以及未处理的 Sonar 行；Minor 不问。质量 finding 按 `skills/openspec-code-quality/shared/dual-axis-review.md`「根因类别」处理：代码修复新增任务，规划修改只提示 `/opsx:update`。按回复写留痕字段与来源行，签署字段仍只能由用户写（步骤见 `skills/openspec-code-quality/SKILL.md`「Step 6」，决策见 ADR-0009 与 ADR-0017）。
 - 重跑前运行 `classify --from <上一轮指纹>`：只有注释差异，或注释差异之外全部登记为 `仅测试`（只改测试路径下的文件）时不开新一轮（仍询问处理方式），断言修改由 verify 核对；否则用 `baseline --since <上一轮指纹>` 生成增量基线，两轴都重跑但只审查 delta
 - 第 2 轮起只报告 Blocker 与 Major：增量轮新发现的 Minor 写进报告的 `## 建议` 小节，不进台账、不要求落地；「有条件通过」的条件只能来自 Major 或只需修改规划产物的 Minor，要改代码的 Minor 保持 `open`、不阻断归档，由完成清单列出
 - 晚归档（实现提交之后又有其他变更的提交）：由用户在 `tasks.md` 写 `## 变更终点`。评审范围为 `Base Commit..变更终点`，基线带 `Change Head` 行；`classify` 比到终点指纹，终点之后的修改不要求登记；登记指纹与 verify 的 `Fingerprint` 写 `fingerprint --rev <变更终点>` 的输出；切片证据仍与当前实现比较（规则唯一事实源：`skills/openspec-apply-change/shared/post-implementation-changes.md`「变更终点」，决策见 ADR-0008）

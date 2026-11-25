@@ -50,8 +50,8 @@ description: OpenSpec 实现后双轴独立评审（Phase 5.5）。在 openspec 
 2. 确认有 diff：`git status --short` 与 `git diff --stat`（变更已提交时用变更起点到 HEAD 的范围，`git log` 定位起点 commit。`tasks.md` 声明了 `## 变更终点` 时，用变更起点到变更终点的范围）。**diff 为空则中止**，提示先完成 `/opsx:apply`。
 3. 在 `changeRoot` 下创建 `review/` 目录。
 4. **重跑时按档位登记实现后修改**：运行 `node <GATE> classify <changeRoot> --from <上一轮报告基线的 Fingerprint>`，按 `<SKILL_DIR>/../openspec-apply-change/shared/post-implementation-changes.md` 处理结果：
-   - `other` 为空（全部文件只有注释差异）：输出「无需新一轮：自上一轮基线以来只有注释差异」，不生成新基线，报告保持不变，跳到 Step 6。
-   - `unregistered` 为空、`registered` 全部为 `仅测试`（注释差异之外只改了测试路径下的文件）：输出「无需新一轮：自上一轮基线以来只改了测试」，不生成新基线，报告保持不变，跳到 Step 6；断言修改由 `/opsx:verify` 核对。测试文件尚未登记时，先按事实源登记 `仅测试`，再次运行 `classify` 后按本条判定。
+   - `other` 为空（实现未变或全部文件只有注释差异）：输出「无需新一轮：自上一轮基线以来没有实现变化或只有注释差异」，不生成新基线，跳到 Step 6 核对并询问未闭环问题。
+   - `unregistered` 为空、`registered` 全部为 `仅测试`（注释差异之外只改了测试路径下的文件）：输出「无需新一轮：自上一轮基线以来只改了测试」，不生成新基线，跳到 Step 6 核对并询问未闭环问题；断言修改由 `/opsx:verify` 核对。测试文件尚未登记时，先按事实源登记 `仅测试`，再次运行 `classify` 后按本条判定。
    - 只在新增并已勾选的任务内修改的文件（按 apply 规则勾选，切片证据新鲜）：`classify` 仍把它们列入 `unregistered`，但它们不是实现后修改（事实源「定义」），不登记；勾选之后又有修改时照常登记，修改与任务对应不上或拿不准时照常登记，判断方法见事实源登记步骤 6。上一轮之后的修改全部属于这类时，进入 Step 1，两轴按增量执行。
    - 其他情况下 `unregistered` 或 `issues` 不为空（含门禁外提交）：先按档位登记到 `tasks.md` 的 `## 实现后修改登记`，再进入 Step 1。不属于上述文件的条目照常登记。`行为` 档位同时新增任务，写明提交 SHA 或文件；`等价` 档位先经用户确认。
    - 退出码 `2`（上一轮 tree 对象已被回收）：无法核对登记，自上一轮以来修改的文件按 `行为` 登记，本轮按第 1 轮审查完整 diff。
@@ -123,6 +123,8 @@ node <GATE> review <changeRoot>
 
 每次运行都执行：Step 4 校验之后执行；Sonar 状态为 `已配置` 时在 Step 5 之后执行；前置第 4 步输出「无需新一轮」时也执行（不生成新基线）。决策来源：agent-skills 仓库 ADR-0009。
 
+**询问前**：按 `shared/dual-axis-review.md`「C2 收窄范围后的闭环」核对已分类的开放 C2。完成闭环后，即使没有用户回答，也更新本轴结论、刷新汇总并运行 `node <GATE> review <changeRoot>`。然后只询问仍需处理的 finding。
+
 **询问对象**
 
 - 两轴 `## Finding 台账` 中状态为 `open` 的 Blocker 与 Major。裁决为 `PASSED` 时也询问：进度视图只看裁决，不询问的 Major 会不经决定走到 archive。Minor 不询问。
@@ -131,34 +133,38 @@ node <GATE> review <changeRoot>
 **跳过**
 
 - `tasks.md` 有未勾选的任务写有该 finding ID（Sonar 行写有规则与位置）：已有修复任务，修复后由新一轮做闭环验证。
-- 只需修改一处规划产物、该位置已按「建议修复」修改的 finding：台账改为 `closed`，闭环依据写 `<文件>:<行号>`，不询问。
+- C2 的收窄范围只按「C2 收窄范围后的闭环」核对。C2 收窄核对未通过时保持 `open`，不得按拟改文字关闭。
+- 仅对已判定为非 C2 的 finding：建议修复列明 `<文件>:<行号>` 与拟改文字，且 `/opsx:update` 已将该位置改为拟改文字时，台账改为 `closed`，闭环依据写该位置，不询问。quality 不修改该文件。旧报告的 SPEC finding 尚未分类时，先按下文补判，再选核对路径。
 
 **分批与问题文本**
 
 - 按 Blocker → Major → Sonar 排序，每次 `AskUserQuestion` 最多 4 题。一批回答后，先写入这一批的记录与任务，再询问下一批：中途停止时，已回答的不会丢失。
-- `header` 写 finding ID（Sonar 行写规则编号）。问题不超过 300 字，写出：finding ID、`文件:行号`、一句话问题、拟好的 risk accepted 理由与触发阈值、误报理由（Sonar 行写拟好的接受理由与误报理由）。只需修改一处规划产物时，写出 `<文件>:<行号>` 与改后的文字。
+- 旧报告的 SPEC finding 没有根因前缀时，按 `shared/dual-axis-review.md`「根因类别」先补判，再提问。补判或纠正类别时，按 ID 更新「根因类别记录」；该条仍在 Findings 表时同步更新前缀。
+- `header` 写 finding ID（Sonar 行写规则编号）。问题不超过 300 字，写出：finding ID、根因类别（Sonar 除外）、`文件:行号`、一句话问题、拟好的 risk accepted 理由与触发阈值、误报理由（Sonar 行写拟好的接受理由与误报理由）。建议改规划文字时，写出 `<文件>:<行号>` 与拟改文字，交给 `/opsx:update`。
 - 理由写在问题文本中，不只写在选项说明中：有的运行方式只显示问题文本与选项标签。
 
 **选项**
 
+按 `shared/dual-axis-review.md`「根因类别」准备选项。Blocker 与 Major 共用同一套类别规则：
+
 | 询问对象 | 选项 |
 |---|---|
-| 两轴 finding | `修复`、`risk accepted`、`误报` |
+| A、B、C1 | `修复`、`risk accepted`、`误报` |
+| C3 | `修复`、`risk accepted`、`误报` |
+| C2 | `risk accepted`、`收窄范围`、`改变技术决策`、`误报` |
 | Sonar 行 | `修复`、`误报`、`接受` |
-| 修复要改多处规划产物，或要改 specs 的 Requirement | `修复` 换成 `回会话处理` |
 
-Blocker 与 Major 的选项相同，沿用 `../openspec-technical-review/shared/gate-policy.md` 第 4 节，不另加限制。
+C2 只使该 Requirement 的部分 Scenario 不成立时，推荐 `risk accepted`；使全部 Scenario 不成立时，推荐 `收窄范围`。`改变技术决策` 不作为推荐项。选项说明按「根因类别」列出要重走的维度；没有 `review-summary.md` 时写「无技术评审，只修改规划」。
 
 **按回复写入**
 
 | 回复 | 写入 |
 |---|---|
-| `修复`，要改代码 | `tasks.md` 新增未勾选任务，写 finding ID 与位置；台账保持 `open` |
-| `修复`，只改一处规划产物 | 按问题中的文字修改该行，再运行 STE 检查与变更模型检查（命令与处理同 `/opsx:update`）；台账改为 `closed`，闭环依据写 `<文件>:<行号>` |
+| `修复`，A、B、C1 或 Sonar 行 | `tasks.md` 新增未勾选任务，写 finding ID 与位置（Sonar 行写规则与位置）；C1 另写根因类别；台账保持 `open` |
+| C3 的 `修复`、C2 的 `收窄范围` 或 `改变技术决策` | 不写该条的处理结果，台账保持 `open`。写完同一批的其他回复后停止，提示运行 `/opsx:update <change>` |
 | `risk accepted`、`误报` | 按 `gate-policy.md` 第 4 节的格式写入对应轴的原始报告，记录末尾加来源行；Findings 表与台账的闭环状态改为 `risk-accepted` / `false-positive`，台账的闭环依据写该记录所在的报告路径；接受人或驳回人写用户名 |
 | Sonar 行的 `误报`、`接受` | 「处理」写选项，「说明」写理由，「决策人」写 `<用户名>（AskUserQuestion，交互会话）`，托管中写 `<用户名>（AskUserQuestion，托管决策 D-<编号>）`。不要求用户在 SonarQube 中标记，verify 只读 `review/sonar.md` |
-| 自填文字 | 按其中写明的处理方式写入。看不出处理方式时不写入，在下一批中再问该条 |
-| `回会话处理` | 不写入该条。写完同一批的其他回复后停止，提示运行 `/opsx:update <change>` |
+| 自填文字 | 若用户纠正类别，按 ID 更新类别记录。只按纠正后类别允许的处理方式写入；未写明有效处理方式时，按纠正后的类别重新提问 |
 
 **留痕字段**
 
@@ -173,12 +179,12 @@ Blocker 与 Major 的选项相同，沿用 `../openspec-technical-review/shared/
 **写入之后**
 
 - 重写 `review/code-review-summary.md` 中各轴的未闭环 Blocker 计数、Major 计数与裁决，再运行 `node <GATE> review <changeRoot>`。
-- 有新增的修复任务时：提示回 `/opsx:apply` 完成任务，再重跑本命令。没有时：可进入 `/opsx:verify`。
+- 同批有需修改规划的回复时，按上表停止并提示 `/opsx:update`，不提示进入 verify。否则，有新增的修复任务时提示回 `/opsx:apply` 完成任务，再重跑本命令；没有时可进入 `/opsx:verify`。
 
 ## 裁决与闭环
 
 - 裁决规则见 `shared/dual-axis-review.md`「裁决规则」：**任一轴存在未闭环 Blocker 即 `BLOCKED`，不得 `/opsx:archive`**。
-- 未闭环的 Blocker 与 Major 由 Step 6 询问用户：选 `修复` 才新增任务或修改规划产物；选 `risk accepted`、`误报` 时具名留痕，不改代码，不开新一轮。Major 要经用户决定，不等于必须修复。
+- 未闭环的 Blocker 与 Major 由 Step 6 按根因类别询问用户。只为代码修复新增任务，不修改 `proposal.md`、`design.md`、`specs/` 或 `tasks.md` 中已有的规划内容；需要改规划时只提示 `/opsx:update`。Major 要经用户决定，不等于必须修复。
 - 「有条件通过」的每个条件必须对应 `tasks.md` 的一个勾选项，或者（只需修改规划产物时）对应该产物的 `<文件>:<行号>`，或者已按 Step 6 记为 risk accepted、误报；**都没有时视同 Blocker**。条件只能来自 Major，或来自只需修改规划产物的 Minor；要改代码才能修复的 Minor 不列为条件，保持 `open`、不阻断归档，修不修由用户决定。
 - Blocker 只能按 `shared/dual-axis-review.md`「Blocker 判据（B1–B5）」判定；只在依赖故障或边界输入下出现的问题定为 Major。
 - 修复即改代码：修复后用 `--since` **重新生成增量基线、两轴都重跑**（只审查 delta；等价增量轮只跑 Standards，见 Step 2），对上轮 Blocker 逐条核实 —— 要指到具体行确认已落地，只看提交说明不算闭环。

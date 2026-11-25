@@ -72,7 +72,7 @@
 |---|---|---|
 | `新增`、`修改`、`删除` | `tasks.md` 中已勾选的任务；delta specs 的 `ADDED`、`MODIFIED`、`REMOVED` 要求 | `proposal.md` 的 What Changes |
 | `修复` | 变更开始前已经存在、由已勾选任务或 delta 要求修正的缺陷 | 评审中发现的本变更新代码的问题 |
-| `没做与遗留` | `design.md` 中移出范围的决策；未勾选的任务；双轴报告中状态为 `open` 的 finding（读法见下文）；Risk Accepted；`pending-environment` 的切片（切片证据的 `## 待环境补测`）；`deployment.md` 的条目 | 对话内容 |
+| `没做与遗留` | `design.md` 中移出范围的决策；未勾选的任务；双轴报告中状态为 `open` 的 finding 与 Spec Fidelity 报告中的 C2 finding（读法见下文）；Risk Accepted；`pending-environment` 的切片（切片证据的 `## 待环境补测`）；`deployment.md` 的条目 | 对话内容 |
 | `落点` | 主规格同步结果；切片证据 `## 变更文件` 的并集，按第一级目录计数 | 当前工作区的 git diff |
 
 - `proposal.md` 只作参考。它的 What Changes 在实现前编写。只有已勾选任务或 delta 要求支持的条目才能写入 `新增`、`修改`、`删除`。
@@ -97,7 +97,10 @@ Finding 状态只从实现后的双轴报告 `review/standards.md`、`review/spe
 - 一份报告中 `open` 的 finding 合并成一条事项，写出数量、每个严重级别的数量与 ID，例如「`review/standards.md` 有 8 个 `open` 的 finding：Minor 7 个、Major 1 个（STD-02～STD-08、STD-10）」。
 - 状态为 `risk-accepted` 的 finding 单独写一条 Risk Accepted 事项，写出 ID 与留痕位置。
 - 报告有 `## 建议` 小节时（`/opsx:quality` 第 2 轮起新发现的 Minor，没有 finding ID），每份报告合并成一条事项，写出条数，例如「`review/standards.md` 的「建议」有 3 条（第 2 轮起的 Minor，没有跟踪是否已处理）」。
-- 状态为 `closed`、`false-positive` 的 finding 不写入 `没做与遗留`。
+- 除下文 C2 事项外，状态为 `closed`、`false-positive` 的 finding 不写入 `没做与遗留`。
+- **C2 事项**：在 `review/spec-fidelity.md` 的「根因类别记录」筛出 C2，再按 ID 读取 Finding 台账的状态。即使状态为 `closed` 且该条已移出 Findings 表，仍列入这条事项。类别不随状态变化，也不以状态过滤 C2。
+- 旧报告的某个 ID 没有类别记录时，只使用 Findings 表中仍有的「建议修复」前缀；两处都没有类别时不推断。旧报告没有台账时，状态仍按上文第 2 条读取。
+- C2 合并为 `## 没做与遗留` 的一条事项，写出总数、每个 ID 与其状态。有 `review-summary.md` 时写「规划缺陷，技术评审没有发现」；没有时写「规划缺陷，变更没有运行技术评审」。没有 C2 finding 时不写该事项。
 - 变更没有双轴报告时（L0、L1 可以不运行 `/opsx:quality`），finding 部分写 `未定义（没有双轴评审报告）`，不写 `无`：这是第 3 条「两处都没有状态」的一种情况，括号中写出原因。
 
 ### 事项的写法

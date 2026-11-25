@@ -156,6 +156,10 @@ _Avoid_: 签后计划台账、定稿改稿清单
 定稿后规划修改的四种分类：措辞、条件落点、范围收窄、方案变更。用于决定是否重走技术评审，不是用于双轴评审的「修改档位」。
 _Avoid_: 规划修改等级、规划变动级别
 
+**Finding Root Cause Category（根因类别）**:
+质量评审按 finding 的成因选择处理路径的分类。Spec Fidelity 的 B、C1、C2、C3 写在「建议修复」列的前缀与报告的「根因类别记录」中；Standards 按 A 处理，不写前缀。判据见 `skills/openspec-code-quality/shared/dual-axis-review.md`「根因类别」。它不等于规划档位或修改档位，后两者分别描述规划修改和实现后修改。
+_Avoid_: 根因分级、根因档位
+
 **Operating Assumptions（运行假设）**:
 design.md 中固定三行的区块：使用者、威胁模型、规模上限。是技术评审判断 finding 是否成立的边界，L2/L3 与命中升级信号的 MVP 必须写。
 _Avoid_: 运行前提、评审前提
