@@ -876,8 +876,11 @@ test('agent 规则文件：AGENTS.md 为唯一事实源，CLAUDE.md 首行导入
  * 询问步骤写在 SKILL.md Step 6；双轴事实源、sonar-scan.md、命令镜像与流程文档只引用或概述，口径必须一致。
  */
 const QUALITY_SKILL = 'skills/openspec-code-quality/SKILL.md'
+const DUAL_AXIS_RULES = 'skills/openspec-code-quality/shared/dual-axis-review.md'
+const SPEC_FIDELITY_ROLE = 'skills/openspec-code-quality/roles/spec-fidelity.md'
+const QUALITY_COMMAND = 'claude/commands/opsx/quality.md'
 const QUALITY_ASK_REFERRERS = [
-  'skills/openspec-code-quality/shared/dual-axis-review.md',
+  DUAL_AXIS_RULES,
   'skills/openspec-code-quality/shared/sonar-scan.md',
   'claude/commands/opsx/quality.md',
   PROCESS_DOC,
@@ -894,11 +897,90 @@ test('quality 询问处理方式：SKILL.md Step 6 写出询问对象、跳过�
     ['问题文本不超过 300 字', /不超过 300 字/],
     ['两轴选项', /`修复`、`risk accepted`、`误报`/],
     ['Sonar 选项', /`修复`、`误报`、`接受`/],
-    ['回会话处理', /`回会话处理`/],
+    ['按根因类别选择', /「根因类别」/],
     ['来源行', /> 来源：AskUserQuestion，交互会话/],
     ['用户名来源', /git config user\.name/],
     ['签署字段不按回复写入', /签署字段不按回复写入/],
   ]) assert.match(body, pattern, `Step 6 缺少：${label}`)
+})
+
+test('quality 根因类别：共用规则定义判据，并按 ID 跨轮保留类别', async () => {
+  const rules = await read(DUAL_AXIS_RULES)
+  const rootCause = sectionBody(rules, '根因类别')
+  for (const row of ['| B | 实现偏离规划 |', '| C1 | 规划留白 |', '| C2 | 规划缺陷 |', '| C3 | 规划文字错误 |']) {
+    assert.ok(rootCause.includes(row), `缺少类别判据：${row}`)
+  }
+  assert.match(rootCause, /建议修复[^\n]*\[根因 <类别>\]/)
+  assert.match(rootCause, /判据不确定时取 C2/)
+  assert.match(rootCause, /Standards[^\n]*A 代码质量[^\n]*不写根因前缀/)
+  assert.match(rootCause, /根因类别记录[^\n]*按 ID/)
+  assert.match(rootCause, /重跑[^\n]*保留[^\n]*移出 Findings 表/)
+  assert.match(rootCause, /状态只从 Finding 台账读取/)
+  assert.doesNotMatch(sectionBody(rules, '与既有阶段的职责去重'), /gate-policy\.md[^\n]*第 2 节/)
+  assert.doesNotMatch(sectionBody(rules, '裁决规则'), /由 quality 按问题中的文字修改/)
+})
+
+test('quality 根因类别：角色写前缀和记录，不要求回填规划', async () => {
+  const role = await read(SPEC_FIDELITY_ROLE)
+  assert.match(role, /dual-axis-review\.md`「根因类别」/)
+  assert.match(role, /建议修复[^\n]*\[根因 <类别>\]/)
+  assert.match(role, /根因类别记录[^\n]*重跑[^\n]*保留/)
+  assert.match(role, /修复代码 \/ 用户决定（C2）/)
+  assert.doesNotMatch(role, /必须回记|要么补进规划产物/)
+})
+
+test('quality 根因类别：C2 选项由双轴规则定义，Step 6 不写规划', async () => {
+  const rule = sectionBody(await read(DUAL_AXIS_RULES), '根因类别')
+  const step = sectionBody(await read(QUALITY_SKILL), '执行步骤').split('\n### Step 6')[1]
+  const command = await read(QUALITY_COMMAND)
+  for (const text of [step, command, await read(SPEC_FIDELITY_ROLE)]) {
+    assert.match(text, /dual-axis-review\.md`「根因类别」/)
+    assert.doesNotMatch(text, /\|\s*(?:B|C[123])\s*\|\s*(实现偏离规划|规划留白|规划缺陷|规划文字错误)/)
+  }
+  for (const text of [rule, step]) {
+    assert.match(text, /`risk accepted`、`收窄范围`、`改变技术决策`、`误报`/)
+    assert.match(text, /部分 Scenario[^\n]*推荐 `risk accepted`/)
+    assert.match(text, /全部 Scenario[^\n]*推荐 `收窄范围`/)
+    assert.match(text, /`改变技术决策` 不作为推荐项/)
+    assert.match(text, /无技术评审，只修改规划/)
+  }
+  assert.match(rule, /\| `收窄范围` \|[^\n]*\/opsx:update[^\n]*\| 不重走 \|/)
+  assert.match(rule, /\| `改变技术决策` \|[^\n]*\/opsx:update[^\n]*\|[^\n]*第 3 节[^\n]*受影响的维度/)
+  assert.doesNotMatch(rule, /定稿后处理开放 finding/)
+  assert.match(step, /补判或纠正[^\n]*按 ID[^\n]*类别记录/)
+  assert.match(step, /`\/opsx:update` 已[^\n]*拟改文字[^\n]*`closed`/)
+  assert.doesNotMatch(step, /`回会话处理`|\| `修复`，只改一处规划产物/)
+})
+
+test('quality 根因类别：C2 收窄范围后无需新基线即可核对闭环', async () => {
+  const rules = await read(DUAL_AXIS_RULES)
+  const scopeClosure = sectionBody(rules, '根因类别').split('\n### C2 收窄范围后的闭环\n')[1]
+  assert.ok(scopeClosure, '缺少 C2 收窄范围后的闭环规则')
+  assert.match(scopeClosure, /`open`[^\n]*C2[^\n]*按 ID[^\n]*`proposal\.md`「不做」/)
+  assert.match(scopeClosure, /规划中已移出[^\n]*保留部分不再引用[^\n]*`closed`/)
+  assert.match(scopeClosure, /闭环依据[^\n]*`proposal\.md:<行号>`[^\n]*不再询问/)
+  assert.match(scopeClosure, /保留[^\n]*根因类别记录[^\n]*移除[^\n]*Findings/)
+  assert.match(scopeClosure, /规格覆盖矩阵[^\n]*保留[^\n]*仍在范围内/)
+  assert.match(scopeClosure, /无法对应[^\n]*仍有引用[^\n]*保持 `open`[^\n]*不修改报告/)
+  assert.match(scopeClosure, /不修改规划[^\n]*不生成新基线/)
+
+  const skill = await read(QUALITY_SKILL)
+  const step = sectionBody(skill, '执行步骤').split('\n### Step 6')[1]
+  assert.match(step, /「无需新一轮」[^\n]*也执行[^\n]*不生成新基线/)
+  assert.match(step, /询问前[^\n]*「C2 收窄范围后的闭环」[^\n]*即使没有用户回答[^\n]*刷新汇总[^\n]*review/)
+  for (const text of [sectionBody(skill, '前置'), sectionBody(rules, '修复与重跑')]) {
+    assert.doesNotMatch(text, /无需新一轮[^\n]*报告保持不变/)
+  }
+})
+
+test('quality 根因类别：C2 收窄核对未通过时不能按拟改文字关闭', async () => {
+  const step = sectionBody(await read(QUALITY_SKILL), '执行步骤').split('\n### Step 6')[1]
+  const skips = step.split('**跳过**')[1].split('**分批与问题文本**')[0]
+  const textClosure = skips.split('\n').find(line => line.includes('拟改文字') && line.includes('`closed`'))
+  assert.ok(textClosure, '拟改文字一致时关闭的规则必须保留')
+  assert.match(textClosure, /^- 仅对已判定为非 C2 的 finding：[^\n]*`\/opsx:update` 已[^\n]*拟改文字[^\n]*`closed`/,
+    '按拟改文字关闭前必须已判定为非 C2')
+  assert.match(skips, /C2 收窄核对未通过[^\n]*保持 `open`[^\n]*不得按拟改文字关闭/)
 })
 
 test('quality 询问处理方式：托管中写出来源行与决策人的托管写法，并给出决策编号的查找规则', async () => {
@@ -940,6 +1022,43 @@ test('quality 询问处理方式：引用处口径一致，「无需新一轮」
 const GATE_SCRIPT = 'skills/openspec-technical-review/scripts/implementation-gate.mjs'
 /** 结论字段名，取自 design D1。 */
 const VERDICT_FIELDS = ['Verify-Verdict', 'Critical-Count']
+
+test('quality 根因类别：C1 实现决定写入切片证据，不回写规划', async () => {
+  const rules = await read('skills/openspec-apply-change/shared/slice-evidence.md')
+  // 规则内的 Markdown 模板也含同名标题，须连同表头一起核对。
+  const start = rules.indexOf('\n## 实现决定\n')
+  assert.ok(start >= 0, '缺少实现决定小节')
+  const decision = rules.slice(start).split('\n## 结果取值\n')[0]
+  assert.match(decision, /^\| finding ID \| 规划位置 \| 规划没写的内容 \| 实现的选择 \| 不冲突的依据 \|$/m)
+  assert.match(decision, /C1[^\n]*所属切片[^\n]*勾选/)
+  assert.match(decision, /不回写规划产物/)
+  assert.match(decision, /没有 C1 修复任务[^\n]*不写/)
+})
+
+test('quality 根因类别：verify 只对完整的 SPEC 接受记录记 WARNING', async () => {
+  for (const file of VERIFY_REPORT_FILES) {
+    const text = await read(file)
+    const reuse = text.split('**复用 Spec Fidelity 结论（')[1]?.split('5. **Verify Completeness**')[0]
+    assert.ok(reuse, `${file} 缺少复用规则`)
+    assert.match(reuse, /`risk-accepted`[^\n]*接受人、理由、触发阈值与来源行[^\n]*WARNING/)
+    assert.match(reuse, /写出[^\n]*SPEC[^\n]*接受记录的位置/)
+    assert.match(reuse, /不要求[^\n]*`design\.md`/)
+    assert.match(reuse, /缺少任一项[^\n]*仍按现行规则[^\n]*`design\.md`/)
+    assert.match(text, /方案选择一致性[\s\S]{0,480}完整的 SPEC 接受记录[^\n]*不记为不通过/)
+  }
+})
+
+test('quality 根因类别：完成清单按 ID 关联类别与状态，包含已移出的 C2', async () => {
+  const text = await read('skills/openspec-change-recap/shared/recap-format.md')
+  const rules = text.split('### Finding 状态的读法')[1]?.split('\n### ')[0]
+  assert.ok(rules, '缺少 Finding 状态的读法')
+  assert.match(rules, /根因类别记录[^\n]*按 ID[^\n]*Finding 台账/)
+  assert.match(rules, /`closed`[^\n]*移出 Findings 表[^\n]*仍列入/)
+  assert.match(rules, /没有类别记录[^\n]*前缀[^\n]*不推断/)
+  assert.match(rules, /规划缺陷，技术评审没有发现/)
+  assert.match(rules, /规划缺陷，变更没有运行技术评审/)
+  assert.match(rules, /没有 C2 finding[^\n]*不写/)
+})
 /** 写有结论字段的规则文本：verify 与 archive 的 skill 和命令副本、门禁口径、Phase 6 输出说明与流程文档。 */
 const VERDICT_FIELD_FILES = [
   ...VERIFY_REPORT_FILES,

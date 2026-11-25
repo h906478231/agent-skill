@@ -4,7 +4,7 @@
 
 ## 前置原则
 
-- 本阶段**只报告不改代码**。修复由主 agent 回 `tasks.md` 加勾选项，或回 `design.md` 协调设计后再做。
+- 本阶段**只报告，不改代码或规划**。主 agent 按根因类别处理 finding；需改代码时在 `tasks.md` 加勾选项，需改规划时只提示 `/opsx:update`。
 - 评审对象是主 agent 在 prompt 中给出的**固定基线 diff** 与变更 artifacts（`proposal.md`、`design.md`、`specs/**`、`tasks.md`、`evidence/`）。基线带 `Change Head` 时，固定基线 diff 为 `git diff <Base Commit> <Change Head>`。不要自行换用别的提交范围。
 - **禁止读取** `review/standards.md` 与 `review/code-review-summary.md` —— 首轮与重跑都一样。重跑时只读取本轴上一轮的 `review/spec-fidelity.md` 做闭环验证。
 - **不评**代码风格、可读性、重复率（那是 Standards 的职责）；**不重新评判**方案优劣（那是编码前 Technical Review 的职责）。你只看「承诺的」与「实现的」是否一致。
@@ -22,7 +22,8 @@
 
 - finding ID 前缀：`SPEC-`
 - `位置` 必须是 `文件路径:行号`。偏离类 finding 指向实现代码行；**缺失类** finding（需求没实现、场景没覆盖）指向 spec / design / tasks 中该需求所在行。
-- **本轴闭环判据**：声称「已补实现」要能指出实现行与覆盖它的测试；声称「已回记 design」要能指出 `design.md` 的具体小节。
+- **根因前缀**：「建议修复」以 `[根因 <类别>]` 开头，判据和记录格式见 `<SKILL_DIR>/shared/dual-axis-review.md`「根因类别」。
+- **本轴闭环判据**：代码修复要能指出实现行与覆盖它的测试。规划由 `/opsx:update` 修改时，核对修改落点与该 finding 的对应关系；不要求修改规划才能关闭代码问题。
 - **Blocker 只能按 `<SKILL_DIR>/shared/dual-axis-review.md`「Blocker 判据（B1–B5）」判定**：触发场景以判据编号开头（如 `[B3]`），建议修复写出证明修复的测试或 Seam；不符合任一判据、或只在依赖故障 / 边界输入下出现的问题定为 Major。
 - 报告带 `## Finding 台账`，重跑时原地覆盖并累计台账（格式见同一文件「原地覆盖与 Finding 台账」）。
 - **第 2 轮起只报告 Blocker 与 Major**：`Delta Files` 中新发现的 Minor 写进 `## 建议` 小节（列表项，不编 ID，不进台账），规则见同一文件「修复与重跑」。
@@ -44,11 +45,11 @@
 
 ### 4. 设计决策偏离
 
-对照 `design.md` 的 Decisions / 推荐方案，实现是否换了持久化、并发、接口、依赖、配置等决策，或引入了设计未提及的**新依赖 / 新表 / 新接口 / 新配置项**。偏离不等于错，但**必须回记 `design.md`**（涉及评审维度时按 `gate-policy.md` 判断是否重走门禁），否则下一轮评审与归档后的 spec 都会与真实实现脱节。
+对照 `design.md` 的 Decisions / 推荐方案，实现是否换了持久化、并发、接口、依赖、配置等决策，或引入了设计未提及的**新依赖 / 新表 / 新接口 / 新配置项**。按「根因类别」报告偏离，建议实现遵循已有规划；修复确需改变技术决策时，只报告规划缺陷与后果，由用户决定。
 
 ### 5. 范围外行为
 
-diff 中出现 proposal / specs 都没有要求的行为变化（顺手加的功能、改了无关接口的语义）。要么补进规划产物，要么撤销。
+diff 中出现 proposal / specs 都没有要求的行为变化（顺手加的功能、改了无关接口的语义）时，报告偏离并建议撤销该行为；不以补写规划作为闭环条件。
 
 ### 6. Seam 一致性
 
@@ -56,6 +57,6 @@ diff 中出现 proposal / specs 都没有要求的行为变化（顺手加的功
 
 ## 输出
 
-写入 `review/spec-fidelity.md`，结构按 `<SKILL_DIR>/shared/dual-axis-review.md` 的「原始报告骨架」：基线区块原样粘贴 → 上轮闭环验证（仅重跑） → Findings 表 → Finding 台账 → **规格覆盖矩阵**（`Requirement / Scenario | 实现位置 | 验证证据（测试或 evidence 文件） | 状态`） → **设计偏离清单**（`偏离项 | design 中有无 | 建议：回记 design / 撤销实现`） → **建议**（仅第 2 轮起） → 结论。
+写入 `review/spec-fidelity.md`，结构按 `<SKILL_DIR>/shared/dual-axis-review.md` 的「原始报告骨架」：基线区块原样粘贴 → 上轮闭环验证（仅重跑） → Findings 表 → Finding 台账 → **根因类别记录**（重跑时保留已有记录） → **规格覆盖矩阵**（`Requirement / Scenario | 实现位置 | 验证证据（测试或 evidence 文件） | 状态`） → **设计偏离清单**（`偏离项（含对应 SPEC ID） | design 中有无 | 建议：修复代码 / 用户决定（C2）`） → **建议**（仅第 2 轮起） → 结论。
 
 末尾结论行单独成行：`Spec Fidelity Review 结论：通过` / `有条件通过` / `打回`（三选一）。

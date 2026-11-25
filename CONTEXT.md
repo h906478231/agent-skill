@@ -155,3 +155,7 @@ _Avoid_: 签后计划台账、定稿改稿清单
 **Planning Change Tier（规划档位）**:
 定稿后规划修改的四种分类：措辞、条件落点、范围收窄、方案变更。用于决定是否重走技术评审，不是用于双轴评审的「修改档位」。
 _Avoid_: 规划修改等级、规划变动级别
+
+**Finding Root Cause Category（根因类别）**:
+质量评审按 finding 的成因选择处理路径的分类。Spec Fidelity 的 B、C1、C2、C3 写在「建议修复」列的前缀与报告的「根因类别记录」中；Standards 按 A 处理，不写前缀。判据见 `skills/openspec-code-quality/shared/dual-axis-review.md`「根因类别」。它不等于规划档位或修改档位，后两者分别描述规划修改和实现后修改。
+_Avoid_: 根因分级、根因档位

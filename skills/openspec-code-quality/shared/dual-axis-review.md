@@ -26,10 +26,53 @@
 
 | 阶段 | 审什么 | 与双轴的关系 |
 |------|--------|-------------|
-| Phase 3 Technical Review（`/opsx:review`） | 编码前 `design.md` 方案的架构 / 并发 / 性能 / 数据库 / 安全 | 双轴**不重审**方案。实现偏离了 design 决策由 Spec Fidelity 报告；是否要改 design 并重走门禁，按 `../openspec-technical-review/shared/gate-policy.md` 第 2 节判定 |
+| Phase 3 Technical Review（`/opsx:review`） | 编码前 `design.md` 方案的架构 / 并发 / 性能 / 数据库 / 安全 | 双轴**不重审**方案。以已定的规划为评审标准，报告实现偏离或规划缺陷；处理路径见下文「根因类别」。质量评审不修改已有规划内容 |
 | Phase 5.5 双轴评审（本规则） | 实现代码的工程质量 + 实现对规格的忠实度，逐行、带 `文件:行号` 定位 | — |
 | Sonar 扫描（`/opsx:quality` Step 5，项目配置时） | 本次修改行上的重复代码、认知复杂度、未使用代码、空 catch，以及质量门 | Standards 不评这些项（`shared/sonar-scan.md`「Standards 跳过的检查项」）；问题的修复走 `tasks.md` |
 | Phase 6 Verify（`/opsx:verify`） | 最终验收：勾选完整性、切片证据新鲜度、双轴裁决是否闭环、三维快速校验、人工核对清单 | Verify **不逐行复审**忠实度，只核对双轴汇总裁决与证据；需求、场景与设计偏离读取 `review/spec-fidelity.md` 的规格覆盖矩阵与设计偏离清单（复用条件见 `../openspec-verify-change/SKILL.md`「复用 Spec Fidelity 结论」）；Verify 发现的新偏离回到对应轴处置 |
+
+## 根因类别
+
+Spec Fidelity 的每条 finding 在「建议修复」列开头写 `[根因 <类别>]`；不新增列。「触发场景」列的 Blocker 判据前缀 `[B1]`–`[B5]` 不变。Standards 的 finding 按 A 代码质量处理，不写根因前缀。Spec Fidelity 不为「另一种做法也可行」写 finding。
+
+| 类别 | 根因 | 判据 |
+|---|---|---|
+| B | 实现偏离规划 | 规划写明了做法，实现没有照做 |
+| C1 | 规划留白 | 规划没写到该细节；只改代码就能修复，且不与已有规划冲突 |
+| C2 | 规划缺陷 | 修复所需的规划修改属于方案变更档 |
+| C3 | 规划文字错误 | 修复只需措辞档的规划修改，实现不需要改 |
+
+C2 与 C3 按 `../openspec-technical-review/shared/gate-policy.md` 第 5 节的规划档位判据区分；没有 `review-summary.md` 时也用同一判据。无法在 C1 与 C2 之间或 C2 与 C3 之间确定时，判据不确定时取 C2，不把尚未评审的规划修改带进实现。
+
+在 `review/spec-fidelity.md` 的 `## 根因类别记录` 中按 ID 为每个已分类的 SPEC finding 写一个列表项，例如 `- SPEC-02：[根因 C2]`。重跑覆盖报告时保留已有记录，即使对应条目已移出 Findings 表。用户纠正类别时更新同一 ID 的记录；若 Findings 表仍有该条目，同步更新前缀。状态只从 Finding 台账读取，不在列表中重复。旧报告的开放 finding 没有根因前缀时，Step 6 先按判据补判，再写出问题。
+
+开放的 Blocker 与 Major 均按类别询问（步骤见 `../SKILL.md`「Step 6」）：
+
+| 类别 | 选项 | 选择修复后的动作 |
+|---|---|---|
+| A、B、C1 | `修复`、`risk accepted`、`误报` | 在 `tasks.md` 新增未勾选的代码修复任务；C1 写明类别，完成时在所属切片证据写实现决定 |
+| C3 | `修复`、`risk accepted`、`误报` | 不写该条的处理结果，提示 `/opsx:update` 修改措辞 |
+| C2 | `risk accepted`、`收窄范围`、`改变技术决策`、`误报` | 不提供 `修复`；按下表处理 |
+
+| C2 选项 | 写入 | 重走技术评审 |
+|---|---|---|
+| `risk accepted` | 按 `gate-policy.md` 第 4 节在 `review/spec-fidelity.md` 写接受记录 | 不重走 |
+| `收窄范围` | quality 不写入；`/opsx:update` 移出对应需求、场景或任务，写入 proposal「不做」，登记为范围收窄 | 不重走 |
+| `改变技术决策` | quality 不写入；`/opsx:update` 修改 design 决策，登记为方案变更 | 按 `gate-policy.md` 第 3 节重走受影响的维度 |
+| `误报` | 按 `gate-policy.md` 第 4 节在 `review/spec-fidelity.md` 写驳回记录 | 不重走 |
+
+- C2 只使该 Requirement 的部分 Scenario 不成立时，推荐 `risk accepted`；使全部 Scenario 不成立时，推荐 `收窄范围`。
+- `改变技术决策` 不作为推荐项。选项说明按 `gate-policy.md` 第 3 节列出要重走的维度。没有 `review-summary.md` 时，说明写「无技术评审，只修改规划」；update 不写登记行。
+- 需要 `/opsx:update` 的选项不由 quality 修改规划或关闭 finding。写完同一批的其他回复后停止，提示用户运行 `/opsx:update`。选择「收窄范围」时，在提示中写明 finding ID 与要移出的需求、场景或任务，供 update 写入 `proposal.md`「不做」。
+
+### C2 收窄范围后的闭环
+
+1. 对状态为 `open` 的 C2 finding，按 ID 查 `proposal.md`「不做」中的收窄记录，核对记录中的需求、场景或任务与该 finding 一致。不把用户选了「收窄范围」当成已移出的证据。
+2. 核对对应内容在当前规划中已移出，且保留部分不再引用该内容，才把 Finding 台账中的该条标为 `closed`。闭环轮次写本轮轮次；没有开启新一轮时沿用当前轮次。闭环依据写 `proposal.md:<行号>`，指向带该 ID 的收窄记录；不再询问该条。
+3. 保留按 ID 写的根因类别记录；移除 Findings 表中该 ID 的行。从规格覆盖矩阵移除已出范围的行，或更新受影响的行以保留仍在范围内的部分。未受影响的行不改。设计偏离清单只移除已出范围的对应内容。
+4. 收窄记录缺失或无法对应、内容未移出、保留部分仍有引用，或该 finding 仍有影响范围内的内容时，保持 `open`，不修改报告中该条的状态或覆盖行，按 Step 6 的通用规则决定是否询问。
+
+这项核对只读当前规划，可在「无需新一轮」的路径执行。quality 不修改规划，也不生成新基线。
 
 ## 固定基线
 
@@ -191,9 +234,9 @@ Code Review Verdict: BLOCKED
 | 两份原始报告齐全、基线一致、finding 均可定位，且两轴都没有未闭环 Blocker | `PASSED` |
 
 - 原始报告缺失、基线不一致、finding 无法定位或前缀与轴不符，说明**评审本身不完整**，不得给出 `PASSED`，补齐后重跑。
-- **未闭环的 Blocker 与 Major 由用户决定处理方式**：quality 收尾时用 `AskUserQuestion` 逐条询问 `修复` / `risk accepted` / `误报`，裁决为 `PASSED` 时也询问；Minor 不询问（步骤见 `../SKILL.md`「Step 6」）。选 `修复` 才新增任务或修改规划产物，选另外两项时按下文留痕，不改代码，不开新一轮。
+- **未闭环的 Blocker 与 Major 由用户决定处理方式**：quality 收尾时用 `AskUserQuestion` 按「根因类别」逐条询问，裁决为 `PASSED` 时也询问；Minor 不询问（步骤见 `../SKILL.md`「Step 6」）。quality 不改已有规划内容；规划修改只走 `/opsx:update`。
 - 「有条件通过」的每个条件必须对应 `tasks.md` 的一个勾选项，或者（只需修改规划产物时）对应该产物的 `<文件>:<行号>`，或者已记为 risk accepted、误报；都没有时视同 Blocker（沿用 `../openspec-technical-review/shared/gate-policy.md`）。
-- **条件的来源**：条件只能来自 Major，或来自只需修改规划产物的 Minor（经 `/opsx:update` 修改，或用户在 quality 的询问中选 `修复` 后由 quality 按问题中的文字修改一处；都不改变实现指纹，不触发新一轮）。要改代码才能修复的 Minor 不列为条件，只有这类 Minor 时结论写「通过」。这类 Minor 保持 `open`，不阻断归档，由完成清单的「没做与遗留」列出；用户决定修复时，按「修复与重跑」新增任务再做。
+- **条件的来源**：条件只能来自 Major，或来自只需修改规划产物的 Minor（经 `/opsx:update` 修改，不改变实现指纹）。要改代码才能修复的 Minor 不列为条件，只有这类 Minor 时结论写「通过」。这类 Minor 保持 `open`，不阻断归档，由完成清单的「没做与遗留」列出；用户决定修复时，按「修复与重跑」新增任务再做。
 - 误报与 risk accepted 按 `gate-policy.md` 第 4 节在**对应轴的原始报告**里具名留痕，并把该 finding 的闭环状态改为 `false-positive` / `risk-accepted`（保留该行）。驳回人、接受人由 agent 按用户对该 finding ID 的回复写入，记录末尾加一行 `> 来源：AskUserQuestion，交互会话`；用户名取项目的 `git config user.name`。
 - **任一轴未闭环 Blocker 未清零时不得 `/opsx:archive`**。
 
@@ -222,8 +265,8 @@ node <GATE> review <changeRoot>
 ## 修复与重跑
 
 - 修复动作回 `tasks.md` 新增勾选项再做。不在未勾选任务内进行的修改（门禁外提交、评审后的补日志或重构）按档位登记到 `tasks.md` 的 `## 实现后修改登记`，`行为` 档位同时新增任务（规则见 `../openspec-apply-change/shared/post-implementation-changes.md`；门禁外提交的闭环要求见 `closed-loop-verification.md`「实现后双轴评审的差异」）。
-- **只有注释差异时不开新一轮**：`node <GATE> classify <changeRoot> --from <上一轮 Fingerprint>` 的 `other` 为空时，输出「无需新一轮」，不生成新基线，三份报告保持不变；仍询问未闭环问题的处理方式（`../SKILL.md`「Step 6」）。
-- **只改测试时不开新一轮**：同一命令的 `unregistered` 为空、`registered` 全部为 `仅测试` 时，同样输出「无需新一轮」，不生成新基线，仍询问未闭环问题的处理方式。测试不改变生产代码的行为，Spec Fidelity 的结论不变；断言的修改与删除由 `/opsx:verify` 对照登记行核对。
+- **实现未变或只有注释差异时不开新一轮**：`node <GATE> classify <changeRoot> --from <上一轮 Fingerprint>` 的 `other` 为空时，输出「无需新一轮」，不生成新基线；在 `../SKILL.md`「Step 6」核对闭环，再询问剩余开放问题。
+- **只改测试时不开新一轮**：同一命令的 `unregistered` 为空、`registered` 全部为 `仅测试` 时，同样输出「无需新一轮」，不生成新基线，按 Step 6 核对和询问。测试不改变生产代码的行为，不为测试改动重评 Spec Fidelity；断言的修改与删除由 `/opsx:verify` 对照登记行核对。
 - **等价增量轮只跑 Standards**：同一命令的 `unregistered` 为空、`registered` 全部为 `等价` 或 `仅测试`、且至少有一个 `等价` 时，本轮只重跑 Standards，Spec Fidelity 沿用：
   - `review/spec-fidelity.md` 不修改，保留上一轮的基线区块；
   - Standards 报告与汇总使用新的增量基线，汇总写 `- Carried Axis: spec-fidelity`（格式见「汇总报告」）；
