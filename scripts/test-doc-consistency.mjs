@@ -108,6 +108,150 @@ function fencedBlock(markdown, firstLine) {
   return match[1]
 }
 
+const REVIEW_RULES = 'skills/openspec-technical-review/shared'
+const PLANNING_TIERS = '定稿与签字后修改'
+const PLANNING_ROW = '| 序号 | 日期 | 轮次 | 文件:行号 | 关联 | 规划档位 | 说明 |'
+const TIER_TABLE = '| 规划档位 | 判据 |'
+
+/** 只读取事实源指定小节，不让其他章节中的同名词满足断言。 */
+function planningTierPolicy(markdown) {
+  const section = markdown.split(`## 5. ${PLANNING_TIERS}\n`)[1]?.split('\n## ')[0]
+  assert.ok(section, `第 5 节缺少「${PLANNING_TIERS}」`)
+  return section
+}
+
+test('规划档位：第 5 节定义四档、登记表与任务内容 SHA-256', async () => {
+  const section = planningTierPolicy(await read(`${REVIEW_RULES}/gate-policy.md`))
+  assert.ok(section.includes(PLANNING_ROW))
+  const tiers = firstRun(section, TIER_TABLE, '|').split('\n').slice(1).map(row => row.split('|')[1].trim())
+  assert.deepEqual(tiers, ['措辞', '条件落点', '范围收窄', '方案变更'])
+  assert.match(section, /新增或删除的规划文件按已改变处理/)
+  assert.match(section, /任务内容 SHA-256/)
+  assert.match(section, /首个非空行[^\n]*基线任务数/)
+  assert.match(section, /顶层任务项[^\n]*`- \[x\] `[^\n]*`- \[ \] `/)
+  assert.match(section, /代码块中的示例[^\n]*原样保留/)
+})
+
+test('规划比较：apply 先查方案变更，并对已登记的差异请用户确认', async () => {
+  const gate = await read(`${REVIEW_RULES}/apply-gate-check.md`)
+  const section = gate.split('## 比较规划输入版本（签字校验通过后）\n')[1]?.split('\n## ')[0]
+  assert.ok(section, '缺少规划输入比较小节')
+  assert.match(section, /gate-policy\.md` 第 5 节/)
+  assert.doesNotMatch(section, /\| 规划档位 \| 判据 \|/)
+  assert.match(section, /不是逐个文件的 SHA-256[^\n]*停止/)
+  assert.match(section, /没有任务内容 SHA-256[^\n]*原始 SHA-256/)
+  assert.match(section, /AskUserQuestion[^\n]*请用户确认/)
+  const stop = section.indexOf('有方案变更行时停止')
+  const allow = section.indexOf('均未改变时放行')
+  assert.ok(stop >= 0, '缺少方案变更停止步骤')
+  assert.ok(allow >= 0, '缺少文件未改变时的放行步骤')
+  assert.ok(stop < allow, '应先判断方案变更，再判断文件未改变是否放行')
+})
+
+test('规划比较：同轮登记、已核对版本与确认返回后的复核', async () => {
+  const policy = await read(`${REVIEW_RULES}/gate-policy.md`)
+  const gate = await read(`${REVIEW_RULES}/apply-gate-check.md`)
+  assert.match(policy, /分发前[^\n]*固定[^\n]*登记基线序号/)
+  assert.match(policy, /汇总[^\n]*转录[^\n]*不发布可签字裁决/)
+  assert.match(policy, /全部差异[^\n]*逐处[^\n]*已核对版本/)
+  assert.match(policy.split('## 6. 收敛检查')[1], /关闭 Blocker[^\n]*重算裁决[^\n]*已核对版本/)
+  assert.match(policy.split('## 6. 收敛检查')[1], /首次[^\n]*READY_FOR_HUMAN_APPROVAL[^\n]*定稿轮/)
+  assert.match(gate, /序号大于登记基线序号[^\n]*同轮/)
+  assert.match(gate, /非零基线序号[^\n]*停止/)
+  assert.match(gate, /旧汇总[^\n]*不能确认的同轮行/)
+  assert.match(gate, /文件集合[^\n]*哈希[^\n]*登记最后序号[^\n]*已核对版本/)
+  assert.match(gate, /确认返回后[^\n]*首次写入前[^\n]*重新读取/)
+  assert.match(gate, /正文[^\n]*登记[^\n]*签字[^\n]*裁决[^\n]*停止/)
+  assert.match(gate, /仅允许[^\n]*任务进度/)
+  for (const file of ['skills/openspec-apply-change/SKILL.md', 'claude/commands/opsx/apply.md']) {
+    const text = await read(file)
+    assert.match(text, /apply-gate-check\.md[^\n]*确认返回后[^\n]*首次写入前/, file)
+  }
+})
+
+test('规划登记：update 引用第 5 节，只为方案变更标记待评审', async () => {
+  for (const file of ['skills/openspec-update-change/SKILL.md', 'claude/commands/opsx/update.md']) {
+    const text = await read(file)
+    assert.ok(text.includes('gate-policy.md` 第 5 节'), file)
+    assert.ok(!text.includes(TIER_TABLE), file)
+    assert.ok(/只在[^\n]*方案变更[^\n]*规划更新内容仍待技术评审和人工确认/.test(text), file)
+  }
+})
+
+test('规划登记：verify 每次核对本次登记，不沿用旧报告', async () => {
+  for (const file of ['skills/openspec-verify-change/SKILL.md', 'claude/commands/opsx/verify.md']) {
+    const text = await read(file)
+    const mode = text.split('**增量复核（')[1]?.split('**复用 Spec Fidelity')[0]
+    assert.ok(mode, file)
+    const rule = mode.split('\n').find(line => line.startsWith('   - **核对签字后规划修改登记**'))
+    assert.ok(rule, `${file} 缺少独立于第 9 步的登记核对`)
+    for (const term of ['增量', '全量', '只改规划', 'PASS', 'CRITICAL', '不沿用', 'phase6-verification.md']) {
+      assert.ok(rule.includes(term), `${file} 缺少：${term}`)
+    }
+    assert.doesNotMatch(text.split(/^9\. /m)[1] ?? '', /核对签字后规划修改的档位/)
+  }
+})
+
+test('规划登记：verify 核对条件原文与收窄范围，错误记 CRITICAL', async () => {
+  const text = await read(`${REVIEW_RULES}/phase6-verification.md`)
+  assert.ok(text.includes('gate-policy.md` 第 5 节'))
+  assert.ok(!text.includes(TIER_TABLE))
+  for (const term of ['条件原文', '涉及代码模块', '保留的 design、specs、tasks', 'CRITICAL', '登记序号', '文件:行号']) {
+    assert.ok(text.includes(term), `verify 缺少：${term}`)
+  }
+})
+
+test('规划登记：verify 按条件落点的两种来源核对', async () => {
+  const text = await read(`${REVIEW_RULES}/phase6-verification.md`)
+  const section = text.split('## 核对签字后规划修改的档位\n')[1]?.split('\n## ')[0]
+  assert.ok(section)
+  assert.match(section, /汇总条件[^\n]*条件原文/)
+  assert.match(section, /在实现中修复[^\n]*用户选择[^\n]*finding[^\n]*任务内容/)
+  assert.match(section, /无独立条件编号[^\n]*不因此判为不合规/)
+  assert.match(section, /超出用户选择[^\n]*CRITICAL/)
+})
+
+test('规划登记：统一语言区分定稿轮、签字后规划修改登记与规划档位', async () => {
+  const text = await read('CONTEXT.md')
+  for (const term of ['定稿轮', '签字后规划修改登记', '规划档位', '修改档位']) {
+    const section = text.split(`（${term}）**:`)[1]?.split('\n\n')[0]
+    assert.ok(section?.includes('_Avoid_:'), `术语缺少定义或禁用别名：${term}`)
+  }
+})
+
+test('定稿后处理：Step 3 给出四种处理，改变技术决策不推荐', async () => {
+  const text = await read('skills/openspec-technical-review/SKILL.md')
+  const step = text.split('### Step 3')[1].split('## 重走门禁')[0]
+  assert.ok(step.includes('gate-policy.md` 第 5 节'))
+  for (const pattern of [
+    /在实现中修复[^\n]*不重走/,
+    /risk accepted[^\n]*不重走/,
+    /移到后续变更[^\n]*不重走/,
+    /改变技术决策[^\n]*重走：[^\n]*不作为推荐项/,
+  ]) assert.ok(pattern.test(step), `Step 3 缺少处理或重走范围：${pattern}`)
+})
+
+test('收敛检查：第 6 节限定触发条件与关闭 Blocker 的前提', async () => {
+  const text = await read(`${REVIEW_RULES}/gate-policy.md`)
+  const section = text.split('## 6. 收敛检查')[1]
+  assert.ok(section)
+  assert.ok(section.includes('| 轮次 | 纳入维度数 | 新增 Blocker | 新增 Major | 开放 Blocker |'))
+  assert.match(section, /第 3 轮起/)
+  assert.match(section, /BLOCKED[^\n]*不少于上一轮/)
+  assert.match(section, /只计本轮的新编号/)
+  assert.match(section, /「位置」[^\n]*「涉及代码模块」[^\n]*保留的 design、specs、tasks/)
+  assert.ok(section.includes('范围收窄 #<登记序号>，已移除：<位置>'))
+})
+
+test('收敛检查：Step 3 给出三个选项及重走范围', async () => {
+  const text = await read('skills/openspec-technical-review/SKILL.md')
+  const step = text.split('### Step 3')[1].split('## 重走门禁')[0]
+  assert.ok(step.includes('gate-policy.md` 第 6 节'))
+  for (const pattern of [/收窄范围[^\n]*不重走/, /risk accepted[^\n]*不重走/, /继续修复[^\n]*重走：/]) {
+    assert.ok(pattern.test(step), `Step 3 缺少收敛选项：${pattern}`)
+  }
+})
+
 test('签字读取规则：gate-policy 与 apply 校验均写明行首键名、最后一行，命令列出全部匹配行', async () => {
   for (const file of [
     'skills/openspec-technical-review/shared/gate-policy.md',
@@ -126,8 +270,8 @@ test('签字读取规则：gate-policy 与 apply 校验均写明行首键名、�
 test('签字写入规则：人工确认区在最后，正文不写行首引用，不生成独立签字示例', async () => {
   for (const [file, item] of [
     ['skills/openspec-technical-review/shared/gate-policy.md', '- 写入规则：'],
-    ['skills/openspec-technical-review/SKILL.md', '16. **人工确认区**'],
-    ['skills/openspec-technical-review/technical-review-gate.workflow.js', '16) 人工确认区'],
+    ['skills/openspec-technical-review/SKILL.md', '**人工确认区**：'],
+    ['skills/openspec-technical-review/technical-review-gate.workflow.js', ') 人工确认区：'],
   ]) {
     const line = (await read(file)).split('\n').find(value => value.includes(item))
     assert.ok(line, `${file} 缺少人工确认区写入规则`)

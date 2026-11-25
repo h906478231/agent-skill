@@ -30,6 +30,17 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 
 结果写进 `verification.md` 的「评审条件」小节（`条件 | 映射任务或行号 | 状态`），archive 读取该小节。没有 `review-summary.md` 时写「不适用：该变更未经技术评审」。
 
+## 核对签字后规划修改的档位
+
+读取 `review-summary.md` 的「定稿与签字后修改」登记表。按 `gate-policy.md` 第 5 节逐行核对措辞、条件落点、范围收窄，检查登记的文件位置与实际内容。核对范围收窄时检查保留部分的引用。若范围收窄行关闭了 Blocker，再按第 6 节确认其「位置」与「涉及代码模块」所列内容均已从保留的 design、specs、tasks 移除。
+
+条件落点按两种来源核对：
+
+- **汇总条件**：按登记的条件编号读取汇总条件原文，检查规划内容没有超出原文。
+- **在实现中修复**：核对具名的用户选择、关联 finding 与任务内容；实现后核对对应实现及证据。只要与用户选择及 finding 匹配，无独立条件编号也不因此判为不合规。超出用户选择或无法找到对应依据时记 CRITICAL。
+
+不符合判据时，在 `verification.md` 的 CRITICAL 清单逐行写出登记序号、`文件:行号` 和不符合的判据。例如「超出条件原文」，或「仍引用已移除的场景」。CRITICAL 阻断归档；按 `gate-policy.md` 第 3 节重走受影响维度后再 verify。没有登记表时写明不适用，不补造记录。
+
 ## 切片证据与双轴评审核对
 
 `/opsx:verify` 在三维校验中运行 `scripts/implementation-gate.mjs` 的 `evidence` 与 `review` 子命令：缺失 / 不完整 / 失败 / 过期的切片证据与双轴评审 `BLOCKED` 均为 CRITICAL，不适用时写明理由。处理口径的唯一事实源见 `implementation-gate-check.md`，此处不重复。
@@ -72,7 +83,7 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 | 修复过程中**改了技术方案**（换存储、改并发模型、改表结构） | **是**，回 `design.md` 更新后按牵连关系重走对应维度 |
 | 发现设计缺陷但决定下个变更再改 | 否，记录为 risk accepted 并在 `review-summary.md` 留痕 |
 
-**判据与 Phase 3 一致：`design.md` 变了没有。** 代码改了但设计没变 → 不重走门禁。
+**判据与 Phase 3 一致。** 定稿后的规划修改按 `gate-policy.md` 第 5 节确定规划档位；方案变更按第 3 节重走受影响维度。代码修复没有改变技术方案时不重走门禁。
 
 ## 项目自有的验证动作
 

@@ -16,9 +16,13 @@ const Workflow = Object.getPrototypeOf(async function () {}).constructor
 /** 运行一次 workflow，返回结果、重跑的维度标签与汇总 prompt。 */
 async function run(args) {
   const labels = []
+  const reviewPrompts = []
+  const baseline = { proposal: '固定方案正文', design: '固定设计正文', originalHashes: { 'proposal.md': 'a'.repeat(64), 'design.md': 'b'.repeat(64), 'tasks.md': 'c'.repeat(64) }, tasksHash: 'd'.repeat(64), registrationBase: 4 }
   let summaryPrompt = ''
   const agent = async (prompt, { label }) => {
     labels.push(label)
+    if (label === 'capture-input') return baseline
+    if (label.startsWith('review:')) reviewPrompts.push(prompt)
     if (label === 'summarize') {
       summaryPrompt = prompt
       return 'ok'
@@ -28,7 +32,7 @@ async function run(args) {
   const parallel = fns => Promise.all(fns.map(fn => fn()))
   const workflow = new Workflow('args', 'agent', 'parallel', 'phase', 'log', body)
   const result = await workflow(args, agent, parallel, () => {}, () => {})
-  return { result, reviewed: labels.filter(l => l.startsWith('review:')).map(l => l.slice(7)), summaryPrompt }
+  return { result, reviewed: labels.filter(l => l.startsWith('review:')).map(l => l.slice(7)), summaryPrompt, labels, reviewPrompts }
 }
 
 test('缺 change 直接报错，不回落到演示变更', async () => {
@@ -82,4 +86,36 @@ test('MVP 只跑映射维度，其余不适用；不得同时传 level', async (
   assert.match(summaryPrompt, /Gate-Level: MVP/)
   await assert.rejects(run({ change: 'demo', tier: 'mvp' }), /必须传 roles/)
   await assert.rejects(run({ change: 'demo', tier: 'mvp', level: 'L2', roles: ['security'] }), /不使用 L 等级/)
+})
+
+test('评审汇总写定稿轮、登记表与两种任务 SHA-256', async () => {
+  const { summaryPrompt } = await run({ change: 'demo', level: 'L1' })
+  for (const term of ['定稿与签字后修改', '定稿轮：R<n>', '登记表', '原始 SHA-256', '任务内容 SHA-256']) {
+    assert.ok(summaryPrompt.includes(term), `汇总提示词缺少：${term}`)
+  }
+  assert.doesNotMatch(summaryPrompt, /git rev-parse HEAD/)
+  assert.ok(summaryPrompt.indexOf('定稿与签字后修改') < summaryPrompt.indexOf('人工确认区'))
+})
+
+test('评审汇总仅从第 3 轮起写五列收敛检查', async () => {
+  const { summaryPrompt } = await run({ change: 'demo', level: 'L1' })
+  assert.match(summaryPrompt, /收敛检查[^\n]*第 3 轮起/)
+  assert.match(summaryPrompt, /轮次 \| 纳入维度数 \| 新增 Blocker \| 新增 Major \| 开放 Blocker/)
+  assert.match(summaryPrompt, /第 1、2 轮不写/)
+  assert.match(summaryPrompt, /gate-policy\.md 第 6 节/)
+  assert.ok(summaryPrompt.indexOf('收敛检查') < summaryPrompt.indexOf('人工确认区'))
+})
+
+test('评审分发与汇总使用同一输入及登记基线', async () => {
+  const { labels, reviewPrompts, summaryPrompt } = await run({ change: 'demo', level: 'L1' })
+  assert.equal(labels[0], 'capture-input')
+  for (const prompt of reviewPrompts) {
+    assert.match(prompt, /固定方案正文/)
+    assert.match(prompt, /固定设计正文/)
+    assert.match(prompt, /不重新读取/)
+  }
+  assert.match(summaryPrompt, /登记基线序号/)
+  assert.match(summaryPrompt, /"registrationBase":4/)
+  assert.match(summaryPrompt, /转录[^\n]*不[^\n]*替换/)
+  assert.match(summaryPrompt, /输入[^\n]*不一致[^\n]*BLOCKED/)
 })
