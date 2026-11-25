@@ -80,7 +80,9 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    `复用` 与 `部分复用` 时，第 5 步 Spec Coverage、第 6 步与第 7 步 Design Adherence 读取 `spec-fidelity.md`（部分复用中自己核对的行除外），严重级别仍按本 skill 的规则：
    - 规格覆盖矩阵中 Requirement 行没有实现位置 → CRITICAL；有实现位置，但状态写明部分实现或与需求不符 → WARNING。
    - Scenario 行没有验证证据 → WARNING。
-   - 设计偏离清单中的行：`design.md` 已写入该项，或对应的 SPEC finding 已闭环，才算处理完；其他行 → WARNING。
+   - 设计偏离清单中的行：`design.md` 已写入该项，或对应的 SPEC finding 已修复或判为误报，才算处理完；其他行 → WARNING。`risk-accepted` 不直接视为闭环，按下列规则核对留痕。
+
+   **SPEC 偏离的接受记录**（也适用于第 9 步人工核对）：按偏离对应的 SPEC ID 查 `review/spec-fidelity.md` 的台账与接受记录。状态为 `risk-accepted` 且记录按 `gate-policy.md` 第 4 节写有接受人、理由、触发阈值与来源行时，记 WARNING，不记 CRITICAL。写出 SPEC ID 与接受记录的位置，不要求再写入 `design.md`。缺少任一项时，仍按现行规则核对偏离是否写入 `design.md`。此规则不改变技术评审与 Sonar 的核对。
 
    勾选统计、切片证据与双轴评审闭环、STE 检查、变更模型检查、Code Pattern Consistency 与第 9 步的人工核对不受本项影响，照常执行。
 
@@ -236,7 +238,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    以下人工核对清单的**规则与条目以 skill `openspec-technical-review` 的 `../openspec-technical-review/shared/phase6-verification.md` 为唯一事实源**（本文件不复制条目）：
    - **回溯第一性原理**：实现是否解决 `proposal.md` 的底层问题；是否引入未识别的新约束
-   - **方案选择一致性**：实现是否与 `design.md` 推荐方案一致；偏离是否已回填 `design.md`
+   - **方案选择一致性**：实现是否与 `design.md` 推荐方案一致；仍存在的偏离是否已有留痕。按第 4 步核对：有完整的 SPEC 接受记录时只记 WARNING，不记为不通过，也不要求回填 `design.md`；否则照原规则核对。
    - **评审条件闭环**：直接读取 `review-summary.md` 的「有条件通过」条件，逐条核对：映射到任务时，任务已勾选、实现存在；映射到 `<文件>:<行号>` 时，该行存在并写明了条件。结果写进报告「评审条件」小节。不运行 `/opsx:overview`
    - **设计阶段可测试性 / 运维成本**：关键路径测试覆盖、mock 可行性、新增的运维成本与监控告警
 
