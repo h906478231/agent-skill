@@ -80,9 +80,11 @@ bash migrate-skills.sh
 bash migrate-skills.sh --check
 ```
 
-实际文件集中在 `~/.tigger/{skills,commands,agents/<tool>,workflows}`。`~/.agents/skills` 整目录链接到 `~/.tigger/skills`，Codex 经该入口读取全部普通 skill。Claude Code 与 opencode 使用逐项链接；新增普通 skill 后再次运行脚本补齐入口。
+实际文件集中在 `~/.tigger/{skills,commands,agents/claude,workflows}`。脚本只维护两处工具入口：`~/.agents/skills` 整目录链接到 `~/.tigger/skills`；`~/.claude` 下的 skills、commands、agents、workflows 使用逐项链接。新增普通 skill 后再次运行脚本补齐入口。agent 只发布 Claude Code 格式的定义，opencode 与 Codex 格式的定义跳过并逐个输出说明。
 
-首次迁移会合并其他目录的同名 skill，并把独有 skill 迁入后在原入口建链接。首次及后续同步都禁止旧版覆盖新版：例如本仓 `flows-role-comment` v7 不覆盖已安装 v8。版本或来源无法判定的差异会阻断写入；按输出创建 JSON 对象，将目标相对路径映射到本次候选来源的绝对路径，然后运行：
+opencode 与 Codex 经这两处读取普通 skill：Codex 读取 `~/.agents/skills`，opencode 自动加载 `~/.claude/skills` 与 `~/.agents/skills`。设置 `OPENCODE_DISABLE_EXTERNAL_SKILLS`、`OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` 或 `OPENCODE_DISABLE_CLAUDE_CODE` 后，opencode 看不到这些 skill。脚本不再创建、更新或删除 `~/.config/opencode` 与 `~/.codex` 下的链接，也不再更新 `~/.tigger/agents/opencode` 与 `~/.tigger/agents/codex`。早期同步在这些目录中创建的链接保持原状，需要时人工删除；删除前后 `--check` 的结果相同。只从主检出运行脚本：`.claude/worktrees` 中的旧检出可能带旧版脚本，运行后会重新创建这些链接。决策见 [ADR-0018](docs/adr/0018-tigger-entries-claude-and-agents-only.md)。
+
+首次迁移只扫描 `~/.cc-switch`、`~/.agents` 与 `~/.claude`：合并同名 skill，把独有 skill 迁入后在原入口建链接。`~/.cc-switch` 只作为来源读取，其中的条目不改为链接，也不移入备份。首次迁移不扫描 `~/.codex` 与 `~/.config/opencode`，也不读取或改写 Codex 配置。首次及后续同步都禁止旧版覆盖新版：例如本仓 `flows-role-comment` v7 不覆盖已安装 v8。版本或来源无法判定的差异会阻断写入；按输出创建 JSON 对象，将目标相对路径映射到本次候选来源的绝对路径，然后运行：
 
 ```bash
 bash migrate-skills.sh --migrate-legacy --dry-run --resolutions /absolute/path/resolutions.json

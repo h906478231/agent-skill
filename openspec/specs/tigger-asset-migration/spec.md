@@ -1,8 +1,13 @@
-## ADDED Requirements
+# tigger-asset-migration Specification
+
+## Purpose
+首次迁移：把 `~/.cc-switch`、`~/.agents`、`~/.claude` 中已安装的资产迁入 `~/.tigger`。迁移前生成来源与冲突清单，执行时校验路径与内容。迁移只切换两处入口，核验与回滚不依赖 cc-switch，卸载由验收部署文档约束。
+
+## Requirements
 
 ### Requirement: 迁移前生成来源与冲突清单
 
-迁移工具 MUST 枚举本仓当前受管资产与声明范围内的已安装资产。清单 MUST 包含原路径、解析后的实际路径、内容摘要、版本证据、候选目标和未解决冲突。首次迁移 MUST 以本仓当前文件为基础，包含受管范围内的未提交修改与新增项，不从 HEAD 导出。系统 MUST 合并同名 skill、迁入外部独有 skill，并遵守版本保护，不得用旧版覆盖新版。
+迁移工具 MUST 枚举本仓当前受管资产，以及 `~/.cc-switch`、`~/.agents`、`~/.claude` 中的已安装资产。迁移工具 MUST 不扫描 `~/.codex` 与 `~/.config/opencode`。清单 MUST 包含原路径、解析后的实际路径、内容摘要、版本证据、候选目标和未解决冲突。首次迁移 MUST 以本仓当前文件为基础，包含受管范围内的未提交修改与新增项，不从 HEAD 导出。系统 MUST 合并同名 skill、迁入外部独有 skill，并遵守版本保护，不得用旧版覆盖新版。
 
 #### Scenario: 以当前仓库内容为迁移基础
 - **WHEN** 用户从含未提交修改与新增受管资产的仓库运行一次性迁移预览
@@ -25,11 +30,17 @@
 - **AND** 同名 skill 的活动入口解析到 `~/.tigger` 中同一个目标
 
 #### Scenario: 其他目录独有 skill
-- **WHEN** 声明范围内的其他安装目录有本仓不存在的普通 skill
+- **WHEN** `~/.cc-switch`、`~/.agents` 或 `~/.claude` 有本仓不存在的普通 skill
 - **THEN** 系统将其实际内容迁入 `~/.tigger/skills`
-- **AND** 校验目标后，旧实体转入备份，原活动入口改为目标的软链接
+- **AND** 校验目标后，`~/.claude` 中的旧实体转入备份，原活动入口改为目标的软链接
+- **AND** `~/.cc-switch` 中的实体与链接保持原状
 - **AND** 经共享目录读取的入口由 `~/.agents/skills` 整目录链接承载
 - **AND** 该项不被记为本仓发布的资产
+
+#### Scenario: 不扫描其他工具目录
+- **WHEN** `~/.codex/skills` 或 `~/.config/opencode/skills` 有本仓不存在的普通 skill
+- **THEN** 首次迁移不把它列为候选
+- **AND** 系统不复制、不移动、不改写该项
 
 ### Requirement: 迁移执行受到路径与内容校验保护
 
@@ -52,35 +63,30 @@
 
 ### Requirement: 限定范围地切换入口和配置
 
-系统 MUST 先复制并验证目标，再切换入口。系统 MUST 保留仓库开发源，将旧安装实体转入备份并将原活动入口改为链接。系统 MUST 只删除已由新入口替代的 Codex 普通 skill 链接。系统 MUST 只移除指向本次旧副本的禁用配置，保留无关配置、注释与工具内置资产。
+系统 MUST 先复制并验证目标，再切换入口。系统 MUST 保留仓库开发源。系统 MUST 只切换 `~/.claude` 与 `~/.agents` 下的入口，将其中的旧安装实体转入备份，并将原活动入口改为链接。同步与首次迁移 MUST 不读取或改写 `~/.codex/config.toml`。系统 MUST 不删除 `~/.codex` 下的 skill 链接，MUST 不在 `~/.cc-switch` 中创建链接。
 
 #### Scenario: 切换技能与命令入口
 - **WHEN** 已复制内容与计划一致且冲突全部解决
 - **THEN** 系统将 `~/.agents/skills` 改为整个目录的链接
-- **AND** 系统切换清单中的技能、命令、workflow 和 agent 入口
-- **AND** 已替代的 Codex 普通 skill 链接被移除
+- **AND** 系统切换清单中 `~/.claude` 下的技能、命令、workflow 和 agent 入口
 - **AND** 旧安装实体在备份中可恢复，原活动入口统一使用链接，仓库开发源保留
 - **AND** 迁移不卸载 cc-switch
 
-#### Scenario: 只删除本次旧副本的禁用条目
-- **WHEN** Codex 配置同时禁用了迁移内旧副本和无关 skill
-- **THEN** 系统只移除迁移清单内旧副本的禁用条目
-- **AND** 无关 skill 的禁用设置、供应商配置和其余文本保持原状
-
-#### Scenario: 保留工具专用 agent
-- **WHEN** Claude Code 和 opencode 的同名 agent 有不同格式
-- **THEN** 系统在 `~/.tigger/agents` 保留各工具的定义
-- **AND** 工具入口仍指向对应版本
-- **AND** 系统不将一种工具的权限字段当作另一种工具的配置
+#### Scenario: 不改写 Codex 配置与旧根
+- **WHEN** Codex 配置禁用了迁移清单内的旧副本，且 `~/.codex/skills` 有指向旧副本的链接
+- **THEN** 系统不修改 `~/.codex/config.toml`
+- **AND** `~/.codex/skills` 中的链接与文件保持原状
+- **AND** `~/.cc-switch` 中的条目保持原状
 
 ### Requirement: 核验与回滚不依赖 cc-switch 运行
 
-系统 MUST 提供只读核验，检查清单完整性、链接实际目标、内容和旧路径残留。系统 MUST 保存迁移前的实体、入口与配置备份，并记录改写顺序。执行失败 MUST 尝试逆序恢复已改入口。回滚 MUST 校验迁移后变化，不得覆盖后续修改。
+系统 MUST 提供只读核验，检查清单完整性、链接实际目标、内容和旧路径残留。核验 MUST 只检查 `~/.claude` 与 `~/.agents` 下的入口。系统 MUST 保存迁移前的实体、入口与配置备份，并记录改写顺序。执行失败 MUST 尝试逆序恢复已改入口。回滚 MUST 校验迁移后变化，不得覆盖后续修改。回滚 MUST 接受本变更之前的运行记录登记的路径。
 
 #### Scenario: 完成后核验
 - **WHEN** 用户运行迁移核验
-- **THEN** 系统检查每个受管入口的实际目标与内容
-- **AND** 指向 cc-switch 的受管链接数量为 0 才返回成功
+- **THEN** 系统检查 `~/.claude` 与 `~/.agents` 下每个受管入口的实际目标与内容
+- **AND** 这两处指向 cc-switch 的链接数量为 0 才返回成功
+- **AND** 来源记录中两处以外的入口不参与核验
 - **AND** 输出区分文件核验和尚需实际工具执行的加载验收
 
 #### Scenario: 切换途中失败
@@ -94,6 +100,11 @@
 - **WHEN** 当前文件与本次切换完成时的记录不同
 - **THEN** 回滚报告冲突并保留用户修改
 - **AND** 不用整个旧 Codex 配置覆盖新配置
+
+#### Scenario: 回滚升级前的运行记录
+- **WHEN** 运行记录登记了 `~/.config/opencode`、`~/.codex` 或 `~/.cc-switch` 下的路径，或登记了 `~/.codex/config.toml`
+- **THEN** `--rollback` 按记录恢复这些路径
+- **AND** 遇到后续修改时，回滚报告冲突并保留用户修改
 
 ### Requirement: 卸载由验收部署文档约束
 

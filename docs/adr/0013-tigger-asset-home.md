@@ -1,6 +1,6 @@
 # ADR-0013: 用 ~/.tigger 保存实际资产，各工具通过软链接使用
 
-- 状态：已接受（用户决策已确认，迁移尚未执行）
+- 状态：已接受（用户决策已确认，迁移尚未执行）；第 3、4 条于 2026-11-26 被 [ADR-0018](0018-tigger-entries-claude-and-agents-only.md) 部分取代
 - 日期：2026-11-17
 - 决策者：用户在本次 explore 对话中确认
 - 关联变更：`openspec/changes/migrate-assets-to-tigger`

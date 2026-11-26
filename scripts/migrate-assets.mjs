@@ -14,6 +14,9 @@ const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const fail = message => { throw new Error(message) }
 const exists = p => { try { fs.lstatSync(p); return true } catch (e) { if (e.code === 'ENOENT') return false; throw e } }
 const within = (root, p) => p === root || p.startsWith(`${root}${path.sep}`)
+// 只维护这两处的工具入口。opencode 与 Codex 经它们读取普通 skill，其他目录中的已有链接保持原状（ADR-0018）。
+const ENTRY_ROOTS = ['.claude', '.agents']
+const managedEntry = (home, p) => ENTRY_ROOTS.some(root => within(path.join(home, root), p))
 const hash = value => crypto.createHash('sha256').update(value).digest('hex')
 // 仅复制资产已引用的配套文件，不把整个仓库、变更产物或缓存作为安装内容。
 const supportKey = key => /^(docs|scripts)\//.test(key) || ['README.md', 'CONTEXT.md', 'CLAUDE.md', 'AGENTS.md'].includes(key)
@@ -100,15 +103,17 @@ function options(args) {
 function help() {
   console.log(`用法: migrate-skills.sh [--dry-run] [--migrate-legacy | --check | --rollback <run-id>] [--resolutions <file>] [--expect-plan <fingerprint>]
 无模式参数       手动同步当前仓库到 ~/.tigger，保护较新版本并维护工具入口
---migrate-legacy  以当前仓库为基础合并已有安装。同名归并，独有资产迁入后建链接
+--migrate-legacy  以当前仓库为基础合并 ~/.cc-switch（只读）、~/.agents、~/.claude 的已有安装。同名归并，独有资产迁入后建链接
 --dry-run         只读预览来源、版本、冲突、备份和入口操作，不创建锁或目录
 --resolutions     JSON 对象：目标相对路径到本次候选来源绝对路径。不能绕过防降级
 --expect-plan     正式首次迁移必填，使用 --migrate-legacy --dry-run 输出的计划指纹
 --check           核验存储与入口，不依赖 cc-switch 运行
 --rollback        按 ~/.tigger/.backups/<run-id>/record.json 恢复本次修改
 --help            显示帮助
-实际目录: ~/.tigger/{skills,commands,agents/<tool>,workflows}
-共享入口: ~/.agents/skills -> ~/.tigger/skills；Claude 与 opencode 使用逐项链接。
+实际目录: ~/.tigger/{skills,commands,agents/claude,workflows}
+工具入口: ~/.agents/skills -> ~/.tigger/skills；~/.claude 的 skills、commands、agents、workflows 使用逐项链接。
+只维护这两处入口，只发布 Claude Code 格式的 agent。opencode 与 Codex 经这两处读取 skill；
+~/.config/opencode 与 ~/.codex 中的已有链接不处理，需要时人工删除。
 内置 .system、插件、认证和无关设置保留。工作区修改仅在手动运行时同步。
 迁移前退出 cc-switch 和资产更新进程；供应商备份与卸载由用户完成。`)
 }
@@ -151,43 +156,6 @@ function historical(candidate, repositorySource) {
   } catch { return false }
 }
 
-/** 精确移除相关 skills.config 表；保留其他表、注释、空白及供应商文本。 */
-function codexConfig(text, oldPaths) {
-  // 多行字符串可能包含伪表头；此时拒绝猜测，避免改变无关 TOML。
-  if (/"""|'''/.test(text)) fail('Codex 配置包含多行字符串，无法定位表边界；请手动处理对应旧副本禁用表')
-  const lines = text.match(/[^\n]*\n|[^\n]+$/g) || []
-  const remove = new Set()
-  for (let i = 0; i < lines.length; i++) {
-    if (!/^\s*\[\[\s*skills\.config\s*\]\]\s*(?:#.*)?$/.test(lines[i].trimEnd())) continue
-    let end = i + 1
-    while (end < lines.length && !/^\s*\[/.test(lines[end])) end++
-    const data = {}
-    const properties = []
-    for (let j = i + 1; j < end; j++) {
-      if (/^\s*(?:#|$)/.test(lines[j])) continue
-      const match = lines[j].match(/^\s*(path|enabled)\s*=\s*(.*?)\s*(?:\r?\n)?$/)
-      if (!match || Object.prototype.hasOwnProperty.call(data, match[1])) fail(`Codex 配置的 skills.config 无法识别（行 ${j + 1}）`)
-      const raw = match[2]
-      if (match[1] === 'path') {
-        const value = raw.match(/^("(?:[^"\\]|\\.)*"|'[^']*')\s*(?:#.*)?$/)
-        if (!value) fail(`Codex skill 路径无法识别（行 ${j + 1}）`)
-        data.path = value[1].startsWith('"') ? JSON.parse(value[1]) : value[1].slice(1, -1)
-      } else {
-        const value = raw.match(/^(true|false)\s*(?:#.*)?$/)
-        if (!value) fail(`Codex skill enabled 无法识别（行 ${j + 1}）`)
-        data.enabled = value[1] === 'true'
-      }
-      properties.push(j)
-    }
-    if (data.enabled === false && oldPaths.has(data.path)) {
-      remove.add(i)
-      for (const j of properties) remove.add(j)
-    }
-    i = end - 1
-  }
-  return lines.filter((_, i) => !remove.has(i)).join('')
-}
-
 /** 提取本地相对引用，排除网址、锚点与模板参数，保留带空格的 Markdown 路径。 */
 function* localReferences(text) {
   for (const match of text.matchAll(/\]\((?:<([^>]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\)/g)) {
@@ -208,11 +176,9 @@ function plan(home, opt) {
   plainParents(home, path.join(home, '.agents'))
   const shared = path.join(home, '.agents/skills')
   if (exists(shared) && fs.lstatSync(shared).isSymbolicLink() && path.resolve(path.dirname(shared), fs.readlinkSync(shared)) !== path.join(target, 'skills')) fail(`共享目录链接指向未知目标: ${shared}`)
-  for (const root of ['skills', 'commands', 'workflows', 'agents/claude', 'agents/opencode', 'agents/codex']) plainParents(home, path.join(target, root))
-  for (const root of ['.claude', '.codex', '.config/opencode']) {
-    for (const kind of ['skills', 'commands', 'agents', 'workflows']) plainParents(home, path.join(home, root, kind))
-  }
-  for (const p of [statePath, path.join(home, '.codex/config.toml')]) if (exists(p) && !fs.lstatSync(p).isFile()) fail(`配置必须是普通文件: ${p}`)
+  for (const root of ['skills', 'commands', 'workflows', 'agents/claude']) plainParents(home, path.join(target, root))
+  for (const kind of ['skills', 'commands', 'agents', 'workflows']) plainParents(home, path.join(home, '.claude', kind))
+  if (exists(statePath) && !fs.lstatSync(statePath).isFile()) fail(`配置必须是普通文件: ${statePath}`)
   const stateBefore = snapshot(statePath)
   const state = stateBefore ? readJSON(statePath) : { entries: {} }
   if (!state.entries || typeof state.entries !== 'object' || (state.schema !== undefined && state.schema !== 1)) fail('来源记录格式无法识别')
@@ -224,7 +190,7 @@ function plan(home, opt) {
   const resolutions = opt.resolutions ? readJSON(opt.resolutions) : {}
   if (!resolutions || typeof resolutions !== 'object' || Array.isArray(resolutions)) fail('来源选择必须是 JSON 对象')
   function add(key, p, owner, tool = null) {
-    if ((!/^(skills|commands|workflows|agents\/(claude|opencode|codex))\/[A-Za-z0-9_\u0080-￿][^/]*$/.test(key) && !supportKey(key)) || key.split('/').some(part => !part || part === '..' || part === '.') || /[\u0000-\u001f\\]/.test(key)) fail(`非法目标名称: ${key}`)
+    if ((!/^(skills|commands|workflows|agents\/claude)\/[A-Za-z0-9_\u0080-￿][^/]*$/.test(key) && !supportKey(key)) || key.split('/').some(part => !part || part === '..' || part === '.') || /[\u0000-\u001f\\]/.test(key)) fail(`非法目标名称: ${key}`)
     if (!exists(p)) fail(`来源不存在: ${p}`)
     let source
     try { source = fs.realpathSync(p) } catch { fail(`来源链接悬空: ${p}`) }
@@ -244,7 +210,8 @@ function plan(home, opt) {
     const list = candidates.get(key) || []
     if (!list.some(c => c.original === p && c.owner === owner)) list.push(entry)
     candidates.set(key, list)
-    if (owner !== 'repository' && !within(target, p)) origins.push({ key, path: p, tool })
+    // cc-switch 只作为来源读取：其中的条目不改为链接，也不移入备份。
+    if (owner !== 'repository' && !within(target, p) && managedEntry(home, p)) origins.push({ key, path: p, tool })
   }
   function scan(base, kind, owner, tool) {
     for (const name of names(base)) {
@@ -259,7 +226,12 @@ function plan(home, opt) {
       if (kind === 'agents') {
         if (!/\.(md|toml|yaml|yml)$/.test(name)) continue
         const agentTool = tool || (name.endsWith('.toml') ? 'codex' : /\.ya?ml$/.test(name) || /^mode\s*:/m.test(fs.readFileSync(p, 'utf8')) ? 'opencode' : 'claude')
-        add(`agents/${agentTool}/${name}`, p, owner, agentTool)
+        // 只发布 Claude Code 格式的定义；opencode 与 Codex 的定义不复制、不建链接。
+        if (agentTool !== 'claude') {
+          logs.push(`跳过 ${name}: 不是 Claude Code 格式的 agent 定义（${agentTool}）`)
+          continue
+        }
+        add(`agents/claude/${name}`, p, owner, agentTool)
       } else add(`${kind}/${name}`, p, owner, tool)
     }
   }
@@ -296,10 +268,11 @@ function plan(home, opt) {
   // 上次发布的配套文件也参与来源保护，不因引用清单变化而丢失本地修改。
   for (const key of Object.keys(state.entries)) if (supportKey(key) && within(target, path.resolve(target, key)) && exists(path.join(target, key))) add(key, path.join(target, key), 'target')
   for (const kind of ['skills', 'commands', 'workflows']) scan(path.join(target, kind), kind, 'target')
-  for (const tool of ['claude', 'opencode', 'codex']) scan(path.join(target, 'agents', tool), 'agents', 'target', tool)
+  scan(path.join(target, 'agents/claude'), 'agents', 'target', 'claude')
   if (opt.mode === 'migrate') {
     for (const kind of ['skills', 'commands', 'workflows', 'agents']) scan(path.join(home, '.cc-switch', kind), kind, 'external')
-    for (const [root, tool] of [['.agents', 'shared'], ['.claude', 'claude'], ['.codex', 'codex'], ['.config/opencode', 'opencode']]) {
+    // 不扫描 ~/.codex 与 ~/.config/opencode：那里只有这两个工具自己读取的内容，脚本不改写。
+    for (const [root, tool] of [['.agents', 'shared'], ['.claude', 'claude']]) {
       for (const kind of ['skills', 'commands', 'workflows', 'agents']) {
         if (tool === 'shared' && kind === 'agents') continue
         scan(path.join(home, root, kind), kind, 'external', tool)
@@ -377,37 +350,24 @@ function plan(home, opt) {
   }
   const skillKeys = [...selected.keys()].filter(key => key.startsWith('skills/'))
   link(shared, path.join(target, 'skills'))
-  for (const key of skillKeys) {
-    link(path.join(home, '.claude', key), path.join(target, key))
-    link(path.join(home, '.config/opencode', key), path.join(target, key))
-  }
+  for (const key of skillKeys) link(path.join(home, '.claude', key), path.join(target, key))
   for (const [key, entry] of selected) {
     if (key.startsWith('skills/') || supportKey(key)) continue
     const pieces = key.split('/')
-    const tool = pieces[0] === 'agents' ? pieces[1] : 'claude'
-    const root = { claude: '.claude', opencode: '.config/opencode', codex: '.codex' }[tool]
-    link(path.join(home, root, pieces[0], pieces.at(-1)), entry.target)
+    link(path.join(home, '.claude', pieces[0], pieces.at(-1)), entry.target)
   }
   for (const origin of origins) {
     if (within(shared, origin.path)) continue
-    if (origin.tool === 'codex' && origin.key.startsWith('skills/')) links.set(origin.path, null)
-    else link(origin.path, path.join(target, origin.key))
-  }
-  // 日常同步也清除已被共享入口替代的 Codex 链接，但不接管无关实体。
-  for (const key of skillKeys) {
-    const p = path.join(home, '.codex', key)
-    if (!exists(p)) continue
-    if (originKeys.get(p) === key || (fs.lstatSync(p).isSymbolicLink() && path.resolve(path.dirname(p), fs.readlinkSync(p)) === path.join(target, key))) links.set(p, null)
-    else fail(`Codex 同名入口尚未合并: ${p}`)
+    link(origin.path, path.join(target, origin.key))
   }
   for (const key of stale) {
     logs.push(`清理受管残留链接并备份旧副本: ${key}`)
     // 配套文件没有工具入口。
     if (supportKey(key)) continue
-    // 旧版日常同步可能丢失兼容入口记录，因此也按约定位置查找旧根中的链接。
-    // 只清理仍指向该受管目标的链接；位置限于回滚允许的范围（共享根不含 agents），
-    // 父目录为链接的旧根不属于本脚本管理，跳过。
-    for (const root of ['.claude', '.config/opencode', '.codex', '.cc-switch', '.agents']) {
+    // 旧版日常同步可能丢失兼容入口记录，因此也按约定位置查找链接。
+    // 只清理仍指向该受管目标的链接；位置限于两处入口（共享根不含 agents），
+    // 其他工具目录与 cc-switch 中的链接由用户处理。父目录为链接的位置不属于本脚本管理，跳过。
+    for (const root of ENTRY_ROOTS) {
       if (root === '.agents' && key.startsWith('agents/')) continue
       const entryKey = key.startsWith('agents/') ? `agents/${key.split('/').at(-1)}` : key
       const p = path.join(home, root, entryKey)
@@ -416,32 +376,24 @@ function plan(home, opt) {
     }
   }
   // 日常同步不会扫描旧安装，但仍须核验上次记录的兼容入口。
+  // 旧记录中两处以外的入口不再维护，跳过：用户人工删除它们与下次同步的先后不影响结果。
   for (const [file, destination] of state.links ?? []) {
-    if (destination === null || links.has(file) || !within(target, destination)) continue
+    if (destination === null || links.has(file) || !within(target, destination) || !managedEntry(home, file)) continue
     const key = path.relative(target, destination)
     const removing = stale.includes(key)
     if (!removing && !selected.has(key)) continue
     const kind = key.split('/')[0]
-    const roots = ['.cc-switch', '.agents', '.claude', '.codex', '.config/opencode']
     if (!['skills', 'commands', 'agents', 'workflows'].includes(kind) ||
-        !roots.some(root => file === path.join(home, root, kind, path.basename(key)))) fail(`来源记录入口越界: ${file}`)
+        !ENTRY_ROOTS.some(root => file === path.join(home, root, kind, path.basename(key)))) fail(`来源记录入口越界: ${file}`)
     plainParents(home, path.dirname(file))
     const before = snapshot(file)
     const matches = before?.link && path.resolve(path.dirname(file), before.link) === destination
     if (matches) links.set(file, removing ? null : destination)
-    else if (!removing && (before || !within(path.join(home, '.cc-switch'), file))) fail(`入口目标偏离或悬空: ${file}`)
+    else if (!removing) fail(`入口目标偏离或悬空: ${file}`)
   }
-  const configPath = path.join(home, '.codex/config.toml')
-  // 只认本次实际替换的旧副本。共享目录已是链接时，同一路径可指代用户当前的 skill。
-  const oldPaths = new Set(origins.filter(origin => origin.key.startsWith('skills/') && (
-    (replacingShared && within(shared, origin.path)) || (origin.tool === 'codex' && links.get(origin.path) === null)
-  )).map(origin => path.join(origin.path, 'SKILL.md')))
-  const configBefore = snapshot(configPath)
-  const config = oldPaths.size && configBefore ? fs.readFileSync(configPath, 'utf8') : null
-  const configAfter = config === null ? null : codexConfig(config, oldPaths)
   const linkBefore = new Map([...links].map(([p]) => [p, snapshot(p)]))
   const targetBefore = new Map([...candidates.keys()].map(key => [path.join(target, key), snapshot(path.join(target, key))]))
-  return { home, target, statePath, stateBefore, selected, candidates, stale, links, linkBefore, targetBefore, configPath, configBefore, configAfter, configChanged: config !== configAfter, logs, oldPaths }
+  return { home, target, statePath, stateBefore, selected, candidates, stale, links, linkBefore, targetBefore, logs }
 }
 
 /** 保留各候选的原入口和实际来源，让计划能核对同一实体的多个链接。 */
@@ -459,7 +411,7 @@ function printCandidates(p) {
   for (const row of candidateRows(p)) console.log(JSON.stringify(row))
 }
 
-/** 计划指纹还绑定执行前的入口与配置状态。预览只输出摘要，不输出配置正文。 */
+/** 计划指纹还绑定执行前的入口与来源记录状态。 */
 function planFingerprint(p) {
   return `sha256:${hash(JSON.stringify({
     candidates: candidateRows(p),
@@ -467,8 +419,6 @@ function planFingerprint(p) {
     links: [...p.links],
     linkBefore: [...p.linkBefore],
     targetBefore: [...p.targetBefore],
-    configBefore: p.configBefore,
-    configAfter: p.configAfter === null ? null : hash(p.configAfter),
     stateBefore: p.stateBefore,
   }))}`
 }
@@ -523,7 +473,7 @@ function previewStage(p) {
 
 function verifyUnchanged(p) {
   for (const list of p.candidates.values()) for (const entry of list) if (!exists(entry.original) || fs.realpathSync(entry.original) !== entry.source || digest(entry.source) !== entry.digest) fail(`来源发生变化，请重新预览: ${entry.original}`)
-  for (const [file, before] of [...p.targetBefore, ...p.linkBefore, [p.configPath, p.configBefore], [p.statePath, p.stateBefore]]) if (!equal(snapshot(file), before)) fail(`入口或配置发生变化，请重新预览: ${file}`)
+  for (const [file, before] of [...p.targetBefore, ...p.linkBefore, [p.statePath, p.stateBefore]]) if (!equal(snapshot(file), before)) fail(`入口或配置发生变化，请重新预览: ${file}`)
 }
 
 /** 回滚只接触本次登记路径；有后续修改时保留该项并报告，不恢复整份旧配置。 */
@@ -612,11 +562,6 @@ function install(p, opt) {
     for (const key of p.stale) replace(path.join(p.target, key), null)
     fs.mkdirSync(path.join(p.target, 'skills'), { recursive: true })
     for (const [file, target] of p.links) replace(file, target === null ? null : { link: target })
-    if (p.configChanged) {
-      const stagedConfig = path.join(stage, 'codex-config.toml')
-      fs.writeFileSync(stagedConfig, p.configAfter, { mode: fs.statSync(p.configPath).mode & 0o777 })
-      replace(p.configPath, { file: stagedConfig })
-    }
     let commit = null
     let dirty = null
     try {
@@ -626,7 +571,7 @@ function install(p, opt) {
     const stagedState = path.join(stage, 'state.json')
     writeJSON(stagedState, { schema: 1, repository: repo, commit, dirty, run, entries, links: [...p.links] })
     replace(p.statePath, { file: stagedState })
-    check(p.home, p.oldPaths)
+    check(p.home)
     journal.status = 'complete'
     writeJSON(journalPath, journal)
     console.log(`迁移完成。运行编号: ${run}\n备份与操作记录: ${runRoot}`)
@@ -643,7 +588,7 @@ function install(p, opt) {
 }
 
 /** 核验当前内容能被工具发现；第三方更新后的摘要不与迁移时的摘要锁定比较。 */
-function check(home, oldPaths = new Set()) {
+function check(home) {
   const root = path.join(home, '.tigger')
   plainParents(home, root)
   const statePath = path.join(root, '.migration-state.json')
@@ -661,8 +606,8 @@ function check(home, oldPaths = new Set()) {
   }
   for (const [file, target] of state.links) {
     if (!within(home, file)) fail('来源记录入口越界')
-    // 旧根中的兼容入口可随 cc-switch 删除；工具入口与实际内容仍须独立可用。
-    if (within(path.join(home, '.cc-switch'), file) && !exists(file)) continue
+    // 旧记录中 cc-switch 与其他工具目录的入口不再维护，可由用户删除；只核验两处入口。
+    if (!managedEntry(home, file)) continue
     if (target === null) { if (exists(file)) fail(`已替代入口重新出现: ${file}`); continue }
     if (!exists(file) || !fs.lstatSync(file).isSymbolicLink() || path.resolve(path.dirname(file), fs.readlinkSync(file)) !== target || !fs.existsSync(file)) fail(`入口目标偏离或悬空: ${file}`)
   }
@@ -670,24 +615,16 @@ function check(home, oldPaths = new Set()) {
   if (!exists(shared) || !fs.lstatSync(shared).isSymbolicLink() || path.resolve(path.dirname(shared), fs.readlinkSync(shared)) !== path.join(root, 'skills')) fail('共享 skills 入口未指向 tigger')
   for (const name of names(path.join(root, 'skills'))) {
     if (!fs.statSync(path.join(root, 'skills', name)).isDirectory() || !exists(path.join(root, 'skills', name, 'SKILL.md'))) continue
-    for (const tool of ['.claude', '.config/opencode']) {
-      const p = path.join(home, tool, 'skills', name)
-      if (!exists(p) || !fs.lstatSync(p).isSymbolicLink() || path.resolve(path.dirname(p), fs.readlinkSync(p)) !== path.join(root, 'skills', name)) fail(`普通 skill 尚未补齐工具入口: ${p}`)
-    }
+    const p = path.join(home, '.claude/skills', name)
+    if (!exists(p) || !fs.lstatSync(p).isSymbolicLink() || path.resolve(path.dirname(p), fs.readlinkSync(p)) !== path.join(root, 'skills', name)) fail(`普通 skill 尚未补齐工具入口: ${p}`)
   }
-  for (const tool of ['.claude', '.codex', '.config/opencode', '.agents']) {
+  for (const tool of ENTRY_ROOTS) {
     for (const kind of ['skills', 'commands', 'workflows', 'agents']) {
       for (const name of names(path.join(home, tool, kind))) {
         const p = path.join(home, tool, kind, name)
         if (fs.lstatSync(p).isSymbolicLink() && within(path.join(home, '.cc-switch'), path.resolve(path.dirname(p), fs.readlinkSync(p)))) fail(`仍有指向 cc-switch 的入口: ${p}`)
       }
     }
-  }
-  const config = path.join(home, '.codex/config.toml')
-  // 只有本次切换能区分旧副本路径与之后沿用同一路径的用户配置。
-  if (oldPaths.size && exists(config)) {
-    const text = fs.readFileSync(config, 'utf8')
-    if (codexConfig(text, oldPaths) !== text) fail('仍有本次旧副本的 Codex 禁用条目')
   }
   console.log('文件与入口核验通过；真实工具加载、第三方远程更新仍需部署验收。')
 }

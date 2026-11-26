@@ -1,4 +1,9 @@
-## ADDED Requirements
+# tigger-asset-home Specification
+
+## Purpose
+本机资产集中安装：`~/.tigger` 存储 skill、命令、workflow 与 agent 的实际文件，`~/.claude` 与 `~/.agents` 两处工具入口用链接指向它。日常同步只发布 Claude Code 格式的 agent 定义，不让旧版覆盖新版，并保留第三方的更新责任与来源记录。
+
+## Requirements
 
 ### Requirement: 集中存储实际文件
 
@@ -29,18 +34,31 @@
 
 ### Requirement: 普通 skill 对工具全部可见
 
-系统 MUST 将整个 `~/.agents/skills` 链接到 `~/.tigger/skills`。Codex MUST 通过该入口读取全部普通 skill。Claude Code 和 opencode MUST 得到每个普通 skill 的链接。重复运行时，系统 MUST 识别已经正确的链接，不制造额外入口。
+系统 MUST 将整个 `~/.agents/skills` 链接到 `~/.tigger/skills`。Claude Code MUST 得到每个普通 skill 的链接。Codex 与 opencode MUST 经这两处入口读取普通 skill。系统 MUST 不在 `~/.config/opencode` 与 `~/.codex` 下创建、改写或删除入口。重复运行时，系统 MUST 识别已经正确的链接，不制造额外入口。
 
 #### Scenario: 全部普通 skill 可见
 - **WHEN** 系统完成入口同步
 - **THEN** `~/.agents/skills` 解析到 `~/.tigger/skills`
-- **AND** Claude Code 和 opencode 的各普通 skill 入口解析到同一目录
+- **AND** Claude Code 的各普通 skill 入口解析到同一目录
+- **AND** `~/.config/opencode` 与 `~/.codex` 下的文件与链接保持原状
 - **AND** Codex 的工具内置 `.system` 目录保持原状
 
 #### Scenario: 入口存在无关文件
 - **WHEN** 待创建的工具入口已有不属于迁移清单的文件或链接
 - **THEN** 系统报告冲突并以非零状态退出
 - **AND** 系统不覆盖该项，不删除无关入口
+
+#### Scenario: 其他工具目录的已有链接保持原状
+- **WHEN** `~/.config/opencode/skills`、`~/.config/opencode/agents` 或 `~/.codex/agents` 有上次同步创建、指向 `~/.tigger` 的链接
+- **THEN** 日常同步不删除、不改写这些链接
+- **AND** 新的来源记录不登记这些链接
+- **AND** `--check` 不因这些链接存在或缺失而失败
+
+#### Scenario: 删除仓库资产只清理两处入口
+- **WHEN** 仓库删除一个上次已发布的 skill，`~/.claude/skills` 与 `~/.config/opencode/skills` 都有指向它的链接
+- **THEN** 系统备份并删除 `~/.tigger` 中的旧副本
+- **AND** 系统删除 `~/.claude/skills` 下指向它的链接
+- **AND** `~/.config/opencode/skills` 与 `~/.cc-switch` 下的链接保持原状
 
 ### Requirement: 同步禁止旧版覆盖新版
 
@@ -84,3 +102,18 @@
 - **WHEN** 用户从含未提交修改的仓库运行首次迁移或日常同步
 - **THEN** 来源记录包含工作区标记与实际文件的摘要
 - **AND** 来源记录不声称内容等于该提交的原始内容
+
+### Requirement: 只发布 Claude Code 格式的 agent 定义
+
+系统 MUST 只把 Claude Code 格式的 agent 定义同步到 `~/.tigger/agents/claude`，并在 `~/.claude/agents` 下创建链接。opencode 与 Codex 格式的 agent 定义 MUST 不复制、不创建链接。`~/.tigger/agents/opencode` 与 `~/.tigger/agents/codex` 中已有的文件 MUST 保持原状。
+
+#### Scenario: 仓库含 opencode 格式的 agent
+- **WHEN** 仓库 `claude/agents` 同时有 Claude Code 格式与 opencode 格式的定义
+- **THEN** 系统只复制 Claude Code 格式的定义，并在 `~/.claude/agents` 下创建链接
+- **AND** 输出说明跳过了 opencode 格式的定义
+- **AND** `~/.config/opencode/agents` 保持原状
+
+#### Scenario: 其他工具的 agent 副本不再更新
+- **WHEN** `~/.tigger/agents/opencode` 或 `~/.tigger/agents/codex` 有上次同步留下的文件
+- **THEN** 日常同步不更新、不删除这些文件
+- **AND** 新的来源记录不登记这些文件
