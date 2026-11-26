@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -54,6 +55,14 @@ function snapshot(p) {
   return result
 }
 function skill(f, root, name, text = '# External\n') { f.write(join(root, 'skills', name, 'SKILL.md'), text) }
+// 只按 lstat 判断，悬空链接也算存在。
+function present(p) { try { fs.lstatSync(p); return true } catch (e) { if (e.code === 'ENOENT') return false; throw e } }
+function replaceWithLink(file, target) {
+  fs.mkdirSync(dirname(file), { recursive: true })
+  fs.rmSync(file, { force: true })
+  fs.symlinkSync(target, file)
+}
+function writeState(f, value) { fs.writeFileSync(join(f.dest, '.migration-state.json'), JSON.stringify(value)) }
 function flows(f, root, version) {
   skill(f, root, 'flows-role-comment', '# Flows\n')
   f.write(join(root, 'skills/flows-role-comment/scripts/check_update.py'), `BASE_VERSION = ${version}\n`)
@@ -76,7 +85,7 @@ function fault(f, body, args = []) {
   })
 }
 
-test('当前仓库复制、权限、内部链接、workflow 资源及多工具入口', t => {
+test('当前仓库复制、权限、内部链接、workflow 资源及两处工具入口', t => {
   const f = fixture(t)
   f.write(join(f.repo, 'workflow/resources/config.json'), '{}')
   f.write(join(f.repo, 'workflow/.ignored'), 'hidden')
@@ -85,7 +94,9 @@ test('当前仓库复制、权限、内部链接、workflow 资源及多工具�
   fs.symlinkSync('SKILL.md', join(f.repo, 'skills/demo/alias.md'))
   success(f.run())
   assert.equal(fs.readlinkSync(join(f.home, '.agents/skills')), join(f.dest, 'skills'))
-  for (const root of [f.claude, join(f.home, '.config/opencode')]) assert.equal(fs.readlinkSync(join(root, 'skills/demo')), join(f.dest, 'skills/demo'))
+  assert.equal(fs.readlinkSync(join(f.claude, 'skills/demo')), join(f.dest, 'skills/demo'))
+  // opencode 与 Codex 经 ~/.claude/skills 与 ~/.agents/skills 读取，脚本不在它们的目录下创建入口。
+  for (const root of ['.config/opencode', '.codex']) assert.equal(fs.existsSync(join(f.home, root)), false, root)
   assert.equal(fs.readlinkSync(join(f.dest, 'skills/demo/alias.md')), 'SKILL.md')
   assert.ok(fs.statSync(join(f.dest, 'skills/demo/run.sh')).mode & 0o100)
   assert.equal(fs.readFileSync(join(f.claude, 'workflows/resources/config.json'), 'utf8'), '{}')
@@ -150,24 +161,64 @@ test('首次迁移必须使用仍与来源一致的预览计划', t => {
   assert.equal(fs.readFileSync(join(f.dest, 'skills/demo/SKILL.md'), 'utf8'), '# Changed after preview\n')
 })
 
-test('首次迁移合并同名、迁入外部独有项、原路径转链接、Codex 去重', t => {
+test('首次迁移合并同名、迁入外部独有项、~/.claude 原路径转链接，cc-switch 与 Codex 目录保持原状', t => {
   const f = fixture(t)
   fs.cpSync(join(f.repo, 'skills/demo'), join(f.legacy, 'skills/demo'), { recursive: true })
+  skill(f, f.legacy, 'legacy-only')
   skill(f, join(f.home, '.agents'), 'lark-im')
   skill(f, f.claude, 'local')
   f.write(join(f.home, '.agents/.skill-lock.json'), '{"fixture":true}')
   f.write(join(f.home, '.codex/skills/.system/keep.md'), 'builtin')
-  fs.mkdirSync(join(f.home, '.codex/skills'), { recursive: true })
   fs.symlinkSync(join(f.legacy, 'skills/demo'), join(f.home, '.codex/skills/demo'))
+  const before = [f.legacy, join(f.home, '.codex')].map(snapshot)
   success(f.migrate())
-  assert.equal(fs.readlinkSync(join(f.legacy, 'skills/demo')), join(f.dest, 'skills/demo'))
-  assert.equal(fs.readlinkSync(join(f.claude, 'skills/local')), join(f.dest, 'skills/local'))
-  assert.equal(fs.existsSync(join(f.home, '.codex/skills/demo')), false)
-  assert.equal(fs.readFileSync(join(f.home, '.codex/skills/.system/keep.md'), 'utf8'), 'builtin')
+  // cc-switch 只作为来源读取；Codex 的链接与内置目录不改写。
+  assert.deepEqual([f.legacy, join(f.home, '.codex')].map(snapshot), before)
+  assert.equal(fs.readFileSync(join(f.dest, 'skills/legacy-only/SKILL.md'), 'utf8'), '# External\n')
+  for (const name of ['legacy-only', 'local']) assert.equal(fs.readlinkSync(join(f.claude, 'skills', name)), join(f.dest, 'skills', name))
   assert.equal(fs.readFileSync(join(f.home, '.agents/.skill-lock.json'), 'utf8'), '{"fixture":true}')
-  assert.equal(f.state().entries['skills/lark-im'].owner, 'external')
+  for (const name of ['lark-im', 'legacy-only']) assert.equal(f.state().entries[`skills/${name}`].owner, 'external')
+  const roots = [f.claude, join(f.home, '.agents')]
+  for (const [file] of f.state().links) assert.ok(roots.some(root => file === root || file.startsWith(`${root}/`)), file)
   success(f.migrate())
   success(f.run(['--check']))
+})
+
+test('首次迁移不扫描 ~/.codex 与 ~/.config/opencode，也不迁入其他格式的 agent', t => {
+  const f = fixture(t)
+  skill(f, join(f.home, '.codex'), 'codex-only')
+  skill(f, join(f.home, '.config/opencode'), 'opencode-only')
+  f.write(join(f.home, '.codex/agents/local.toml'), 'name = "fixture"\n')
+  f.write(join(f.home, '.config/opencode/agents/reviewer.yaml'), 'mode: subagent\n')
+  f.write(join(f.home, '.config/opencode/commands/local.md'), '# opencode command\n')
+  f.write(join(f.claude, 'agents/architect.md'), '---\nmodel: opus\n---\nClaude')
+  f.write(join(f.legacy, 'agents/architect-oc.md'), '---\nmode: primary\n---\nopencode')
+  const others = [join(f.home, '.codex'), join(f.home, '.config/opencode'), f.legacy]
+  const before = others.map(snapshot)
+  const preview = f.run(['--migrate-legacy', '--dry-run'])
+  success(preview)
+  assert.doesNotMatch(preview.stdout, /codex-only|opencode-only|reviewer\.yaml|local\.toml|commands\/local\.md/)
+  success(f.migrate())
+  assert.deepEqual(others.map(snapshot), before)
+  for (const key of ['skills/codex-only', 'skills/opencode-only', 'agents/opencode', 'agents/codex', 'commands/local.md']) assert.equal(present(join(f.dest, key)), false, key)
+  assert.match(fs.readFileSync(join(f.dest, 'agents/claude/architect.md'), 'utf8'), /model: opus/)
+  assert.equal(fs.readlinkSync(join(f.claude, 'agents/architect.md')), join(f.dest, 'agents/claude/architect.md'))
+  success(f.run(['--check']))
+})
+
+test('首次迁移不读取或改写 Codex 配置，无法识别的配置也不阻断', t => {
+  for (const table of ['enabled = false\n[tui]\nvalue = true\n', 'unknown = 1\n']) {
+    const f = fixture(t)
+    skill(f, join(f.home, '.agents'), 'lark-im')
+    const configPath = join(f.home, '.codex/config.toml')
+    const config = `[[skills.config]]\npath = ${JSON.stringify(join(f.home, '.agents/skills/lark-im/SKILL.md'))}\n${table}`
+    f.write(configPath, config)
+    success(f.migrate())
+    assert.equal(fs.readFileSync(configPath, 'utf8'), config)
+    const record = JSON.parse(fs.readFileSync(join(f.dest, '.backups', f.state().run, 'record.json'), 'utf8'))
+    assert.equal(record.operations.some(op => op.path === configPath), false)
+    success(f.run(['--check']))
+  }
 })
 
 test('安装目录中的 ZIP 和非 skill 文件保持原状，共享目录未知项不被隐藏', t => {
@@ -217,9 +268,8 @@ test('首次及后续同步禁止云舟 v7 覆盖 v8，仓库较新 v9 可手动
   assert.match(fs.readFileSync(join(f.dest, 'skills/flows-role-comment/scripts/check_update.py'), 'utf8'), /BASE_VERSION = 9/)
 })
 
-test('同步保留兼容入口并清理已删除仓库资产的旧链接', t => {
+test('同步保留两处的兼容入口，删除仓库资产只清理两处的链接', t => {
   const f = fixture(t)
-  fs.cpSync(join(f.repo, 'skills/demo'), join(f.legacy, 'skills/demo'), { recursive: true })
   const command = join(f.home, '.agents/commands/local.md')
   f.write(command, '# Local command\n')
   success(f.migrate())
@@ -228,40 +278,85 @@ test('同步保留兼容入口并清理已删除仓库资产的旧链接', t => 
   fs.unlinkSync(command)
   failure(f.run(['--check']), /入口目标偏离或悬空/)
   fs.symlinkSync(commandTarget, command)
+  // 模拟本变更之前的同步在 opencode 与 cc-switch 下留下、并登记在来源记录中的链接。
+  const target = join(f.dest, 'skills/demo')
+  const others = [join(f.home, '.config/opencode/skills/demo'), join(f.legacy, 'skills/demo')]
+  for (const file of others) replaceWithLink(file, target)
+  const recorded = f.state()
+  writeState(f, { ...recorded, links: [...recorded.links.filter(([file]) => !others.includes(file)), ...others.map(file => [file, target])] })
   fs.rmSync(join(f.repo, 'skills/demo'), { recursive: true })
   success(f.run())
-  assert.equal(fs.readdirSync(join(f.legacy, 'skills')).includes('demo'), false)
+  assert.equal(present(join(f.claude, 'skills/demo')), false)
+  for (const file of others) assert.equal(fs.readlinkSync(file), target, file)
   assert.equal(fs.readlinkSync(command), commandTarget)
   success(f.run(['--check']))
-  success(f.run(['--migrate-legacy', '--dry-run']))
 })
 
-test('来源记录缺少兼容入口时，删除仓库资产仍清理旧根链接', t => {
+test('来源记录缺少入口时，删除仓库资产仍清理 ~/.claude 链接，cc-switch 链接保持原状', t => {
   const f = fixture(t)
-  fs.cpSync(join(f.repo, 'skills/demo'), join(f.legacy, 'skills/demo'), { recursive: true })
-  success(f.migrate())
-  // 模拟旧版日常同步丢失兼容入口记录。
+  success(f.run())
+  const target = join(f.dest, 'skills/demo')
+  const claudeLink = join(f.claude, 'skills/demo')
   const legacyLink = join(f.legacy, 'skills/demo')
+  replaceWithLink(legacyLink, target)
+  // 模拟旧版日常同步丢失入口记录。
   const recorded = f.state()
-  f.write(join(f.dest, '.migration-state.json'), JSON.stringify({ ...recorded, links: recorded.links.filter(([file]) => file !== legacyLink) }))
+  writeState(f, { ...recorded, links: recorded.links.filter(([file]) => file !== claudeLink) })
   fs.rmSync(join(f.repo, 'skills/demo'), { recursive: true })
   success(f.run())
-  assert.equal(fs.readdirSync(join(f.legacy, 'skills')).includes('demo'), false)
+  assert.equal(present(claudeLink), false)
+  assert.equal(fs.readlinkSync(legacyLink), target)
   success(f.run(['--check']))
-  success(f.run(['--migrate-legacy', '--dry-run']))
 })
 
-test('清理旧根链接不触碰回滚范围外的入口，同步运行仍可回滚', t => {
+test('清理残留链接不触碰两处以外与回滚范围外的入口，同步运行仍可回滚', t => {
   const f = fixture(t)
   f.write(join(f.repo, 'claude/agents/helper.md'), '---\nmodel: inherit\n---\nHelper\n')
   success(f.run())
+  const target = join(f.dest, 'agents/claude/helper.md')
   const outside = join(f.home, '.agents/agents/helper.md')
-  fs.mkdirSync(dirname(outside), { recursive: true })
-  fs.symlinkSync(join(f.dest, 'agents/claude/helper.md'), outside)
+  const opencode = join(f.home, '.config/opencode/agents/helper.md')
+  for (const file of [outside, opencode]) replaceWithLink(file, target)
   fs.rmSync(join(f.repo, 'claude/agents/helper.md'))
   success(f.run())
-  assert.equal(fs.lstatSync(outside).isSymbolicLink(), true)
+  assert.equal(present(join(f.claude, 'agents/helper.md')), false)
+  for (const file of [outside, opencode]) assert.equal(fs.readlinkSync(file), target, file)
   success(f.run(['--rollback', f.state().run]))
+})
+
+test('已有的 opencode 与 Codex 链接保持原状，来源记录不再登记，人工删除前后核验都通过', t => {
+  const f = fixture(t)
+  success(f.run())
+  // 模拟本变更之前的同步留下的其他工具入口与 agent 副本。
+  f.write(join(f.dest, 'agents/opencode/reviewer.md'), '---\nmode: subagent\n---\nopencode')
+  f.write(join(f.dest, 'agents/codex/local.toml'), 'name = "fixture"\n')
+  const others = [
+    [join(f.home, '.config/opencode/skills/demo'), join(f.dest, 'skills/demo')],
+    [join(f.home, '.config/opencode/agents/reviewer.md'), join(f.dest, 'agents/opencode/reviewer.md')],
+    [join(f.home, '.codex/agents/local.toml'), join(f.dest, 'agents/codex/local.toml')],
+  ]
+  for (const [file, target] of others) replaceWithLink(file, target)
+  const recorded = f.state()
+  const entry = key => ({ owner: 'external', source: join(f.dest, key), digest: 'fixture', sourceDigest: 'fixture', version: null })
+  const legacyState = {
+    ...recorded,
+    entries: { ...recorded.entries, 'agents/opencode/reviewer.md': entry('agents/opencode/reviewer.md'), 'agents/codex/local.toml': entry('agents/codex/local.toml') },
+    links: [...recorded.links.filter(([file]) => !others.some(([other]) => other === file)), ...others],
+  }
+  writeState(f, legacyState)
+  const before = ['.config/opencode', '.codex', '.tigger/agents/opencode', '.tigger/agents/codex'].map(p => snapshot(join(f.home, p)))
+  success(f.run())
+  assert.deepEqual(['.config/opencode', '.codex', '.tigger/agents/opencode', '.tigger/agents/codex'].map(p => snapshot(join(f.home, p))), before)
+  const state = f.state()
+  for (const [file] of others) assert.equal(state.links.some(([p]) => p === file), false, file)
+  assert.equal(Object.keys(state.entries).some(key => /^agents\/(opencode|codex)\//.test(key)), false)
+  success(f.run(['--check']))
+  // 用户先删除链接、后同步时，旧来源记录中的这些条目也不影响核验。
+  writeState(f, legacyState)
+  for (const [file] of others) fs.unlinkSync(file)
+  success(f.run(['--check']))
+  success(f.run())
+  success(f.run(['--check']))
 })
 
 test('删除 cc-switch 旧根后，工具入口与核验仍独立可用', t => {
@@ -391,6 +486,7 @@ test('第三方更新与非仓库发布资产在同步中保留，普通 skill �
   success(f.run())
   assert.equal(fs.readFileSync(join(f.dest, 'skills/external/SKILL.md'), 'utf8'), '# Updated by installer\n')
   assert.equal(fs.readlinkSync(join(f.claude, 'skills/new-third-party')), join(f.dest, 'skills/new-third-party'))
+  assert.equal(present(join(f.home, '.config/opencode/skills/new-third-party')), false)
   assert.equal(f.state().entries['skills/external'].owner, 'external')
 })
 
@@ -405,58 +501,26 @@ test('飞书模拟删除与复制通过整个共享目录链接写入 tigger', t
   success(f.run(['--check']))
 })
 
-test('仅移除相关 Codex 禁用表，保留 hatch-pet、TUI、注释及无关文本', t => {
-  const f = fixture(t)
-  skill(f, join(f.home, '.agents'), 'lark-im')
-  const unaffected = '# keep\n[[skills.config]]\npath = "hatch-pet"\nenabled = false\n[tui]\nscreen_reader_detection_done = true\n[fixture]\nvalue = "placeholder"\n'
-  f.write(join(f.home, '.codex/config.toml'), `[[skills.config]]\npath = ${JSON.stringify(join(f.home, '.agents/skills/lark-im/SKILL.md'))}\nenabled = false\n${unaffected}`)
-  success(f.migrate())
-  assert.equal(fs.readFileSync(join(f.home, '.codex/config.toml'), 'utf8'), unaffected)
-})
-
-test('日常同步与核验保留已安装 skill 的 Codex 禁用项', t => {
-  const f = fixture(t)
-  success(f.run())
-  const skillPath = join(f.home, '.agents/skills/demo/SKILL.md')
-  const existingState = f.state()
-  f.write(join(f.dest, '.migration-state.json'), JSON.stringify({ ...existingState, oldPaths: [skillPath] }))
-  const configPath = join(f.home, '.codex/config.toml')
-  const config = `[[skills.config]]\npath = ${JSON.stringify(skillPath)}\nenabled = false\n[tui]\nvalue = true\n`
-  f.write(configPath, config)
-  success(f.run(['--check']))
-  success(f.run())
-  success(f.migrate())
-  assert.equal(fs.readFileSync(configPath, 'utf8'), config)
-  success(f.run(['--check']))
-})
-
-test('需清理的 Codex 旧禁用表无法识别时在写入前失败', t => {
-  const f = fixture(t)
-  skill(f, join(f.home, '.agents'), 'lark-im')
-  const skillPath = join(f.home, '.agents/skills/lark-im/SKILL.md')
-  f.write(join(f.home, '.codex/config.toml'), `[[skills.config]]\npath = ${JSON.stringify(skillPath)}\nunknown = 1\n`)
-  const before = snapshot(f.home)
-  failure(f.migrate(), /无法识别/)
-  assert.deepEqual(snapshot(f.home), before)
-})
-
-test('工具专用 agent 变体、独立 TOML/YAML 与命令组层级保留', t => {
+test('只同步 Claude Code 格式的 agent，跳过其他格式并保留已有副本与命令组层级', t => {
   const f = fixture(t)
   f.write(join(f.repo, 'claude/agents/demo.md'), '---\nmodel: inherit\n---\nClaude')
   f.write(join(f.repo, 'claude/agents/ddd-architect.md'), '---\nmode: primary\n---\nopencode')
-  f.write(join(f.claude, 'agents/architect.md'), '---\nmodel: opus\n---\nClaude')
-  f.write(join(f.legacy, 'agents/architect.md'), '---\nmode: primary\n---\nopencode')
-  f.write(join(f.home, '.codex/agents/local.toml'), 'name = "fixture"\n')
-  f.write(join(f.home, '.config/opencode/agents/reviewer.yaml'), 'mode: subagent\n')
+  f.write(join(f.repo, 'claude/agents/local.toml'), 'name = "fixture"\n')
   f.write(join(f.repo, 'claude/commands/opsx/nested/demo.md'), '# Command')
-  success(f.migrate())
-  assert.match(fs.readFileSync(join(f.dest, 'agents/claude/architect.md'), 'utf8'), /model: opus/)
-  assert.match(fs.readFileSync(join(f.dest, 'agents/opencode/architect.md'), 'utf8'), /mode: primary/)
-  assert.equal(fs.existsSync(join(f.dest, 'agents/codex/local.toml')), true)
-  assert.equal(fs.existsSync(join(f.dest, 'agents/opencode/reviewer.yaml')), true)
-  assert.equal(fs.existsSync(join(f.claude, 'agents/ddd-architect.md')), false)
-  assert.equal(fs.readlinkSync(join(f.home, '.config/opencode/agents/ddd-architect.md')), join(f.dest, 'agents/opencode/ddd-architect.md'))
+  // 本变更之前的同步留下的副本，不再更新，也不删除。
+  f.write(join(f.dest, 'agents/opencode/old.md'), '---\nmode: primary\n---\nold')
+  f.write(join(f.dest, 'agents/codex/old.toml'), 'name = "old"\n')
+  const before = ['agents/opencode', 'agents/codex'].map(p => snapshot(join(f.dest, p)))
+  const result = f.run()
+  success(result)
+  assert.equal(fs.readlinkSync(join(f.claude, 'agents/demo.md')), join(f.dest, 'agents/claude/demo.md'))
+  assert.match(result.stdout, /跳过 ddd-architect\.md: 不是 Claude Code 格式的 agent 定义/)
+  assert.match(result.stdout, /跳过 local\.toml: 不是 Claude Code 格式的 agent 定义/)
+  for (const p of [join(f.claude, 'agents/ddd-architect.md'), join(f.home, '.config/opencode'), join(f.home, '.codex')]) assert.equal(present(p), false, p)
+  assert.deepEqual(['agents/opencode', 'agents/codex'].map(p => snapshot(join(f.dest, p))), before)
+  assert.deepEqual(Object.keys(f.state().entries).filter(key => key.startsWith('agents/')), ['agents/claude/demo.md'])
   assert.equal(fs.readFileSync(join(f.claude, 'commands/opsx/nested/demo.md'), 'utf8'), '# Command')
+  success(f.run(['--check']))
 })
 
 test('清理仅作用于来源记录归属仓库且未被外部修改的资产', t => {
@@ -512,14 +576,21 @@ test('workflow 只编译不执行，无 meta、空内容与语法错误均拒绝
   success(f.run())
 })
 
-test('根、备份及入口父目录链接在写入前拒绝', t => {
-  for (const relative of ['.tigger', '.tigger/skills', '.tigger/.backups', '.claude/skills', '.config/opencode/agents']) {
+test('根、备份及入口父目录链接在写入前拒绝，其他工具目录的链接不影响同步', t => {
+  for (const relative of ['.tigger', '.tigger/skills', '.tigger/.backups', '.claude/skills', '.claude/agents']) {
     const f = fixture(t)
     fs.mkdirSync(dirname(join(f.home, relative)), { recursive: true })
     fs.symlinkSync(f.repo, join(f.home, relative))
     const before = snapshot(f.home)
     failure(f.run())
     assert.deepEqual(snapshot(f.home), before)
+  }
+  for (const relative of ['.config/opencode/agents', '.codex/skills']) {
+    const f = fixture(t)
+    fs.mkdirSync(dirname(join(f.home, relative)), { recursive: true })
+    fs.symlinkSync(f.repo, join(f.home, relative))
+    success(f.run())
+    assert.equal(fs.readlinkSync(join(f.home, relative)), f.repo)
   }
 })
 
@@ -539,13 +610,18 @@ test('未知入口、悬空来源与范围外链接不会被默认覆盖', t => 
   }
 })
 
-test('首次迁移拒绝覆盖与普通 skill 同名的无关文件', t => {
-  for (const tool of ['.claude', '.config/opencode', '.codex']) {
-    const f = fixture(t)
-    f.write(join(f.home, tool, 'skills/demo'), 'unrelated local file')
-    const before = snapshot(f.home)
-    failure(f.run(['--migrate-legacy', '--dry-run']), /入口已有未知内容|Codex 同名入口尚未合并/)
-    assert.deepEqual(snapshot(f.home), before)
+test('首次迁移拒绝覆盖 ~/.claude 下与普通 skill 同名的无关文件，其他工具目录的同名文件保持原状', t => {
+  const f = fixture(t)
+  f.write(join(f.claude, 'skills/demo'), 'unrelated local file')
+  const before = snapshot(f.home)
+  failure(f.run(['--migrate-legacy', '--dry-run']), /入口已有未知内容/)
+  assert.deepEqual(snapshot(f.home), before)
+  for (const tool of ['.config/opencode', '.codex']) {
+    const g = fixture(t)
+    const file = join(g.home, tool, 'skills/demo')
+    g.write(file, 'unrelated local file')
+    success(g.migrate())
+    assert.equal(fs.readFileSync(file, 'utf8'), 'unrelated local file', tool)
   }
 })
 
@@ -587,33 +663,63 @@ test('复制期间来源变化导致停止，不使用旧摘要切换', t => {
   assert.equal(fs.existsSync(join(f.dest, 'skills/demo')), false)
 })
 
-test('完整回滚恢复原目录、旧入口与 Codex 配置', t => {
+test('完整回滚恢复原目录与旧入口', t => {
   const f = fixture(t)
   skill(f, join(f.home, '.agents'), 'lark-im')
-  const config = `[[skills.config]]\npath = ${JSON.stringify(join(f.home, '.agents/skills/lark-im/SKILL.md'))}\nenabled = false\n[tui]\nvalue = true\n`
-  f.write(join(f.home, '.codex/config.toml'), config)
+  skill(f, f.claude, 'local')
   success(f.migrate())
   const run = f.state().run
   success(f.run(['--rollback', run]))
   assert.equal(fs.lstatSync(join(f.home, '.agents/skills')).isDirectory(), true)
   assert.equal(fs.readFileSync(join(f.home, '.agents/skills/lark-im/SKILL.md'), 'utf8'), '# External\n')
-  assert.equal(fs.readFileSync(join(f.home, '.codex/config.toml'), 'utf8'), config)
+  assert.equal(fs.lstatSync(join(f.claude, 'skills/local')).isDirectory(), true)
+  assert.equal(fs.readFileSync(join(f.claude, 'skills/local/SKILL.md'), 'utf8'), '# External\n')
   assert.equal(fs.existsSync(join(f.dest, 'skills/lark-im')), false)
 })
 
 test('回滚前的用户修改和第三方更新不会被旧备份覆盖', t => {
-  for (const kind of ['skill', 'config']) {
+  for (const kind of ['skill', 'entry']) {
     const f = fixture(t)
     skill(f, join(f.home, '.agents'), 'lark-im')
-    f.write(join(f.home, '.codex/config.toml'), `[[skills.config]]\npath = ${JSON.stringify(join(f.home, '.agents/skills/lark-im/SKILL.md'))}\nenabled = false\n`)
+    skill(f, f.claude, 'local')
     success(f.migrate())
     const run = f.state().run
     if (kind === 'skill') f.write(join(f.dest, 'skills/lark-im/SKILL.md'), '# Later update')
-    else f.write(join(f.home, '.codex/config.toml'), '# Later config')
+    else { fs.unlinkSync(join(f.claude, 'skills/local')); skill(f, f.claude, 'local', '# Later local\n') }
     const before = snapshot(f.home)
     failure(f.run(['--rollback', run]), /后续修改/)
     assert.deepEqual(snapshot(f.home), before)
   }
+})
+
+test('回滚接受本变更之前的运行记录中的其他工具路径与 Codex 配置', t => {
+  const f = fixture(t)
+  success(f.run())
+  // 按运行记录 schema 1 构造本变更之前的一次运行：新建 opencode 链接，改写 Codex 配置。
+  const sha256 = value => crypto.createHash('sha256').update(value).digest('hex')
+  const fileSnapshot = text => ({ digest: sha256(JSON.stringify([{ relative: '', type: 'file', value: sha256(text), executable: false }])) })
+  const run = '2026-11-26T00-00-00-000Z-legacy00'
+  const runRoot = join(f.dest, '.backups', run)
+  const target = join(f.dest, 'skills/demo')
+  const opencodeLink = join(f.home, '.config/opencode/skills/demo')
+  const configPath = join(f.home, '.codex/config.toml')
+  const oldConfig = '[[skills.config]]\npath = "old"\nenabled = false\n'
+  const newConfig = '[tui]\nvalue = true\n'
+  replaceWithLink(opencodeLink, target)
+  f.write(configPath, newConfig)
+  f.write(join(runRoot, 'objects/1'), oldConfig)
+  f.write(join(runRoot, 'record.json'), JSON.stringify({ schema: 1, home: f.home, status: 'complete', operations: [
+    { path: opencodeLink, before: null, after: { link: target } },
+    { path: configPath, before: fileSnapshot(oldConfig), after: fileSnapshot(newConfig) },
+  ] }))
+  f.write(configPath, '# Later config\n')
+  failure(f.run(['--rollback', run]), /后续修改/)
+  assert.equal(fs.readFileSync(configPath, 'utf8'), '# Later config\n')
+  assert.equal(fs.readlinkSync(opencodeLink), target)
+  f.write(configPath, newConfig)
+  success(f.run(['--rollback', run]))
+  assert.equal(present(opencodeLink), false)
+  assert.equal(fs.readFileSync(configPath, 'utf8'), oldConfig)
 })
 
 test('未完成运行阻止覆盖并支持显式恢复', t => {
@@ -636,8 +742,12 @@ test('核验检测旧根入口和第三方新增 skill 缺少入口', t => {
   fs.unlinkSync(join(f.claude, 'skills/old'))
   skill(f, f.dest, 'new')
   failure(f.run(['--check']), /尚未补齐/)
+  // 只要求 ~/.claude 下的逐项入口，opencode 经外部 skill 加载读取。
+  fs.symlinkSync(join(f.dest, 'skills/new'), join(f.claude, 'skills/new'))
+  success(f.run(['--check']))
   success(f.run())
   success(f.run(['--check']))
+  assert.equal(present(join(f.home, '.config/opencode/skills/new')), false)
 })
 
 test('内部相对链接保持解析，历史缺失引用单列，新失效引用拒绝', t => {
@@ -692,23 +802,19 @@ test('核验发现已安装 skill 的 SKILL.md 为空', t => {
   failure(f.run(['--check']), /SKILL\.md/)
 })
 
-test('旧实体与 Codex 配置改写后失败时自动恢复', t => {
+test('旧实体改写后失败时自动恢复', t => {
   const f = fixture(t)
-  fs.cpSync(join(f.repo, 'skills/demo'), join(f.legacy, 'skills/demo'), { recursive: true })
   skill(f, join(f.home, '.agents'), 'lark-im')
-  const configPath = join(f.home, '.codex/config.toml')
-  const config = `[[skills.config]]\npath = ${JSON.stringify(join(f.home, '.agents/skills/lark-im/SKILL.md'))}\nenabled = false\n[tui]\nvalue = true\n`
-  f.write(configPath, config)
+  skill(f, f.claude, 'local')
   const preview = f.run(['--migrate-legacy', '--dry-run'])
   success(preview)
-  // 来源记录在入口、旧实体与配置都改写之后才写入，在此注入失败。
+  // 来源记录在入口与旧实体都改写之后才写入，在此注入失败。
   const result = fault(f, "const original = fs.renameSync; fs.renameSync = (from, to, ...rest) => { if (String(to).endsWith('.migration-state.json')) throw new Error('fixture state failure'); return original(from, to, ...rest) }", ['--migrate-legacy', '--expect-plan', planToken(preview)])
   failure(result, /state failure/)
-  assert.equal(fs.lstatSync(join(f.legacy, 'skills/demo')).isDirectory(), true)
-  assert.equal(fs.readFileSync(join(f.legacy, 'skills/demo/SKILL.md'), 'utf8'), '# Demo\n')
   assert.equal(fs.lstatSync(join(f.home, '.agents/skills')).isDirectory(), true)
   assert.equal(fs.readFileSync(join(f.home, '.agents/skills/lark-im/SKILL.md'), 'utf8'), '# External\n')
-  assert.equal(fs.readFileSync(configPath, 'utf8'), config)
+  assert.equal(fs.lstatSync(join(f.claude, 'skills/local')).isDirectory(), true)
+  assert.equal(fs.readFileSync(join(f.claude, 'skills/local/SKILL.md'), 'utf8'), '# External\n')
   assert.equal(fs.existsSync(join(f.claude, 'skills/demo')), false)
   assert.equal(fs.existsSync(join(f.dest, 'skills/demo')), false)
   assert.equal(fs.existsSync(join(f.dest, '.migration-lock')), false)
@@ -716,13 +822,19 @@ test('旧实体与 Codex 配置改写后失败时自动恢复', t => {
   assert.equal(runs.length, 1)
   const record = JSON.parse(fs.readFileSync(join(f.dest, '.backups', runs[0], 'record.json'), 'utf8'))
   assert.equal(record.status, 'rolled-back')
-  // 证明故障发生在配置与旧实体都已改写之后。
-  for (const p of [configPath, join(f.legacy, 'skills/demo'), join(f.home, '.agents/skills')]) assert.ok(record.operations.some(op => op.path === p), p)
+  // 证明故障发生在两处旧实体都已改写之后。
+  for (const p of [join(f.claude, 'skills/local'), join(f.home, '.agents/skills')]) assert.ok(record.operations.some(op => op.path === p), p)
 })
 
 test('帮助、无效参数、非法 HOME 与回滚编号均不写入', t => {
   const f = fixture(t)
-  success(f.run(['--help']))
+  const helped = f.run(['--help'])
+  success(helped)
+  // 帮助写出脚本只维护的两处入口，不再写 opencode 逐项链接。
+  assert.match(helped.stdout, /~\/\.claude/)
+  assert.match(helped.stdout, /~\/\.agents\/skills/)
+  assert.doesNotMatch(helped.stdout, /opencode 使用逐项链接/)
+  assert.doesNotMatch(helped.stdout, /agents\/<tool>/)
   for (const args of [['--unknown'], ['--check', '--migrate-legacy'], ['--rollback', '../../x'], ['--resolutions'], ['--check', '--dry-run']]) failure(f.run(args))
   failure(f.run([], { HOME: '' })); failure(f.run([], { HOME: 'relative' }))
   assert.deepEqual(fs.readdirSync(f.home), [])
