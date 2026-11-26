@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { formatDuration } from './lib/format-duration.mjs'
 
 const names = process.argv.slice(2)
 if (names.length === 0) {
@@ -26,13 +27,6 @@ const unknown = names.filter(name => !(name in scripts))
 if (unknown.length > 0) {
   console.error(`package.json 中没有这些脚本：${unknown.join('、')}`)
   process.exit(2)
-}
-
-/** 把毫秒写成「1 分 05 秒」或「3.2 秒」。 */
-function formatDuration(ms) {
-  if (ms < 59950) return `${(ms / 1000).toFixed(1)} 秒`
-  const seconds = Math.round(ms / 1000)
-  return `${Math.floor(seconds / 60)} 分 ${String(seconds % 60).padStart(2, '0')} 秒`
 }
 
 const total = names.length

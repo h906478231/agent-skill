@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { test } from './lib/test-shard.mjs'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync, chmodSync, utimesSync, truncateSync, symlinkSync, realpathSync, renameSync, statSync } from 'node:fs'
 import { tmpdir, uptime } from 'node:os'
@@ -1016,7 +1016,8 @@ test('准入：服务查询或只读版本探测超时、超过合计 5 秒或�
   })
   await t.test('两次查询与一次探测合计超过 5 秒', sub => {
     const f = scenario(sub)
-    // 两次查询各留出数百毫秒的进程启动余量，单次都不触及 2 秒上限；探测只能使用合计剩余的不足 2 秒。
+    // 替身从自身进程启动起计时，Node.js 启动时间不计入余量：每次查询必然超过 1.5 秒，两次合计必然超过 3 秒，
+    // 探测只能使用合计剩余的不足 2 秒；单次离 2 秒上限还有约 500 毫秒，留给替身启动前后的进程开销。
     editServices(f, services => {
       services[LAUNCHD_LABELS.scheduler].delayMs = 1500
       services[LAUNCHD_LABELS.bridge].delayMs = 1500
@@ -1376,11 +1377,13 @@ test('准入：另一进程持有项目写保护 1.5 秒时三个命令等待后
       })
     }
   })
-  await t.test('持有 4.5 秒', async sub => {
+  await t.test('持有 60 秒', async sub => {
     for (const command of MANAGEMENT_COMMANDS) {
       await sub.test(command.name, async inner => {
         const f = admissionScenario(inner)
-        await holdProtection(inner, protectionFile(f), 4500)
+        // 持有时间须远超 2.5 秒的等待上限：等待从命令首次尝试取得保护时才开始计时，机器繁忙时命令启动与准入核对
+        // 可能先用去 2 秒以上；原来只持有 4.5 秒，保护会在等待期内释放，命令取得保护后退出 0。持有方在用例结束时被结束。
+        await holdProtection(inner, protectionFile(f), 60_000)
         const result = command.run(f)
         assert.equal(result.code, 1, result.all)
         assert.match(result.all, /未能取得项目写入保护/)
@@ -2785,11 +2788,11 @@ test('阶段不停止时撤回退出码为 1 并说明仍在停止', t => {
 })
 
 test('锁中没有 claude 进程时撤回只等待锁释放，不发信号', t => {
-  const marker = '/tmp/autopilot-cancel-signal-marker'
-  rmSync(marker, { force: true })
   const scheduler = spawnSignalTarget()
   t.after(() => scheduler.kill('SIGKILL'))
   const f = cancelScenario(t, { lock: { pid: scheduler.pid, bootTime: bootTime(), change: 'demo', claudePid: null } })
+  // 标记文件放在本用例的托管目录：分片同时运行时，其他用例写的标记不会影响本用例的判定。
+  const marker = join(f.home, 'cancel-signal-marker')
   writeLock(f, managedLock(f, scheduler.pid))
   // 模拟调度进程：一秒后删除运行锁。
   spawnHelper(`require('node:fs').unlinkSync(${JSON.stringify(join(f.home, 'run.lock'))})`, 1000)
@@ -2800,11 +2803,10 @@ test('锁中没有 claude 进程时撤回只等待锁释放，不发信号', t =
 })
 
 test('等待期间出现 claude 进程时补发一次 SIGTERM', t => {
-  const marker = '/tmp/autopilot-cancel-signal-marker'
-  rmSync(marker, { force: true })
   const scheduler = spawnSignalTarget()
   t.after(() => scheduler.kill('SIGKILL'))
   const f = cancelScenario(t, { lock: { pid: scheduler.pid, bootTime: bootTime(), change: 'demo', claudePid: null } })
+  const marker = join(f.home, 'cancel-signal-marker')
   const target = spawnSignalTarget(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'x')`)
   t.after(() => target.kill('SIGKILL'))
   writeLock(f, managedLock(f, scheduler.pid))
@@ -6472,8 +6474,10 @@ test('推送期间撤回时，撤回等调度释放锁后才退出，远端不�
   }, null, 2)}\n`)
   const remoteBefore = spawnSync('git', ['--git-dir', f.origin, 'rev-parse', 'refs/heads/main'], { encoding: 'utf8' }).stdout.trim()
   // 让访问 origin 的每条 git 命令先等 2 秒：ext 远端先运行这个脚本，再转给真实的 git。
+  // 脚本开始运行时写标记文件，用例等标记出现（推送已开始）再撤回，不按固定时间猜调度进程走到了哪一步。
   const slow = join(f.doublesDir, 'slow-remote.sh')
-  writeFileSync(slow, `#!/bin/sh\nsleep 2\nexec git "$1" ${JSON.stringify(f.origin)}\n`)
+  const remoteStarted = join(f.doublesDir, 'remote-started')
+  writeFileSync(slow, `#!/bin/sh\ntouch ${JSON.stringify(remoteStarted)}\nsleep 2\nexec git "$1" ${JSON.stringify(f.origin)}\n`)
   chmodSync(slow, 0o755)
   f.git('config', 'protocol.ext.allow', 'always')
   f.git('remote', 'set-url', 'origin', `ext::${slow} %s`)
@@ -6488,7 +6492,7 @@ test('推送期间撤回时，撤回等调度释放锁后才退出，远端不�
     child.on('exit', code => resolve({ code, all, at: Date.now() }))
   })
   const sched = exited('scheduler')
-  await new Promise(resolve => setTimeout(resolve, 1000))
+  assert.ok(await waitFor(() => existsSync(remoteStarted), 30000), '调度进程没有开始访问远端')
   const cancel = await exited('cancel')
   const schedDone = await sched
   assert.equal(cancel.code, 0, cancel.all)

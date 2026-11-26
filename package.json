@@ -28,8 +28,8 @@
   "scripts": {
     "test": "node scripts/run-tests.mjs verify test:handoff test:orchestration test:migration test:hook test:review-workflow test:gate test:autopilot test:ste test:change-model test:video test:recap test:progress test:consistency test:upstream test:runner",
     "test:orchestration": "node --test scripts/test-orchestration.mjs",
-    "test:gate": "node --test scripts/test-implementation-gate.mjs",
-    "test:autopilot": "node --test scripts/test-autopilot.mjs",
+    "test:gate": "node scripts/run-shards.mjs 4 scripts/test-implementation-gate.mjs",
+    "test:autopilot": "node scripts/run-shards.mjs 4 scripts/test-autopilot.mjs",
     "test:hook": "node --test scripts/test-approval-hook.mjs",
     "test:review-workflow": "node --test scripts/test-review-workflow.mjs",
     "test:consistency": "node --test scripts/test-doc-consistency.mjs",
