@@ -26,9 +26,28 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 |-----------|---------|
 | 任务 | 任务已勾选，实现确实存在，不只是打了勾 |
 | `<文件>:<行号>`（条件只需修改规划产物） | 该行存在，并且写明了条件 |
-| 任务与行号都没有 | 视同 Blocker，不得归档 |
+| `risk-accepted`、`false-positive` 或 `deferred` | 核对当前维度报告中同一 finding 的最近一次处理记录。记录未撤销，且与台账及条件状态相符；不回退到旧记录 |
+| 待处理或缺少可核对的任务、行号、当前处理记录 | 仍开放，不得归档 |
 
-结果写进 `verification.md` 的「评审条件」小节（`条件 | 映射任务或行号 | 状态`），archive 读取该小节。没有 `review-summary.md` 时写「不适用：该变更未经技术评审」。
+结果写进 `verification.md` 的「评审条件」小节：条件、落点、状态及当前处理记录的路径、决定标识和核对内容。没有汇总时写「不适用：该变更未经技术评审」。增量复核也重核条件，不沿用旧结果。
+
+## 受保护的 verify 发布与归档最后复核
+
+`<WRITE>` 指技术评审 skill 的 `scripts/review-write.mjs`。两个入口均在前置核对开始前运行 `node <WRITE> snapshot <changeRoot>`，保留输出，按同一版本核对目录实例、规划、汇总、角色报告与旧验证报告。失配不沿用旧核对。以下子命令通过标准输入接收 JSON：
+
+- **最终发布**：在保护外验证与准备完整报告。`node <WRITE> verify <changeRoot>` 接收 `expected`（原快照）、`repo`（选定的实现仓根目录）、`fingerprint`（开始核对时的 verify 范围指纹）、`report`（候选 Markdown）及 `conditions`（逐项 `{id, closed, handling}`，无条件为空数组）。有有效处理记录的 `handling` 含 `{path, decision, hash}`，`hash` 为该决定标题后的原始正文 SHA-256，截止下一个三级或二级标题。入口复核条件与实现指纹并生成 `Review-Conditions-SHA256`；不要手填。`PASS` 与 `FAIL` 走同一入口。不符或目录已移动时不追写任一路径，不重建活跃目录。
+- **归档最后复核**：`node <WRITE> archive <changeRoot>` 接收 `expected`（已通过前置校验的快照）、`repo`、`target`（本变更对应的 `changes/archive/YYYY-MM-DD-<name>`）与 `sync`（本次选择）。同一次保护内复核活跃目录、裁决、签字、开放 Blocker、待完成撤销、验证报告版本与条件及当前处理记录。另按 verify 同范围重算实现指纹，与报告 `Fingerprint` 比较。没有终点用当前指纹；有效变更终点用该提交指纹，既有切片证据检查不变。指纹缺失、不可读、不匹配或无法重算时，不写本次待同步记录、不移动、不启动同步；重新 verify 再做归档前置校验，无效终点先修正。verify 先写则归档重做前置校验；归档先移动则 verify 不追写。不要读取 overview 条件矩阵。
+- 归档、verify 发布和撤销共用同一活跃变更写入保护。归档移动成功，从目标释放本次保护；失败从原路径释放。用户确认、同步、完成清单和外部步骤都在保护外。
+
+## 归档后同步与独立同步
+
+归档前只预览差异并取得确认，不写主规格。`sync: {choice: "sync", delta, files}` 中，`delta` 是 `specs/` 下全部增量文件的相对路径与原始 SHA-256；`files` 以 `<能力>/spec.md` 为键，值是 `before`（写前原始 SHA-256，缺失为 `null`）、`target`（已确认目标 SHA-256）及 `content`（目标正文）。跳过用 `choice: "skip"` 与用户理由 `reason`，不需同步用 `choice: "not-needed"`。
+
+最后复核通过后，归档入口移动前原子写 `archive-sync.md`，用本次选择替换失败批次的记录。记录失败不移动；移动失败不写主规格，重试重新确认。只有随目录成功移动的记录授权同步。移动成功并释放保护后执行 `node <WRITE> resume-sync <archivedRoot>`，stdin 传 `{}`。续办不重复移动或外部步骤。
+
+续办核对归档增量，跳过已达目标的文件，只替换仍为写前版本的文件。冲突拒绝覆写；释放保护后重新预览和确认，以 `replacement`（新同步方案）和 `expectedRecord`（原记录的原始 SHA-256）重试。中断保留归档与待补记录；全部达到目标才记 `synced`。
+
+独立同步保留原授权和入口，`node <WRITE> sync <changeRoot>` 接收 `{delta, files}`，不要求先归档、不读归档记录。三条路径共用主规格根目录的 `.main-spec-sync.lock`，忙时不写，不与活跃变更保护同时持有。归档摘要和完成清单分别报告移动和「已同步」「不需同步」「未选择同步」「待补同步」。
 
 ## 核对签字后规划修改的档位
 
@@ -61,8 +80,8 @@ Phase 6 的 Coherence 维度（`/opsx:verify` 的三维校验之一）就是交�
 - [ ] 若实现过程中改了方案，是否回填更新了 `design.md` 并重走门禁
 
 ### 3. 评审条件闭环（实现 → 评审）
-- [ ] `review-summary.md` 的「有条件通过」条件是否都对应到任务或 `<文件>:<行号>`，并已闭环
-- [ ] 任务与行号都没有的条件视同 Blocker
+- [ ] `review-summary.md` 的「有条件通过」条件是否都对应到任务、`<文件>:<行号>` 或有效处理记录，并已闭环
+- [ ] 没有可核对的落点或处理记录的条件仍开放
 
 ### 4. 设计阶段可测试性验证（补充设计盲区）
 - [ ] 关键业务逻辑是否可单测（外部依赖是否可 mock）

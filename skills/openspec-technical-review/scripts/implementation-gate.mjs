@@ -49,15 +49,13 @@ import { spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { clean, escapeRegExp, findLineField, GIT_TREE_FINGERPRINT, readVerifyFields } from './verify-report-fields.mjs'
 
 /** 退出码：通过 / 存在阻断项 / 参数或环境错误。 */
 const EXIT = Object.freeze({ PASS: 0, BLOCKED: 1, ERROR: 2 })
 
 /** 指纹前缀，标明生成算法；将来换算法时新旧证据可按前缀区分，不会被误判为同一版本。 */
 const FINGERPRINT_PREFIX = 'git-tree:'
-
-/** 可用 git diff-tree 核实的指纹格式；非此格式（含可能被 git 当作选项的值）一律不传给 git。 */
-const GIT_TREE_FINGERPRINT = /^git-tree:([0-9a-f]{40}|[0-9a-f]{64})$/
 
 /** 评审基线身份字段：三份评审报告必须逐项一致；记录时间只供追溯，不参与比较。 */
 const BASELINE_KEYS = ['Change', 'Base Commit', 'Fingerprint', 'Review Scope']
@@ -796,19 +794,6 @@ const CHANGE_HEAD_HEADING = /^##\s+变更终点\s*$/
 /** 变更终点的提交必须写全量 SHA：短 SHA 与分支名会随仓库变化指向别的提交。 */
 const FULL_COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 
-/**
- * 逐行读取 `- Key：value` 字段，返回首个匹配行的值；没有匹配行时返回 null，有该行但值为空时返回空串。
- * 不用 readField：它的冒号后 `\s*` 会跨行，值为空时读到下一行，空的判定人会被当成「- 日期：…」。
- */
-function findLineField(lines, key) {
-  const pattern = new RegExp(`^\\s*(?:[-*]\\s+)?\\**${escapeRegExp(key)}\\**[ \\t]*[:：][ \\t]*(.*)$`)
-  for (const line of lines) {
-    const match = pattern.exec(line)
-    if (match) return clean(match[1])
-  }
-  return null
-}
-
 /** 同 findLineField，但没有匹配行时也返回空串：用于不区分「没有该行」与「值为空」的字段。 */
 const lineField = (lines, key) => findLineField(lines, key) ?? ''
 
@@ -862,11 +847,6 @@ function describeChangeHead(repo, changeRoot, head, currentFingerprint) {
 // ============================================================================
 // Markdown 解析（只识别规则文件约定的骨架，不做通用 Markdown 解析）
 // ============================================================================
-
-/** 去掉值两端的反引号与加粗标记。 */
-const clean = value => value.trim().replace(/^[`*]+|[`*]+$/g, '').trim()
-
-const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /** 读取 `Key: value` 或 `- Key: value` 字段（首个匹配），兼容全角冒号。 */
 function readField(text, key, missing = '') {
@@ -1696,6 +1676,7 @@ const ARTIFACT_ALLOWLIST = [
   /^review\/(standards|spec-fidelity|code-review-summary|code-quality|sonar)\.md$/, // openspec-code-quality（code-quality.md 为历史格式，sonar.md 为 Sonar 扫描记录）
   /^review\/finding-details-summary\.md$/, /^review\/finding-details\/[^/]+\.md$/, /^\.finding-explain\.json$/, // openspec-finding-explain
   /^verification\.md$/, // openspec-verify-change
+  /^archive-sync\.md$/, // openspec-archive-change：主规格同步与续办
   /^evidence\/slice-[\w.-]+\.md$/, /^evidence\/attachments\/.+$/, // openspec-apply-change
   /^overview\.(md|html)$/, // openspec-change-overview
   /^discussion-log\.md$/, // openspec-discussion-sync / openspec-grill
@@ -1846,17 +1827,9 @@ const describeFieldValue = value => (value === null ? '没有该行' : value || 
  */
 function readVerifyVerdict(report) {
   if (report === null) return { verdict: null, criticalCount: null, legacy: null, blockers: [] }
-  const lines = report.split(/\r?\n/)
-  const verdictValue = findLineField(lines, VERIFY_VERDICT_KEY)
-  const countValue = findLineField(lines, CRITICAL_COUNT_KEY)
+  const { verdictValue, countValue, verdict, criticalCount } = readVerifyFields(report, VERIFY_VERDICT_KEY, CRITICAL_COUNT_KEY)
   // 两个字段都没有的是本变更之前写的旧报告：不阻断，CRITICAL 仍由 /opsx:archive 读取报告确认（design D4）。
   if (verdictValue === null && countValue === null) return { verdict: null, criticalCount: null, legacy: true, blockers: [] }
-  // 结论取值中第一个由 ASCII 字母与下划线组成的词，规则与 verdictOf 相同：值后可以接全角括号说明。
-  const word = verdictValue === null ? null : verdictValue.match(/[A-Za-z_]+/)?.[0]
-  const verdict = Object.values(VERIFY_VERDICTS).includes(word) ? word : null
-  // 条数取开头的十进制整数，后面可以有说明文字。
-  const digits = countValue === null ? null : /^\d+/.exec(countValue)
-  const criticalCount = digits ? Number(digits[0]) : null
   // 有一个结论字段就按新格式校验两个字段，删除一行不能绕过检查（design D4）；无法识别时阻断，不放行（design D3）。
   const blockers = []
   if (verdict === null) {
@@ -1883,10 +1856,7 @@ function readVerifyVerdict(report) {
  */
 function readVerification(changeRoot, expectedFingerprint) {
   const report = readText(changeRoot, 'verification.md')
-  // verify 报告字段 `- Fingerprint: git-tree:<sha>`（openspec-verify-change/SKILL.md）用 lineField 读取：允许列表标记、加粗与全角冒号，
-  // 与变更终点、登记表的字段读取相同；值不是合法指纹时（含指纹后接说明文字）按没有指纹处理，与其他指纹字段的校验相同。
-  const value = report === null ? '' : lineField(report.split(/\r?\n/), 'Fingerprint')
-  const fingerprint = GIT_TREE_FINGERPRINT.test(value) ? value : null
+  const { fingerprint } = readVerifyFields(report, VERIFY_VERDICT_KEY, CRITICAL_COUNT_KEY)
   const { verdict, criticalCount, legacy } = readVerifyVerdict(report)
   return { exists: report !== null, fingerprint, current: fingerprint === null ? null : fingerprint === expectedFingerprint,
     expectedFingerprint, verdict, criticalCount, legacy }

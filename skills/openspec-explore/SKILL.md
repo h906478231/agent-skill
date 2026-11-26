@@ -321,6 +321,7 @@ But this summary is optional. Sometimes the thinking IS the value.
 - [Phase 1 第一性原理分析](shared/first-principles.md) - 表面需求 vs 底层问题 / 基本约束 / 必要性验证
 - [Phase 2 候选方案交叉验证](shared/cross-validation.md) - L2/L3 至少 2 个候选方案 × 四维对比矩阵；L0/L1 允许单一方案 + 不选其他方案的理由
 - [Phase 2 测试 Seam 决策](shared/seam-decisions.md) - 从哪些公共边界验证行为；L2/L3 变更 design.md 必含
+- [Phase 2 运行假设](shared/operating-assumptions.md) - 编写 design.md 时按此规则判断是否必写，并按模板确定评审边界。
 - [质量保障体系总览](shared/quality-framework.md) - 完整检查点与处理流程
 
 **Phase 1 第一性原理检查点**：

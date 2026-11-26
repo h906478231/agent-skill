@@ -563,7 +563,7 @@ Phase 6验证时会回溯检查实现是否解决了「底层问题」而非「�
 - **触发场景**：必须可复现
 - **不修的后果**：不写空话
 
-**写不出具体触发场景的Blocker会被自动降级为Major。**
+缺码或错码先复核，不因格式降级；按 [finding 格式](../skills/openspec-technical-review/shared/finding-format.md) 的硬规则 4 处理。
 
 如仍看不懂，使用 `/opsx:explain <change-name> --finding <ID>` 生成详细解析。
 </details>
@@ -900,11 +900,17 @@ tasks.md 不按技术层水平拆分（「先做所有表，再做所有接口�
 
 ### 门禁流程概览
 
-门禁由纳入范围的专项Agent并行评审：架构/并发/性能/数据库/安全。
+门禁由纳入范围的专项 Agent 并行评审：架构、并发、性能、数据库、安全。
+
+- 评审前按[运行假设](../skills/openspec-explore/shared/operating-assumptions.md)检查设计；威胁模型见 [ADR-0016](../docs/adr/0016-review-threat-model-by-input-source.md)。
+- 按 [finding 格式](../skills/openspec-technical-review/shared/finding-format.md)核对触发场景和当轮附录，再按[门禁裁决规则](../skills/openspec-technical-review/shared/gate-policy.md)以不修的后果定级。
+- 重走时先固定输入、核对登记与上轮版本，再按[重走时的评审范围](../skills/openspec-technical-review/shared/closed-loop-verification.md#重走时的评审范围)判定是限定范围还是审全文。
 
 **产出**：
 - `review/*.md`（纳入范围的各维度评审报告）
 - `review-summary.md`（门禁裁决）
+
+技术评审报告按 [Finding 台账](../skills/openspec-technical-review/shared/finding-format.md#finding-台账)保留 Blocker 与 Major 的处理记录；归档后由[完成清单](../skills/openspec-change-recap/shared/recap-format.md)读取遗留项。当轮附录不写入完成清单。
 
 **人工门禁**：审阅 `review-summary.md`，认可后写入批准标记。
 
@@ -948,7 +954,8 @@ finding 的 10 个字段、五条硬规则与「建议修复」的写法由 `ski
 | 条件 | 裁决结果 | 下一步 |
 |------|---------|--------|
 | 任一维度 `verdict = 打回` **或** 有未闭环Blocker | 🚫 BLOCKED | 按门禁规则第 6 节判断收敛选项；继续修复时填写闭环记录并重走 |
-| 全部 `通过/有条件通过` **且** 无未闭环Blocker | ✅ READY_FOR_HUMAN_APPROVAL | 按门禁规则第 5 节处理开放 finding，再由人工签字 |
+| 无实质阻断，条件尚待选择或落地 | 🚫 BLOCKED | 按门禁规则第 5 节先处理，不提示签字 |
+| 条件均已处理、无开放 Blocker 或待完成的撤销 | ✅ READY_FOR_HUMAN_APPROVAL | 写定稿轮，提示人工签字 |
 
 ⚠️ **人工确认是硬门禁**：人工在 `review-summary.md` 写入 `Technical Review Approved` 前，禁止 `/opsx:apply`。
 
@@ -959,25 +966,11 @@ finding 的 10 个字段、五条硬规则与「建议修复」的写法由 `ski
 <details>
 <summary>🔧 展开查看门禁技术细节</summary>
 
-### 「有条件通过」的条件必须落地
+### 定稿前处理开放 Major 与条件
 
-「有条件通过」不等于「通过」。**每一条「条件」必须有落地路径**：条件需要代码、测试、SQL、配置文件或交付文档时，对应 `tasks.md` 的一个可勾选任务项；条件只需修改规划产物时，对应该产物的行号 `<文件>:<行号>`，修改走 `/opsx:update`，不写成任务。否则条件写完就没人管，等同于失效。
+先排除实质 Blocker 和其他打回原因，再让用户处理开放 Major；处理和核对完成前，保持 `BLOCKED`，不写定稿轮。条件状态、处理选项、推荐项和提问方式以 [门禁规则第 1、5 节](../skills/openspec-technical-review/shared/gate-policy.md) 为准。
 
-汇总时在 `review-summary.md` 中列出：
-
-```markdown
-## 有条件通过的条件清单
-
-| 条件ID | 来源维度 | 条件内容 | 对应任务或行号 | 状态 |
-|--------|---------|---------|---------------|------|
-| C-01 | database | 幂等键唯一索引须 tenant_id 前导 | T-03 建表 DDL | 待实现 |
-| C-02 | performance | 批量 INSERT 须开 rewriteBatchedStatements | T-05 数据写入 | 待实现 |
-| C-03 | architecture | design.md 补充下游超时的降级决策 | design.md:120 | 待修改 |
-```
-
-**既没有对应任务、也没有对应行号的条件，视同 Blocker 处理** —— 因为它没有落地路径。
-
-Phase 6 验证时逐条核对条件是否真的满足，未满足不得归档。
+修复经一次 `/opsx:update` 落到任务或 `<文件>:<行号>`；其他决定按对应有效处理记录核对。运行假设改变则先全量重审。apply 不补写条件；verify 核对当前记录，归档在同一次写入保护内复核报告版本和对应实现指纹。移动后才按确认同步主规格。
 
 ---
 

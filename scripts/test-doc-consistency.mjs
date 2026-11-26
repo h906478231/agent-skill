@@ -109,6 +109,166 @@ function fencedBlock(markdown, firstLine) {
 }
 
 const REVIEW_RULES = 'skills/openspec-technical-review/shared'
+const OPERATING_ASSUMPTIONS = 'skills/openspec-explore/shared/operating-assumptions.md'
+
+test('运行假设：事实源定义三行模板及分级和规模判据', async () => {
+  const rules = await read(OPERATING_ASSUMPTIONS)
+  const template = fencedBlock(rules, '## 运行假设')
+  assert.deepEqual([...template.matchAll(/^- (.+?)：/gm)].map(match => match[1]), ['用户', '威胁模型', '规模上限'])
+  assert.match(rules, /L2、L3[^\n]*命中升级信号的 MVP/)
+  assert.match(rules, /L1[^\n]*未命中升级信号的 MVP/)
+  assert.match(rules, /无数量对象/)
+  assert.match(rules, /方案变更/)
+  assert.match(await read('CONTEXT.md'), /运行假设）\*\*:\n[^\n]*用户、威胁模型、规模上限/)
+})
+test('运行假设：生成与更新入口引用事实源，不复制模板', async () => {
+  for (const file of ['skills/openspec-explore/SKILL.md', 'skills/openspec-propose/SKILL.md', 'skills/openspec-update-change/SKILL.md', 'claude/commands/opsx/propose.md']) {
+    const text = await read(file)
+    assert.match(text, /operating-assumptions\.md/, file)
+    assert.doesNotMatch(text, /(?:^|\n)## 运行假设\n/, file)
+    assert.doesNotMatch(text, /(?:^|\n)- 用户：.*\n- 威胁模型：.*\n- 规模上限：/, file)
+  }
+})
+
+test('运行假设：评审在分级后检查必选区块，单独入口沿用同一前置规则', async () => {
+  const review = await read('skills/openspec-technical-review/SKILL.md')
+  const precheck = review.split('5. 按「方案类型 × 升级信号」')[1]?.split('\n6.')[0]
+  assert.ok(precheck, '没有找到评审前置校验第 5 步')
+  assert.match(precheck, /运行假设[^\n]*L2、L3[^\n]*命中升级信号的 MVP/)
+  assert.match(precheck, /operating-assumptions\.md[^\n]*停止[^\n]*\/opsx:update/)
+  assert.match(await read('claude/commands/opsx/review.md'), /前置校验[^\n]*运行假设/)
+})
+
+test('运行假设：技术评审与两轴质量角色引用 ADR-0016', async () => {
+  const adr = /docs\/adr\/0016-review-threat-model-by-input-source\.md/
+  const format = await read(`${REVIEW_RULES}/finding-format.md`)
+  const section = format.split('## 运行假设与威胁模型\n')[1]?.split('\n## ')[0]
+  assert.ok(section, '缺少运行假设与威胁模型一节')
+  assert.match(section, adr)
+  assert.match(section, /流程内 agent[^\n]*出错[^\n]*走捷径[^\n]*有意伪造/)
+  assert.match(section, /外部输入[^\n]*对外发送[^\n]*攻击者/)
+  for (const file of ['openspec-technical-review/roles/security.md', 'openspec-code-quality/roles/spec-fidelity.md', 'openspec-code-quality/roles/standards.md']) {
+    assert.match(await read(`skills/${file}`), adr, file)
+  }
+})
+
+test('质量评审继续使用双轴触发判据、台账与报告格式', async () => {
+  const format = await read(`${REVIEW_RULES}/finding-format.md`)
+  assert.match(format, /触发方式代码、跨轮 Finding 台账和两个当轮附录只适用于技术评审/)
+  assert.match(format, /双轴质量评审[^\n]*\[B1\][^\n]*\[B5\][^\n]*双轴台账/)
+})
+
+test('触发方式：代码表只由硬规则 4 定义，两个附录只保留当轮', async () => {
+  const formatFile = `${REVIEW_RULES}/finding-format.md`
+  const format = await read(formatFile)
+  const hardRule = format.split('### 4. ')[1]?.split('\n### ')[0]
+  const codeRow = /^\| `\[T([1-4])\]` \|/gm
+  assert.deepEqual([...hardRule.matchAll(codeRow)].map(match => match[1]), ['1', '2', '3', '4'])
+  assert.match(hardRule, /Blocker 与 Major[^\n]*规模上限/)
+  assert.match(hardRule, /Minor[^\n]*不要求/)
+  for (const field of ['假设外观察', '建议']) assert.match(fencedBlock(format, '# <维度>评审'), new RegExp(`^## ${field}$`, 'm'))
+  assert.match(format, /当轮[^\n]*不编号[^\n]*不跨轮累加/)
+  assert.match(format, /维度结论[^\n]*不受[^\n]*附录影响/)
+  for (const file of (await listFiles('skills/openspec-technical-review')).filter(file => file.endsWith('.md') && file !== formatFile)) {
+    assert.equal([...(await read(file)).matchAll(codeRow)].length, 0, file)
+  }
+})
+
+test('触发方式：角色先交待核对条目，汇总复核后再分流', async () => {
+  const text = await read('skills/openspec-technical-review/SKILL.md')
+  const [instruction, summary] = text.split('### Step 1')[1].split('### Step 2')
+  assert.match(instruction, /缺码或错码[^\n]*待核对[^\n]*不先写入/)
+  assert.match(summary, /先复核[^\n]*再按范围分流/)
+  assert.match(summary, /足以阻断[^\n]*保持 `BLOCKED`/)
+  assert.match(summary, /假设外观察[^\n]*建议[^\n]*不计入/)
+  assert.doesNotMatch(text, /触发场景的问题降级为 Major/)
+})
+
+test('重走范围：登记覆盖核对失败时不沿用，并限制范围外 Blocker', async () => {
+  const closed = await read(`${REVIEW_RULES}/closed-loop-verification.md`)
+  const section = closed.split('## 重走时的评审范围\n')[1]?.split('\n## ')[0]
+  assert.ok(section, '缺少重走时的评审范围')
+  for (const expected of ['自改-R<n>', '落在 design 的哪一节', '定稿与签字后修改', '原始 SHA-256', '漏登记', '旧正文', '不沿用', '全文评审', '数据损坏', '外部安全越权', '建议']) {
+    assert.ok(section.includes(expected), expected)
+  }
+  assert.match(section, /子 agent[^\n]*不读[^\n]*review-summary\.md/)
+  const policy = await read(`${REVIEW_RULES}/gate-policy.md`)
+  const verdict = policy.split('## 1. 门禁裁决')[1].split('\n## 2.')[0]
+  assert.match(verdict, /Blocker 与 Major[^\n]*按不修的后果/)
+  assert.match(verdict, /条件原文[^\n]*修复是否新增机制/)
+  assert.match(policy, /^\|[^\n]*修改运行假设[^\n]*全量重走/m)
+})
+
+test('撤销：首次替换同时止住放行，核对同次决定后才清除', async () => {
+  const policy = await read(`${REVIEW_RULES}/gate-policy.md`)
+  const rules = policy.split('### 撤销处理决定\n')[1]?.split('\n## ')[0]
+  assert.ok(rules, '缺少撤销格式')
+  assert.match(rules, /首次[^\n]*BLOCKED[^\n]*待完成的撤销/)
+  for (const expected of ['finding ID', '同次原决定', '完整原发现', '开放状态', '关联条件', '清除', '重新签字']) assert.ok(rules.includes(expected), expected)
+  assert.match(await read('skills/openspec-finding-explain/SKILL.md'), /^## 重新打开的代价$/m)
+  assert.match(await read('claude/commands/opsx/explain.md'), /重新打开的代价/)
+})
+
+test('技术评审台账：保留六列、五种状态与完整原发现', async () => {
+  const format = await read(`${REVIEW_RULES}/finding-format.md`)
+  const ledger = format.split('## Finding 台账\n')[1]?.split('\n## ')[0]
+  assert.ok(ledger, '缺少技术评审台账')
+  assert.match(ledger, /ID \| 严重级别 \| 首次轮次 \| 状态 \| 处理轮次 \| 处理依据/)
+  assert.match(ledger, /Minor[^\n]*不进台账/)
+  assert.match(ledger, /Findings[^\n]*只列[^\n]*open/)
+  assert.match(ledger, /open[^\n]*closed[^\n]*risk-accepted[^\n]*false-positive[^\n]*deferred/)
+  assert.match(ledger, /deferred[^\n]*不计入/)
+  const closed = await read(`${REVIEW_RULES}/closed-loop-verification.md`)
+  assert.match(closed, /闭环的 Blocker 与 Major[^\n]*台账/)
+  assert.match(closed, /完整原发现[^\n]*处理记录/)
+})
+
+test('处理记录：移到后续变更保留原发现和去向，也可撤销', async () => {
+  const text = await read(`${REVIEW_RULES}/gate-policy.md`)
+  assert.match(text, /移到后续变更[^\n]*deferred[^\n]*去向/)
+  for (const term of ['决定人与日期', '捡起条件', '完整原发现']) assert.ok(text.includes(term))
+  assert.match(text, /撤销风险接受、驳回或移到后续变更/)
+  assert.match(await read('skills/openspec-finding-explain/SKILL.md'), /重新打开的代价[^]*deferred/)
+})
+
+test('完成清单：技术评审只读取台账中的遗留行', async () => {
+  const text = await read('skills/openspec-change-recap/shared/recap-format.md')
+  assert.match(text, /技术评审[^\n]*只读[^\n]*Finding 台账/)
+  assert.match(text, /open[^\n]*risk-accepted[^\n]*deferred/)
+  assert.match(text, /closed[^\n]*范围收窄/)
+  assert.match(text, /不读取[^\n]*假设外观察[^\n]*建议[^\n]*没有台账/)
+})
+
+test('定稿：处理表有四项，先处理条件再提示签字', async () => {
+  const rules = await read(`${REVIEW_RULES}/gate-policy.md`)
+  const step = rules.split('### 定稿前处理开放 finding\n')[1]?.split('\n### ')[0]
+  assert.ok(step, '缺少定稿前条件处理')
+  const table = firstRun(step, '处理方式', '|')
+  for (const word of ['修复', 'risk accepted', '误报', '移到后续变更']) assert.ok(table.includes(word), word)
+  assert.doesNotMatch(table, /改变技术决策/)
+  assert.match(step, /超过 4 条[^\n]*表/)
+  assert.match(step, /修复[^\n]*运行假设[^\n]*全量重走/)
+  const conditions = rules.split('## 1. 门禁裁决')[1].split('## 2.')[0]
+  assert.match(conditions, /待处理[^]*已写入[^]*risk-accepted[^]*false-positive[^]*deferred/)
+  assert.match(conditions, /缺来源[^\n]*Blocker/)
+})
+
+test('阶段交接：两条入口共用保护，归档移动后才同步', async () => {
+  const rules = await read(`${REVIEW_RULES}/phase6-verification.md`)
+  assert.match(rules, /同一次保护[^\n]*报告版本[^\n]*同范围重算实现指纹/)
+  assert.match(rules, /处理记录[^\n]*未撤销/)
+  assert.match(rules, /移动成功并释放保护后执行[^\n]*resume-sync/)
+  for (const name of ['apply', 'verify', 'archive', 'sync']) {
+    const skill = { apply: 'apply-change', verify: 'verify-change', archive: 'archive-change', sync: 'sync-specs' }[name]
+    for (const file of [`skills/openspec-${skill}/SKILL.md`, `claude/commands/opsx/${name}.md`]) {
+      const text = await read(file)
+      const subcommand = name === 'apply' ? 'admit' : name
+      assert.ok(text.includes(`review-write.mjs ${subcommand}`), file)
+      if (name === 'archive') assert.ok(text.indexOf('review-write.mjs archive') < text.indexOf('review-write.mjs resume-sync'), file)
+    }
+  }
+})
+
 const PLANNING_TIERS = '定稿与签字后修改'
 const PLANNING_ROW = '| 序号 | 日期 | 轮次 | 文件:行号 | 关联 | 规划档位 | 说明 |'
 const TIER_TABLE = '| 规划档位 | 判据 |'
@@ -219,16 +379,14 @@ test('规划登记：统一语言区分定稿轮、签字后规划修改登记�
   }
 })
 
-test('定稿后处理：Step 3 给出四种处理，改变技术决策不推荐', async () => {
+test('定稿前处理：Step 3 先排除实质阻断，只引用处理表与推荐规则', async () => {
   const text = await read('skills/openspec-technical-review/SKILL.md')
   const step = text.split('### Step 3')[1].split('## 重走门禁')[0]
-  assert.ok(step.includes('gate-policy.md` 第 5 节'))
-  for (const pattern of [
-    /在实现中修复[^\n]*不重走/,
-    /risk accepted[^\n]*不重走/,
-    /移到后续变更[^\n]*不重走/,
-    /改变技术决策[^\n]*重走：[^\n]*不作为推荐项/,
-  ]) assert.ok(pattern.test(step), `Step 3 缺少处理或重走范围：${pattern}`)
+  assert.match(step, /实质 Blocker[^\n]*不询问开放 Major/)
+  assert.match(step, /gate-policy\.md` 第 5 节/)
+  assert.match(step, /先发布 `BLOCKED` 并释放保护/)
+  assert.match(step, /运行假设变化[^\n]*全量重审/)
+  assert.doesNotMatch(step, /改变技术决策|推荐 risk accepted/)
 })
 
 test('收敛检查：第 6 节限定触发条件与关闭 Blocker 的前提', async () => {
@@ -1131,4 +1289,49 @@ test('verify 结论字段：进度视图的 skill、术语表与两个脚本不�
   for (const file of [PROGRESS_SKILL, 'CONTEXT.md']) {
     assert.ok((await read(file)).includes('verify 结论由门禁脚本读取'), `${file} 应写明 verify 结论由门禁脚本读取`)
   }
+})
+
+
+test('交互评审在分发前固定写入快照，汇总沿用同一快照', async () => {
+  const guide = await read('skills/openspec-technical-review/SKILL.md')
+  const [before, steps] = guide.split('### Step 1 —')
+  assert.match(before, /分发前[^\n]*review-write\.mjs snapshot/)
+  assert.match(steps.split('### Step 3 —')[0], /沿用分发前的快照[^\n]*`publish`/)
+})
+
+
+test('详解按维度台账查找未出现在汇总里的条目及其当前决定', async () => {
+  const guide = await read('skills/openspec-finding-explain/SKILL.md')
+  const step = guide.split('### Step 2 —')[1].split('### Step 3 —')[0]
+  assert.match(step, /汇总未命中[^\n]*按 ID 前缀/)
+  assert.match(step, /台账[^\n]*当前决定[^\n]*未撤销/)
+  assert.match(step, /完整原发现[^\n]*不从汇总重建/)
+})
+
+
+test('apply 只执行已有实施任务关联的条件，不为行号和处理记录补任务', async () => {
+  const gate = await read('skills/openspec-technical-review/shared/apply-gate-check.md')
+  const after = gate.split('## 放行后必须做的事')[1]
+  assert.match(after, /只执行[^\n]*已有实施任务/)
+  assert.match(after, /行号[^\n]*处理记录[^\n]*不补任务/)
+  const format = await read('skills/openspec-technical-review/shared/finding-format.md')
+  assert.match(format, /条件[^\n]*当前处理记录[^\n]*Blocker/)
+})
+
+
+test('两个归档入口都报告已同步、不需同步、未选择同步和待补同步', async () => {
+  for (const file of ['skills/openspec-archive-change/SKILL.md', 'claude/commands/opsx/archive.md']) {
+    assert.match(await read(file), /主规格状态：已同步、不需同步、未选择同步或待补同步/, file)
+  }
+})
+
+test('归档命令输出模板区分已归档和待补同步，并给出续办路径', async () => {
+  const command = await read('claude/commands/opsx/archive.md')
+  const templates = command.slice(command.indexOf('**Output On Success**'), command.indexOf('**Output On Error'))
+  const pending = templates.split('```').find(block => /\*\*Specs:\*\* 待补同步/.test(block))
+  assert.ok(pending, '成功输出中要有已移动但待补同步的模板')
+  assert.match(pending, /\*\*Archived to:\*\*/)
+  assert.match(pending, /\/opsx:archive <change-name>[^\n]*续办/)
+  assert.match(pending, /不重复移动/)
+  assert.doesNotMatch(pending, /Synced to main specs|Sync skipped/)
 })

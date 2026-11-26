@@ -134,6 +134,7 @@ function pauseScenario(t, options) {
   const previous = JSON.parse(readFileSync(configFile, 'utf8'))
   writeFiles(root, {
     'openspec-technical-review/scripts/implementation-gate.mjs': readFileSync(gateBin, 'utf8'),
+    'openspec-technical-review/scripts/verify-report-fields.mjs': readFileSync(join(dirname(gateBin), 'verify-report-fields.mjs'), 'utf8'),
     'openspec-change-progress/scripts/progress.mjs': readFileSync(previous.progressBin, 'utf8'),
   })
   const config = writeConfig(f.home, { ...previous, progressBin, gateBin: localGate, trustedSkillRoots: [root] })

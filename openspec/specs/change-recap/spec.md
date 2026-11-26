@@ -68,19 +68,27 @@ The recap SHALL take its items from these sources:
 |---|---|
 | `新增`, `修改`, `删除` | Checked tasks in `tasks.md`, and ADDED, MODIFIED and REMOVED requirements of the delta specs |
 | `修复` | Defects that existed before the change and that a checked task or a delta requirement corrects |
-| `没做与遗留` | Tasks that `design.md` moves out of scope, unchecked tasks, findings with the status `open` in the dual-axis reports, Risk Accepted items, slices in the status `pending-environment`, and items of `deployment.md` |
+| `没做与遗留` | Tasks that `design.md` moves out of scope, unchecked tasks, findings with the status `open` in the dual-axis reports, Risk Accepted items, slices in the status `pending-environment`, items of `deployment.md`, and the leftovers of the review before coding listed below |
 | `落点` | The sync result of the main specs, and the union of the `## 变更文件` lists of the slice evidence, grouped by first-level directory with counts |
 
 An item of the What Changes section of `proposal.md` SHALL NOT appear in `新增`, `修改` or `删除` when no checked task and no delta requirement supports it. `修复` SHALL NOT list a finding on code that the change itself added. When the change has no slice evidence, the file part of `落点` SHALL be `未定义`.
 
-The recap SHALL read finding status only from the dual-axis reports `review/standards.md` and `review/spec-fidelity.md`:
+If the change has a pending main spec sync after archive, the recap SHALL show that sync is pending. It SHALL NOT use that pending sync as evidence that the planned main spec updates were completed. This SHALL NOT change the reported directory archive result.
+
+The recap SHALL read finding status of the dual-axis reports `review/standards.md` and `review/spec-fidelity.md` as follows:
 
 - When a report has the section `## Finding 台账`, the recap SHALL read status only from that section.
 - When a report has no such section, the recap SHALL read the last column `闭环状态` of the `## Findings` table. An empty value SHALL count as `open`, `risk-accepted` SHALL count as Risk Accepted, and each ID SHALL count once.
 - When neither gives a status, the finding part of `## 没做与遗留` SHALL be `未定义`, not `无`.
-- The recap SHALL NOT read finding status from the reports of the review before coding (`review/<role>.md`).
 
-The `open` findings of one report SHALL be one item that states the count, the severity of each finding and the IDs. When a category has more than 8 items, items from the same source SHALL be merged.
+The recap SHALL read the leftovers of the review before coding from each report `review/<role>.md` that has the section `## Finding 台账`:
+
+- Rows with the status `open`, `risk-accepted` or `deferred`.
+- Rows with the status `closed` whose 处理依据 starts with `范围收窄`.
+
+The recap SHALL NOT read `## 假设外观察` or `## 建议` of the review before coding. The recap SHALL NOT read a report of the review before coding that has no section `## Finding 台账`.
+
+The `open` findings of one report SHALL be one item that states the count, the severity of each finding and the IDs. Each `risk-accepted` or `deferred` finding of the review before coding SHALL be one item with the ID and the place of its handling record; a `deferred` item SHALL also state the destination. The rows closed by narrowing the scope in one report SHALL be one item with the IDs and the registration numbers. When a category has more than 8 items, items from the same source SHALL be merged.
 
 #### Scenario: Work moved out of scope is not reported as done
 - **WHEN** `design.md` records that Slice 08–10 move out of scope, and `tasks.md` has no checked task for them
@@ -103,6 +111,26 @@ The `open` findings of one report SHALL be one item that states the count, the s
 #### Scenario: Change without slice evidence
 - **WHEN** the archive directory of the change has no `evidence/` directory
 - **THEN** the file part of the section `## 落点` is `未定义`
+
+#### Scenario: Pending main spec sync is not reported as complete
+- **WHEN** the change directory was archived and its approved main spec sync is pending
+- **THEN** the recap reports that main spec sync is pending rather than complete
+
+#### Scenario: Deferred finding of the review before coding is a leftover
+- **WHEN** the Finding 台账 of `review/architecture.md` has ARCH-43 with the status `deferred` and the destination `未建`
+- **THEN** the section `## 没做与遗留` has one item with ARCH-43, the place of its handling record and the destination `未建`
+
+#### Scenario: Blocker closed by narrowing the scope is a leftover
+- **WHEN** the Finding 台账 of `review/security.md` has SEC-02 with the status `closed` and the 处理依据 `范围收窄 #3`
+- **THEN** the section `## 没做与遗留` lists SEC-02 with the registration number 3
+
+#### Scenario: Observations and suggestions are not listed in the recap
+- **WHEN** `review/performance.md` has a Finding 台账, a `## 假设外观察` section and a `## 建议` section
+- **THEN** the section `## 没做与遗留` has no item from `## 假设外观察` or `## 建议`
+
+#### Scenario: Old report of the review before coding is not read
+- **WHEN** `review/database.md` has no section `## Finding 台账`
+- **THEN** the section `## 没做与遗留` has no item from `review/database.md`
 
 ### Requirement: Archive SHALL generate the recap after moving the change directory
 

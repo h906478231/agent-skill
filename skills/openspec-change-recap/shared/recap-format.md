@@ -72,8 +72,8 @@
 |---|---|---|
 | `新增`、`修改`、`删除` | `tasks.md` 中已勾选的任务；delta specs 的 `ADDED`、`MODIFIED`、`REMOVED` 要求 | `proposal.md` 的 What Changes |
 | `修复` | 变更开始前已经存在、由已勾选任务或 delta 要求修正的缺陷 | 评审中发现的本变更新代码的问题 |
-| `没做与遗留` | `design.md` 中移出范围的决策；未勾选的任务；双轴报告中状态为 `open` 的 finding 与 Spec Fidelity 报告中的 C2 finding（读法见下文）；Risk Accepted；`pending-environment` 的切片（切片证据的 `## 待环境补测`）；`deployment.md` 的条目 | 对话内容 |
-| `落点` | 主规格同步结果；切片证据 `## 变更文件` 的并集，按第一级目录计数 | 当前工作区的 git diff |
+| `没做与遗留` | `design.md` 中移出范围的决策；未勾选的任务；双轴报告中状态为 `open` 的 finding 与 Spec Fidelity 报告中的 C2 finding（读法见下文）；Risk Accepted；编码前技术评审台账的遗留项；`pending-environment` 的切片（切片证据的 `## 待环境补测`）；`deployment.md` 的条目 | 对话内容 |
+| `落点` | `archive-sync.md` 的实际状态或既有同步结果；切片证据 `## 变更文件` 的并集，按第一级目录计数 | 当前工作区的 git diff |
 
 - `proposal.md` 只作参考。它的 What Changes 在实现前编写。只有已勾选任务或 delta 要求支持的条目才能写入 `新增`、`修改`、`删除`。
 - 不读取当前工作区的 git diff：归档后的工作区已经包含其他变更的修改。
@@ -87,17 +87,19 @@
 
 ### Finding 状态的读法
 
-Finding 状态只从实现后的双轴报告 `review/standards.md`、`review/spec-fidelity.md` 读取：
+实现后的双轴报告 `review/standards.md`、`review/spec-fidelity.md` 按下列规则读取：
 
 1. 报告有 `## Finding 台账` 一节时，只读台账的 `状态` 列。Findings 表与台账会重复出现同一个 ID，不读 Findings 表。
 2. 报告没有台账时（旧格式，例如 `2026-10-08-add-change-model-visualization`、`2026-10-12-add-explainer-video`），读 `## Findings` 表的最后一列 `闭环状态`：空值按 `open`，`risk-accepted` 计入 Risk Accepted，同一 ID 只计一次。
 3. 两处都没有状态时，`## 没做与遗留` 的 finding 部分写 `未定义`，不写 `无`。读者由此区分「没有读到」与「没有遗留」。
-4. 编码前的五维报告（`review/<role>.md`，例如 `review/database.md`）不读取：这些报告的 finding 在 `design.md` 的「评审意见闭环记录」中关闭，报告的 `闭环状态` 列不改。
+
+编码前技术评审 `review/<role>.md` 只读 `## Finding 台账`：取 `open`、`risk-accepted`、`deferred`，以及 `closed` 中处理依据以「范围收窄」开头的行。不读取「假设外观察」「建议」或没有台账的旧技术评审报告。
 
 - 一份报告中 `open` 的 finding 合并成一条事项，写出数量、每个严重级别的数量与 ID，例如「`review/standards.md` 有 8 个 `open` 的 finding：Minor 7 个、Major 1 个（STD-02～STD-08、STD-10）」。
 - 状态为 `risk-accepted` 的 finding 单独写一条 Risk Accepted 事项，写出 ID 与留痕位置。
 - 报告有 `## 建议` 小节时（`/opsx:quality` 第 2 轮起新发现的 Minor，没有 finding ID），每份报告合并成一条事项，写出条数，例如「`review/standards.md` 的「建议」有 3 条（第 2 轮起的 Minor，没有跟踪是否已处理）」。
-- 除下文 C2 事项外，状态为 `closed`、`false-positive` 的 finding 不写入 `没做与遗留`。
+- 技术评审的 `deferred` 每条列出 ID、处理记录位置与去向；`risk-accepted` 同样列 ID 和处理记录位置。一个技术评审报告中由范围收窄关闭的 `closed` 合成一条，写出 ID 与登记序号。
+- 除下文 C2 事项外，其余 `closed` 与 `false-positive` 不写入 `没做与遗留`。
 - **C2 事项**：在 `review/spec-fidelity.md` 的「根因类别记录」筛出 C2，再按 ID 读取 Finding 台账的状态。即使状态为 `closed` 且该条已移出 Findings 表，仍列入这条事项。类别不随状态变化，也不以状态过滤 C2。
 - 旧报告的某个 ID 没有类别记录时，只使用 Findings 表中仍有的「建议修复」前缀；两处都没有类别时不推断。旧报告没有台账时，状态仍按上文第 2 条读取。
 - C2 合并为 `## 没做与遗留` 的一条事项，写出总数、每个 ID 与其状态。有 `review-summary.md` 时写「规划缺陷，技术评审没有发现」；没有时写「规划缺陷，变更没有运行技术评审」。没有 C2 finding 时不写该事项。
@@ -108,6 +110,7 @@ Finding 状态只从实现后的双轴报告 `review/standards.md`、`review/spe
 - 每条事项是一句话，写成列表项。
 - `新增`、`修改`、`删除`、`修复` 的每条事项以 `（<落点>）` 结尾，落点写文件、目录或主规格，例如 `（claude/commands/opsx/recap.md）`。
 - 每类最多 8 条。超过时把同一来源的事项合并，例如同一个目录的多个文件合并为一条。
+- 归档移动和主规格同步分别报告。`archive-sync.md` 为 `pending` 时写「待补同步」，不把主规格修改列为已完成；`synced` 为已同步，`skip` 为未选择同步，`not-needed` 为不需同步。
 - `## 落点` 写两部分：
   - 主规格：delta specs 中每个能力对应的 `openspec/specs/<能力>/spec.md`，写出 `ADDED`、`MODIFIED`、`REMOVED` 要求的数量。主规格文件不存在时如实写「主规格文件不存在」。
   - 文件：切片证据 `## 变更文件` 的并集，按第一级目录计数，例如「`skills/` 5 个、`scripts/` 3 个」。变更没有 `evidence/` 目录时写 `文件：未定义`。

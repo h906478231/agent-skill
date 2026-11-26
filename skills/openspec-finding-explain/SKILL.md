@@ -96,11 +96,11 @@ openspec-finding-explain --finding SEC-01 --audience non-tech
 ### Step 2 — 读取 finding 信息
 
 1. 读取 `review-summary.md` 的"已确认风险详细清单"区块
-2. 找到指定 finding ID 的完整 字段信息：
+2. 查找指定 finding ID 的完整字段。汇总未命中时，按 ID 前缀定位原维度报告（例如 `CONC` → `review/concurrency.md`）；未知前缀或该维度内找不到 ID 时，报告未找到，不从其他维度推断。字段包括：
    - ID、严重级别、影响业务功能、位置
    - 涉及代码模块、一句话白话、触发场景
-   - 不修的后果、建议修复、闭环状态（`open` / `closed` / `risk-accepted` / `false-positive`；只对 `open` 的项做实施解析，已闭环/已接受的项只说明结论与依据）
-3. 读取对应维度的详细评审文档（如 `review/concurrency.md`），获取更多上下文
+   - 不修的后果、建议修复、闭环状态（`open` / `closed` / `risk-accepted` / `false-positive` / `deferred`；只对 `open` 的项做实施解析，已闭环/已接受的项只说明结论与依据）
+3. 读取对应维度的详细评审文档（如 `review/concurrency.md`）；条目已从 Findings 移出时，由原维度台账的处理依据确定当前决定；核对同 ID、同决定标识及未撤销状态。读取该记录中的完整原发现，不从汇总重建。若旧报告不足以核对当前决定或原发现，说明缺失，不编造。
 4. 读取 `design.md` 中 finding 位置指向的章节
 
 ### Step 3 — 生成详细解析文档
@@ -349,6 +349,10 @@ async submitMaterial(
 **生成时间**：2026-08-22  
 **生成工具**：openspec-finding-explain  
 **目标读者**：开发工程师  
+
+## 重新打开的代价
+
+<仅在 risk-accepted、false-positive 或 deferred 时写。Major 逐项列出第 5 节的处理方式、各自规划修改及重走范围；Blocker 列出按 gate-policy.md 第 3 节要重走的维度。只解释，不修改裁决。>
 ```
 
 ### Step 4 — 生成汇总文档（批量模式）

@@ -62,7 +62,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
      1. 上一份 `verification.md` 写有 `Fingerprint`，`Verify-Verdict` 为 `PASS`，`Critical-Count` 为 `0`；上一份是没有这两个字段的旧报告时，条件为写有 `Fingerprint` 并且没有 CRITICAL；
      2. `node <GATE> classify <changeRoot> --from <上一份的 Fingerprint>` 的 `unregistered` 为空（退出码 0）；
      3. `registered` 中没有档位为 `行为` 的行。
-   - `增量` 时只重跑第 5 步的「切片证据与双轴评审闭环」（`evidence`、`review`、`hygiene`）、Sonar 扫描核对、STE 检查与变更模型检查，以及本次签字后规划修改登记。三维结论、「评审条件」与第 9 步的人工核对沿用上一份报告，报告写明沿用依据（上一份的 `Fingerprint` 与 `classify` 结论）。脚本检查出现新的 CRITICAL 时照常阻断。
+   - `增量` 时重跑第 5 步的「切片证据与双轴评审闭环」（`evidence`、`review`、`hygiene`）、Sonar 扫描核对、STE 检查与变更模型检查，以及本次签字后规划修改登记。脚本检查出现新的 CRITICAL 时照常阻断。评审条件与处理记录按当前版本重新核对，不沿用旧结果。
    - 其他情况为 `全量`，运行全部步骤：没有上一份报告、上一份 `Verify-Verdict` 为 `FAIL`（与 CRITICAL 条数无关：未闭环的条件也要重新核对）、`classify` 退出码为 1 或 2、`registered` 中有 `行为` 档位。
    - **核对签字后规划修改登记**（`增量` 与 `全量` 都执行）：按 `../openspec-technical-review/shared/phase6-verification.md` 的登记核对规则，读取本次登记和规划，不沿用旧报告的登记结论。即使旧报告为 `PASS` 且只改规划，也要核对；不符合判据时记 CRITICAL。
    - **核对 `仅测试` 登记行**（`增量` 与 `全量` 都执行）：对 `classify` 的 `registered` 中每个档位为 `仅测试` 的文件，用 `git diff <修改前指纹的 sha> <登记指纹的 sha> -- <文件>` 列出修改，找出被修改或删除的已有断言（断言语句、预期值、`@Test` 方法、被跳过或禁用的用例）。`判定依据` 写「只新增用例」但 diff 中有这类修改，或写出的断言与原因对不上 diff 时，记 WARNING，写出登记编号与位置。上一份报告中因缺测试记的 WARNING，对应用例落在这些文件中时，重新核对该场景并更新结论。
@@ -164,7 +164,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
 8. **Generate Verification Report**
 
-   报告必须写入 `<changeRoot>/verification.md`，每次重跑**原地覆盖**，禁止生成 `verification-round2.md` 这类副本（本仓自加；规则见 `../openspec-code-quality/shared/dual-axis-review.md`「原地覆盖与 Finding 台账」）。archive 与下一次 verify 的增量复核只读这个文件，不读对话，因此 archive 可以在新会话中执行；只在对话中输出报告不算完成本步。
+   报告按 `../openspec-technical-review/shared/phase6-verification.md` 的「受保护的 verify 发布与归档最后复核」通过 `review-write.mjs verify` 原地替换 `<changeRoot>/verification.md`，不生成副本。开始核对前固定快照及指纹，在保护外准备报告，PASS 和 FAIL 都走同一发布入口。 对上一份正式验证报告，archive 与下一次 verify 的增量复核只读这个文件，不读会话或轮次副本；当前评审条件和处理记录仍须重新核对。
 
    **Summary Scorecard**:
    ```
@@ -239,7 +239,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    以下人工核对清单的**规则与条目以 skill `openspec-technical-review` 的 `../openspec-technical-review/shared/phase6-verification.md` 为唯一事实源**（本文件不复制条目）：
    - **回溯第一性原理**：实现是否解决 `proposal.md` 的底层问题；是否引入未识别的新约束
    - **方案选择一致性**：实现是否与 `design.md` 推荐方案一致；仍存在的偏离是否已有留痕。按第 4 步核对：有完整的 SPEC 接受记录时只记 WARNING，不记为不通过，也不要求回填 `design.md`；否则照原规则核对。
-   - **评审条件闭环**：直接读取 `review-summary.md` 的「有条件通过」条件，逐条核对：映射到任务时，任务已勾选、实现存在；映射到 `<文件>:<行号>` 时，该行存在并写明了条件。结果写进报告「评审条件」小节。不运行 `/opsx:overview`
+   - **评审条件闭环**： 按 `../openspec-technical-review/shared/phase6-verification.md` 核对已勾选任务、规划行号或最近一次未撤销且与状态和台账相符的处理记录。报告写结果、记录位置与核对内容。
    - **设计阶段可测试性 / 运维成本**：关键路径测试覆盖、mock 可行性、新增的运维成本与监控告警
 
    逐项判据与「不通过视同 Blocker」的处理规则见该文件。

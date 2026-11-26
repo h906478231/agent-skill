@@ -18,7 +18,7 @@ Archive a completed change in the experimental workflow.
 
    Run `openspec list --json` to get available changes. Use the **AskUserQuestion tool** to let the user select.
 
-   Show only active changes (not already archived).
+   未指定变更时只列活跃变更。用户明确指定已归档变更及同步续办时，定位唯一的已归档目录及其 `archive-sync.md`，按 `openspec-technical-review/shared/phase6-verification.md` 直接续办；不进入普通归档或外部步骤。
    Include the schema used for each change if available.
 
    **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
@@ -63,7 +63,7 @@ Archive a completed change in the experimental workflow.
    - If changes needed: "Sync now (recommended)", "Archive without syncing"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice, but when main specs differ and sync is skipped, require the user to state the reason and record it in the archive summary.
+   只预览差异并取得本次选择，保留已确认的增量及主规格写前与目标版本，不写主规格。跳过且仍有差异时记用户理由。见 `openspec-technical-review/shared/phase6-verification.md`「归档后同步与独立同步」。
 
 **归档前置校验（本仓自加，非上游原文）**
 
@@ -73,35 +73,24 @@ Archive a completed change in the experimental workflow.
 - **未闭环 Blocker**：`review-summary.md` 的「已确认风险详细清单」中未闭环 Blocker 必须为 0（闭合判定见 skill `openspec-technical-review` 的 `shared/closed-loop-verification.md`）。
 - **代码质量评审（历史变更）**：若存在 `review/code-quality.md`，结论不得为「打回」，未闭环 Blocker 必须为 0。
 - **双轴评审与切片证据**：运行 skill `openspec-technical-review` 的 `scripts/implementation-gate.mjs archive <changeRoot>`，退出码非 0 即拒绝归档，并列出 `blockers`（任一轴未闭环 Blocker、MVP 与 L2/L3 缺少或不一致的评审报告、缺失 / 不完整 / 失败 / 过期的切片证据，以及 `verify 报告：` 开头的阻断项：verify 结论为 `FAIL`、`Critical-Count` 大于 0 或字段无法识别）；`notes` 中的不适用理由、待环境补测切片（负责人、补测计划）与 verify 旧报告的说明写入归档摘要，待环境补测不阻断。完整口径见该 skill 的 `shared/implementation-gate-check.md`「Archive」一节，历史变更不追溯。
-- **Phase 6 验证**：读取最近一次 `/opsx:verify` 报告 `<changeRoot>/verification.md`，不读对话；没有该文件时拒绝归档，提示先运行 `/opsx:verify`。报告的 CRITICAL 项必须已清零：报告写有 `Verify-Verdict` 与 `Critical-Count` 时，门禁已按两个字段阻断，这里是第 2 道检查，字段写 `PASS` 与 `0`、正文却列出 CRITICAL 时拒绝归档，提示重跑 `/opsx:verify`；没有结论字段的旧报告照旧读取正文确认。「评审条件」小节不得有未闭环的条件（条件对应已勾选的任务，或对应写明了该条件的 `<文件>:<行号>`），有未闭环条件时拒绝归档并写出条件编号。`overview.md` 的 `⚠️ 未落地` 行不作为归档依据。
+- **Phase 6 验证**：读取最近一次 `/opsx:verify` 报告 `<changeRoot>/verification.md`，不读对话；没有该文件时拒绝归档，提示先运行 `/opsx:verify`。报告的 CRITICAL 项必须已清零：报告写有 `Verify-Verdict` 与 `Critical-Count` 时，门禁已按两个字段阻断，这里是第 2 道检查，字段写 `PASS` 与 `0`、正文却列出 CRITICAL 时拒绝归档，提示重跑 `/opsx:verify`；没有结论字段的旧报告照旧读取正文确认。「评审条件」小节不得有未闭环的条件（条件对应已勾选的任务、写明条件的 `<文件>:<行号>` 或未撤销的有效处理记录），有未闭环条件时拒绝归档并写出条件编号。`overview.md` 的 `⚠️ 未落地` 行不作为归档依据。
 - **验证结论留痕**：把 `verification.md` 的 `Fingerprint`、`Verify-Verdict`、`Critical-Count` 与 Final Assessment 写入归档摘要；没有结论字段的旧报告写「旧格式，没有结论字段」。
 
 阶段顺序与门禁口径的唯一事实源见 skill `openspec-technical-review` 的 `shared/phases.md`。
 
-5. **Perform the archive**
+5. **在同一次保护内最后复核并移动**
 
-   Create an `archive` directory under `planningHome.changesDir` if it doesn't exist:
-   ```bash
-   mkdir -p "<planningHome.changesDir>/archive"
-   ```
-
-   Generate target name using current date: `YYYY-MM-DD-<change-name>`
-
-   **Check if target already exists:**
-   - If yes: Fail with error, suggest renaming existing archive or using different date
-   - If no: Move `changeRoot` to the archive directory
-
-   ```bash
-   mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
-   ```
+   按 `openspec-technical-review/shared/phase6-verification.md` 的共用规则调用 `review-write.mjs archive`。复用通过前置校验的快照，重新核对报告版本及 verify 同范围的实现指纹、条件和有效处理记录。失败不移动、不开始同步，成功才在保护内写所需记录并移动，不另行 `mv`。 本仓默认归档目标在 `openspec/changes/archive/`；独立规划仓沿用 `planningHome.changesDir`。
 
 6. **Display summary**
+
+   仅移动成功并释放保护后，才按选择调用 `review-write.mjs resume-sync`。已归档的同步续办按 `openspec-technical-review/shared/phase6-verification.md` 直接续办，只同步，不重复移动、不做归档后外部步骤。
 
    Show archive completion summary including:
    - Change name
    - Schema that was used
    - Archive location
-   - Spec sync status (synced / sync skipped / no delta specs)
+   - 主规格状态：已同步、不需同步、未选择同步或待补同步
    - Implementation gate result: passed, or the "不适用" reasons from `archive` notes（本仓自加）
    - Note about any warnings (incomplete artifacts/tasks)
 
@@ -161,6 +150,19 @@ All artifacts complete. All tasks complete.
 - Delta spec sync was skipped (user chose to skip)
 
 Review the archive if this was not intentional.
+```
+
+**Output On Success (Main Spec Sync Pending)**
+
+```
+## Archive Complete (main spec sync pending)
+
+**Change:** <change-name>
+**Schema:** <schema-name>
+**Archived to:** the archive path derived from `planningHome.changesDir`/YYYY-MM-DD-<name>/
+**Specs:** 待补同步（<原因>）
+
+目录已归档，主规格同步未完成。用 /opsx:archive <change-name> 并指定同步续办；只续办同步，不重复移动。
 ```
 
 **Output On Error (Archive Exists)**

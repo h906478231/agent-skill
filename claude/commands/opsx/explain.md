@@ -32,6 +32,7 @@ tags: [workflow, review, finding, documentation]
 - **参数解析**：支持 `--finding <ID>`、`--all-blockers`、`--all`、`--audience <type>`（tech/non-tech/new-dev）
 - **读取信息**：从 `review-summary.md` 和对应维度的 `review/<role>.md` 读取 finding 的 10 字段信息（含 `闭环状态`），从 `design.md` 读取上下文
 - **文档结构**：包含基本信息、业务场景完整描述、技术问题深入分析、解决方案详解（含代码示例）、实施指南（含改动清单、实施步骤、测试用例、回滚方案、监控指标）、相关资源、FAQ
+- **重新打开的代价**：已接受、已驳回或已移到后续变更的 finding 按 skill 模板写出处理选项、规划修改与重走范围。
 - **批量模式**：`--all-blockers` 或 `--all` 时，额外生成 `review/finding-details-summary.md` 汇总文档
 
 ## 产物
