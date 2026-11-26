@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { test } from './lib/test-shard.mjs'
 import assert from 'node:assert/strict'
 import { existsSync, linkSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
