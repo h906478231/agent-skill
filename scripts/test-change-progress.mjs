@@ -701,6 +701,7 @@ test('变更暂缓：统一安装根中的门禁不需要登记；托管配置�
   const installed = join(user, '.tigger/skills', GATE_RELATIVE)
   mkdirSync(dirname(installed), { recursive: true })
   writeFileSync(installed, readFileSync(gate))
+  writeFileSync(join(dirname(installed), 'verify-report-fields.mjs'), readFileSync(join(dirname(gate), 'verify-report-fields.mjs')))
   const env = { HOME: user, OPENSPEC_AUTOPILOT_HOME: empty }
   const ok = p.run(['--json', '--gate', installed], env)
   assert.equal(ok.code, 0, ok.err)

@@ -55,6 +55,7 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - Apply the requested edit. Then check every other existing artifact against it - in ANY direction: an edit to a later artifact may require revising an earlier one, not only the other way around. Build order is a useful reading order, not a constraint on which artifacts may be revised.
    - Note everything that is now inconsistent, missing, or contradictory.
    - When the revised artifact is `proposal.md` or `design.md`, keep the repository-mandated blocks intact and compliant: proposal 的「第一性原理分析」区块、design 的「候选方案交叉验证矩阵」（分级判据见 `cross-validation.md`：L2/L3 至少 2 个候选，L0/L1 允许单一方案 + 不选其他方案的理由）与（L2/L3）「测试 Seam 决策」区块。规则见 `../openspec-explore/shared/first-principles.md`、`cross-validation.md`、`seam-decisions.md`。若某次修改会让这些区块缺失或不满足判据，等于把变更退回 Phase 1/2，必须向用户说明后再改，不得静默放行。
+   - 修改 `design.md` 时，按 `../openspec-explore/shared/operating-assumptions.md` 核对「运行假设」。
    - 修改 `tasks.md` 时（本仓自加，非上游原文），新增与修改的任务按 `../openspec-propose/shared/task-slicing.md`「勾选项只写归档前能完成的工作」的四条标准与「排除清单」逐项自查：命中清单的内容不写成勾选项，写到对应去处；一项任务含两类内容时拆开写。
    - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/opsx:propose` to create them.
    - If the change is already coherent, say so and make no edits.
@@ -74,7 +75,9 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
      openspec instructions <artifact-id> --change "<name>" --json
      ```
 
-   **定稿后登记（本仓自加）** —— 若 `review-summary.md` 有定稿轮，每次写入规划后按 `../openspec-technical-review/shared/gate-policy.md` 第 5 节新增一行登记，写明规划档位。写入前保留修改前内容；写入后按第 5 节逐处对照全部差异与登记，核对通过才记录已核对版本。只在本次登记了方案变更时，在 `tasks.md` 写「规划更新内容仍待技术评审和人工确认」，并提示重走受影响维度；不修改签字行。
+   **受保护的规划登记**：与汇总登记同批写入的规划先准备候选；用户确认后通过 `../openspec-technical-review/scripts/review-write.mjs` 的 `publish` 一次完成，不直接修改文件。按技术评审 `gate-policy.md` 第 4 节复核版本、先阻断，再替换规划与汇总。
+
+   **规划登记（本仓自加）** —— 对首次定稿前已选修复的条件落点、运行假设的变更以及定稿后的规划修改，按 `../openspec-technical-review/shared/gate-policy.md` 第 5 节新增一行登记，写明规划档位；与规划通过共用入口同批写入。写入前保留修改前内容；写入后按第 5 节逐处对照全部差异与登记，核对通过才记录已核对版本。只在本次登记了方案变更时，在 `tasks.md` 写「规划更新内容仍待技术评审和人工确认」，并提示重走受影响维度；不修改签字行。运行假设按 `../openspec-explore/shared/operating-assumptions.md` 核对，有变更时该批相关修改均登记为方案变更，优先于条件落点；保持 `BLOCKED`，全量重审前不得定稿。首次定稿前按原条件逐处核对并记已核对版本，不填写定稿轮，不替换原始评审输入与登记基线。
 
    **STE 检查（本仓自加，非上游原文）** —— 修改产物后运行 `node <STE> check <changeRoot>`（`<STE>` = `../openspec-ste/scripts/ste-lint.mjs`，相对本 SKILL.md 解析；读不到时 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按 `../openspec-ste/shared/gate-check.md` 的「Update」列处理结果；找不到脚本时在输出中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
 

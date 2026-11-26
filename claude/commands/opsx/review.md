@@ -15,7 +15,7 @@ tags: [workflow, review, gate, experimental, cross-validation]
 ## 参数
 
 - **变更名**（可选）：如 `/opsx:review add-auth`。省略则从对话上下文推断；仅一个活跃变更时自动选中；模糊或有多个时运行 `openspec list --json` 并用 **AskUserQuestion** 让用户选。始终声明 "Using change: `<name>`"。
-- `--roles <a,b>`（可选）：增量重走，只重跑指定维度（须在本变更等级的纳入维度内），其余纳入维度沿用上轮 `review/<role>.md`。
+- `--roles <a,b>`（可选）：增量重走，只重跑指定维度（须在本变更等级的纳入维度内），其余纳入维度只有登记覆盖核对通过才可沿用，按 skill 的「重走门禁」执行。
 
 ## 执行
 
@@ -25,10 +25,13 @@ tags: [workflow, review, gate, experimental, cross-validation]
 
 | 内容 | 位置 |
 |------|------|
-| finding 字段、五条硬规则、维度结论取值 | `shared/finding-format.md` |
-| 上轮闭环验证（重走门禁时） | `shared/closed-loop-verification.md` |
-| 门禁裁决、重走范围、牵连关系、驳回留痕、定稿后处理、固定评审输入与登记核对（第 5 节）、同轮收窄重算（第 6 节） | `shared/gate-policy.md` |
+| 前置校验第 5 步：按分级检查运行假设 | `SKILL.md` → `openspec-explore/shared/operating-assumptions.md` |
+| finding 字段、五条硬规则、触发场景复核、Finding 台账、当轮附录与维度结论 | `shared/finding-format.md` |
+| 上轮闭环验证、登记覆盖与重走时的评审范围 | `shared/closed-loop-verification.md` |
+| 门禁裁决、重走范围、牵连关系、驳回留痕、定稿前处理、固定评审输入与登记核对（第 5 节）、同轮收窄重算（第 6 节） | `shared/gate-policy.md` |
 | 纳入范围的各维度的审查清单 | `roles/<role>.md` |
+
+报告发布、登记、处理和撤销共用 `openspec-technical-review` 的 `scripts/review-write.mjs`，按 `shared/gate-policy.md` 第 4 节执行；角色只返回候选。
 
 ## 产物
 

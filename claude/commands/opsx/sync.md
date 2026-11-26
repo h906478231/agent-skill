@@ -43,7 +43,7 @@ This is an **agent-driven** operation - you will read delta specs and directly e
 
    If no delta specs found, inform user and stop.
 
-4. **For each delta spec, apply changes to main specs**
+4. **为每份增量规格准备主规格候选**
 
    For each repo-local capability delta spec path returned by the CLI:
 
@@ -75,6 +75,8 @@ This is an **agent-driven** operation - you will read delta specs and directly e
       - Create `openspec/specs/<capability>/spec.md`
       - Add Purpose section (can be brief, mark as TBD)
       - Add Requirements section with the ADDED requirements
+
+   按 `openspec-technical-review/shared/phase6-verification.md` 准备增量哈希、写前和目标版本。独立授权与调用方式不变；只在实际写主规格时调用 `review-write.mjs sync` 取得同一主规格写入保护。不得直接写主规格，不读归档记录，不要求先归档。
 
 5. **Show summary**
 

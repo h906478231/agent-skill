@@ -117,13 +117,16 @@ done
      ```
      缺任一即中止，提示同第 3 步。
    - 判定不确定时取较大的范围。
-6. 在 `changeRoot` 下创建 `review/` 目录。分发前按 `shared/gate-policy.md` 第 5 节固定评审输入和登记基线序号，保留本轮内容、哈希与序号；每个子 agent 使用分发的文本，不重新从磁盘读取方案作为评审输入。
+   - **运行假设检查**：L2、L3 与命中升级信号的 MVP 在分发前按 `../openspec-explore/shared/operating-assumptions.md` 核对 `design.md`；不符合时停止，提示用 `/opsx:update` 补写。L1 不做此检查。
+6. 在 `changeRoot` 下创建 `review/` 目录。分发前运行 `node <SKILL_DIR>/scripts/review-write.mjs snapshot <changeRoot>`，固定规划、汇总与角色报告版本。按 `shared/gate-policy.md` 第 5 节固定评审输入和登记基线序号，核对其哈希与快照一致并保留两者；每个子 agent 使用分发的文本，不重新从磁盘读取方案作为评审输入。
 
 ## 执行步骤
 
 ### Step 1 — 并行调度专项评审 Agent
 
-**交叉验证前提：每个子 agent 只读 `proposal.md` + `design.md`，不看其他维度的 `review/<role>.md`，避免锚定偏差。**
+**交叉验证前提：角色只使用分发的 proposal、design，不读取 `review-summary.md` 或其他维度的报告。**
+
+重走前，主会话按 `shared/closed-loop-verification.md`「重走时的评审范围」用已固定的输入核对两类登记覆盖与各维度上轮的实际版本。覆盖通过才摘录位置并作为纯文本注入角色提示词，不注入汇总内容。核对失败的维度审全文、不沿用；影响不明则全部纳入维度重走；缺少行为依据先 `/opsx:update`。
 
 对每个纳入范围的角色，用 **Agent 工具**启动一个子 agent（可并行，一条消息多个 tool use）。
 
@@ -140,19 +143,23 @@ done
 1. **`<SKILL_DIR>` 的绝对路径**（按上面「路径约定」解析），并说明「下文所有 `<SKILL_DIR>/...` 路径都替换为该值」。子 agent 是纯文本上下文，不给它这个值，它就找不到 `shared/` 下的规则文件；
 2. 对应 `<SKILL_DIR>/roles/<role>.md` 全文 —— 其中已声明必读的共用规则文件，子 agent 自行读取；
 3. **如果识别为 MVP 方案**：在 prompt 开头明确说明 `本次评审使用 MVP 标准。必须先阅读 <SKILL_DIR>/shared/mvp-review-standard.md 理解 MVP 评审原则，只报告阻断性问题，不报告 MVP 已接受的权衡。`
-4. 变更的 `proposal.md` / `design.md` 全文；
+4. 变更的 `proposal.md` / `design.md` 全文；先读「运行假设」，并按 `shared/finding-format.md` 硬规则 4 写触发方式代码。缺码或错码的 Blocker、Major 连同原 ID、触发场景、位置与后果作为待核对条目交给汇总，不先写入「建议」或「假设外观察」。
 5. **若 `design.md` 末尾存在「## 评审意见闭环记录」区块**（说明这是重走门禁）：该区块已在第 4 项的 `design.md` 全文中，**不再单独放入 prompt**；在 prompt 中要求子 agent 先按 `<SKILL_DIR>/shared/closed-loop-verification.md` 处理区块中「维度」属于本角色的每一行，并结合角色文件的「本维度闭环判据」做上轮闭环验证，再做本轮审查（与 `technical-review-gate.workflow.js` 第三步一致）。子 agent 是全新上下文，没有上轮记忆 —— 不要求这一步，它要么重复报同一问题，要么完全漏掉验证；
-6. 「把结论写入 `review/<role>.md`」。
+6. 只读本维度上一轮 `review/<role>.md`。返回拟发布报告、Finding 台账和 Findings；不覆写旧报告。保留原发现和处理记录。
 
 finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一句话白话 / 触发场景可复现 / 不修的后果）与维度结论取值，统一见 `shared/finding-format.md`，此处不重复。
 
-> 若当前环境支持 Pi Workflow，可改用 `technical-review-gate.workflow.js` 一次性并行 fan-out（`args = { change, level, roles, skillDir }`：完整方案必传 `level`，MVP 传 `tier: 'mvp'` 与 `roles`；`change` 缺省时脚本直接报错；`skillDir` 省略时脚本会让子 agent 自行探测，显式传入更省一次探测）。**二者产物必须一致**：workflow 的 finding 结构化 schema 与汇总项以本文件 Step 2 与 `shared/finding-format.md` 为准，改动任一侧必须同步另一侧。
+> 若当前环境支持 Pi Workflow，可改用 `technical-review-gate.workflow.js` 并行评审（可选 `changedLocations` 传纯文本位置及完整文件集合的原始 SHA-256，由 workflow 先固定输入再核对覆盖）（`args = { change, level, roles, skillDir }`：完整方案必传 `level`，MVP 传 `tier: 'mvp'` 与 `roles`；`change` 缺省时脚本直接报错；`skillDir` 省略时脚本会让子 agent 自行探测，显式传入更省一次探测）。**二者产物必须一致**：workflow 的 finding 结构化 schema 与汇总项以本文件 Step 2 与 `shared/finding-format.md` 为准，改动任一侧必须同步另一侧。
 >
 > 注：`shared/`、`roles/`、workflow、门禁 hook 全部位于 `<SKILL_DIR>` 内，随 skill 一起安装，不依赖任何单个项目的目录结构。
 
 ### Step 2 — 汇总为 review-summary.md
 
-读取 `review/*.md`（含本轮重跑与沿用上轮的维度），汇总写入 `review-summary.md`：
+读取本轮候选和沿用维度的旧报告及角色交回的待核对条目，按 `shared/finding-format.md` 硬规则 4 先复核触发场景与级别、补正代码，再按范围分流。未核实但后果足以阻断的条目，要求原维度补证，保持 `BLOCKED`。待核对条目不另存文件。
+
+发布前按 `shared/closed-loop-verification.md` 逐维度核对历史 ID、开放台账和 Findings、旧开放 Blocker 的同 ID 处理依据、完整原发现与处理记录。失败列出维度及 ID，保留该维度旧报告和 `BLOCKED`；不比较当轮附录条数。按 `shared/gate-policy.md` 第 4 节沿用分发前的快照作为 `expected` 调用 `publish`，不重新取快照替换原版本，也不直接写入。
+
+汇总 `review-summary.md` 的候选如下：
 
 1. **摘要（给非设计者看）**：三句话说清「发现了什么 / 能不能开工 / 卡在哪」，不用专有名词。
 2. **业务影响地图**（新增）：按业务功能分组展示风险，让产品/项目经理快速判断影响范围：
@@ -170,17 +177,14 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
    | quota_usage 表 | 表结构 + 索引 | CONC-03 | 小（加字段和索引） |
    | staging_batch 表 | 表结构 + 状态机 | CONC-06 | 大（新增状态机逻辑） |
    ```
-4. **执行误报检测**：按 `shared/gate-policy.md` 第 4 节「不认可评审结论：驳回与 risk accepted」的规则检测可能的误报或过度建议（判据之一见 `shared/finding-format.md` 硬规则 4：写不出可复现触发场景的问题降级为 Major）。生成"疑似误报检测"区块，列出需要人工复核的 finding。
+4. **执行误报检测**：按 `shared/gate-policy.md` 第 4 节「不认可评审结论：驳回与 risk accepted」的规则检测可能的误报或过度建议（触发场景按 `shared/finding-format.md` 硬规则 4 核对，不因格式降级）。生成"疑似误报检测"区块，列出需要人工复核的 finding。
 5. **门禁裁决**：判定规则见 `shared/gate-policy.md`。**未闭环 Blocker 的判据是 findings 表中 `严重级别 = Blocker` 且 `闭环状态 = open`（含缺省）的项**；`closed` / `risk-accepted` / `false-positive` 一律不计入。**注意**：在计算裁决时，应考虑误报检测建议降级后的级别（如果用户选择应用自动降级）。
-6. **各维度结论一览表**：维度 | 结论 | Blocker 数 | Major 数 | Minor 数 | 本轮重跑/沿用上轮/未纳入/不适用。
+6. **各维度结论一览表**：维度 | 结论 | Blocker 数 | Major 数 | Minor 数 | 本轮重跑/沿用上轮/未纳入/不适用。「假设外观察」和「建议」不计入计数、维度结论或裁决，不写入汇总。
 7. **疑似误报检测**：列出可能的误报、过度建议、跨维度矛盾等，供人工复核。包含"自动降级建议"和"需人工判断"两类。
 8. **已确认风险详细清单**：按维度 + 严重级别汇总，使用完整的 10 字段表格（含"影响业务功能"、"涉及代码模块"和"闭环状态"）。
-9. **修改建议执行计划**：合并各维度建议，去重，明确标注：
-   - 需在 `design.md` 中补充的设计细节（如状态机图、CAS 算法）
-   - 需在 `tasks.md` 中新增的任务项（映射到具体 finding）
-   - 建议的任务优先级（P0/P1/P2）和依赖关系
+9. **待处理条件**：按 `shared/gate-policy.md` 第 1、5 节把开放 Major 和条件对应，保留条件原文，写明修复是否新增机制。实质阻断清零后交主会话询问，不先写入规划。
 10. **跨维度冲突清单（交叉验证核心产出）**：不同维度的建议互相矛盾时列出（如性能建议与安全建议冲突）。**冲突项必须在 `design.md` 中闭环，不能让矛盾的建议同时进入 `tasks.md`。**
-11. **「有条件通过」的条件清单**：`条件ID | 来源维度 | 条件内容 | 对应任务或行号 | 状态`。条件需要代码、测试、SQL、配置文件或交付文档时对应一项任务；只需修改规划产物时对应该产物的 `<文件>:<行号>`，修改走 `/opsx:update`。**既没有对应任务、也没有对应行号的条件视同 Blocker**（规则见 `shared/gate-policy.md`）。
+11. **「有条件通过」的条件清单**：格式与判据见 `shared/gate-policy.md` 第 1 节；「对应任务或行号」也接受只改规划的 `<文件>:<行号>`。新条件写 `待处理` 并记录来源 finding ID 与原文；未处理完保持 `BLOCKED`，不写定稿轮或提示签字。
 12. **上轮闭环验证结果**（仅重走门禁时）：哪些历史 finding 已闭环、哪些声称已闭环但实际未闭环，逐一给出对应的 `闭环状态` 取值。后者一律按未闭环 Blocker 计入裁决。
 13. **术语表**：只列本次评审实际出现的专有名词 → 白话解释。这是让签字人真正读懂 Blocker 的前提。
 14. **分级结论**：变更等级（L1/L2/L3，判定规则见 `shared/gate-levels.md`）+ 判定人 + 依据。L0 不进入本门禁，故此处的等级至少为 L1；MVP 且命中信号时写方案类型 MVP 与命中的信号。**同时确保变更目录 `overview.md` 开头有这一行**（没有该文件时创建只含文件头与分级行的最小 `overview.md`；已有分级行时改为本次判定，如 `/opsx:propose` 写的 L0 被本门禁判为 L2）—— 实现阶段的归档门禁从 `overview.md` 读等级，判定双轴评审是否必需（写法见 `shared/gate-levels.md`「分级决策责任」，文件头格式见 `../../openspec-change-overview/SKILL.md`）。
@@ -193,17 +197,11 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 
 ### Step 3 — 停在人工确认门禁
 
-输出汇总后，不进入 apply。裁决为 `READY_FOR_HUMAN_APPROVAL` 且有开放 Major 或 Minor 时，按 `shared/gate-policy.md` 第 5 节先用 AskUserQuestion 询问：Major 每条一问，Minor 可按维度合并。选项说明必须显示对应重走范围：
+输出汇总后，不进入 apply。实质 Blocker 或其他打回原因尚存时，不询问开放 Major；清零后按 `shared/gate-policy.md` 第 5 节处理开放 Major 与 Minor，不在此复制处理选项、推荐项或提问规则。
 
-- 在实现中修复：不重走；能写成任务时推荐。
-- risk accepted：不重走。
-- 移到后续变更：不重走；建议修复要求改变技术决策时推荐。
-- 改变技术决策：重走：列出按第 3 节确定的维度；不作为推荐项。
+需要用户选择或写入所选修复时，经共用写入入口先发布 `BLOCKED` 并释放保护。用户决定按第 4 节留痕；选择修复的条件用一次 `/opsx:update` 落地，首次定稿前也登记并核对。运行假设变化按方案变更登记并全量重审；处理、核对和重审未完不提示签字。
 
-按第 5 节写入用户选择。选择改变技术决策时，提示重走对应维度，不提示签字。其余处理完成且裁决保持 `READY_FOR_HUMAN_APPROVAL` 时，提示人工：
-- 审阅 `review-summary.md` 与 `review/*.md`；
-- 认可后在人工确认区写下 `Technical Review Approved`（可加签名/日期）；
-- 之后才可运行 `/opsx:apply` 进入实现。
+复核全部纳入维度、当前运行假设、条件落点和待完成撤销后，经共用入口发布 `READY_FOR_HUMAN_APPROVAL` 并写定稿轮，才提示用户审阅报告并在人工确认区写 `Technical Review Approved`。不得代签或直接进入 apply。
 
 若门禁为 `BLOCKED`，先判断是否命中 `shared/gate-policy.md` 第 6 节的收敛检查。命中时向用户列出：
 
@@ -211,7 +209,7 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 - risk accepted：不重走；按第 4 节留痕。
 - 继续修复：重走：按第 3 节列出受影响维度。
 
-选择收窄范围或 risk accepted 后，按事实源留痕并重新计算裁决，不启动评审子 agent。收窄范围必须先按第 5、6 节逐处核对全部差异并记录已核对版本，不替换原始输入。裁决同轮首次转为 `READY_FOR_HUMAN_APPROVAL` 时，按第 6 节写定稿轮、更新裁决，回到本节的定稿后处理。未命中收敛条件时，不提供收窄范围选项；需要继续修复时：
+选择收窄范围或 risk accepted 后，按事实源留痕并重新计算裁决，不启动评审子 agent。收窄范围必须先按第 5、6 节逐处核对全部差异并记录已核对版本，不替换原始输入。同轮先处理剩余条件，再核对待完成撤销，全部通过后才写定稿轮和更新裁决。未命中收敛条件时，不提供收窄范围选项；需要继续修复时：
 
 1. 回 `design.md` 闭环 Blocker；
 2. **在 `design.md` 末尾登记「评审意见闭环记录」区块**（列定义与闭合判定见 `shared/closed-loop-verification.md`，格式见 `shared/gate-policy.md`）—— 这是重走门禁时唯一能让新子 agent 知道「上轮提过什么、这轮改了什么」的载体，漏登记会导致上轮 Blocker 被静默跳过或被重复发现；
@@ -219,7 +217,7 @@ finding 字段、五条硬规则（影响业务功能 / 涉及代码模块 / 一
 
 ## 重走门禁（迭代回路）
 
-判定规则、牵连关系表、驳回与 risk accepted 留痕格式见 `shared/gate-policy.md`。定稿后先按第 5 节区分规划档位；方案变更才按第 3 节确定重走范围。执行层面：
+重走前的登记核对、旧正文不可用时的退路与范围外准入见 `shared/closed-loop-verification.md`「重走时的评审范围」。判定规则、牵连关系表、驳回与 risk accepted 留痕格式见 `shared/gate-policy.md`。定稿后先按第 5 节区分规划档位；方案变更才按第 3 节确定重走范围。执行层面：
 
 - **全量重走**：Workflow `{ "change": "<name>", "level": "L2" }`；交互式则重启全部纳入维度的子 agent。
 - **增量重走**：Workflow `{ "change": "<name>", "level": "L2", "roles": ["security"] }`（`roles` 必须在该等级的纳入维度内）；交互式只对指定维度重启子 agent，其余**纳入维度**读取上轮 `review/<role>.md` 参与汇总。未纳入维度不读取，在一览表标「未纳入」。

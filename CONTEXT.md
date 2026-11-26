@@ -101,7 +101,7 @@ CONTEXT.md 中某术语 `_Avoid_` 列出的其他叫法，是 STE 规则「一�
 _Avoid_: 禁词、敏感词、黑名单词
 
 **Trace Field（留痕字段）**:
-`/opsx:quality` 写的处理记录中写决策人的三个字段：双轴原始报告中驳回记录的「驳回人」、risk accepted 记录的「接受人」，以及 `review/sonar.md` 的「决策人」。agent 可以按用户对该 finding ID 或该 Sonar 行的 AskUserQuestion 回复写入，并写明回复来源（见 ADR-0009）。与签署字段无关。
+`/opsx:quality` 写的处理记录中写决策人的三个字段：双轴原始报告中驳回记录的「驳回人」、risk accepted 记录的「接受人」，以及 `review/sonar.md` 的「决策人」。agent 可以按用户对该 finding ID 或该 Sonar 行的 AskUserQuestion 回复写入，并写明回复来源（见 ADR-0009）。技术评审的处理记录也写决定人、日期及对应用户回复来源。与签署字段无关。
 _Avoid_: 代填字段、决策字段
 
 **Sign-off Field（签署字段）**:
@@ -157,7 +157,7 @@ _Avoid_: 签后计划台账、定稿改稿清单
 _Avoid_: 规划修改等级、规划变动级别
 
 **Operating Assumptions（运行假设）**:
-design.md 中固定三行的区块：使用者、威胁模型、规模上限。是技术评审判断 finding 是否成立的边界，L2/L3 与命中升级信号的 MVP 必须写。
+design.md 中固定三行的区块：用户、威胁模型、规模上限。是技术评审判断 finding 是否成立的边界，L2/L3 与命中升级信号的 MVP 必须写。
 _Avoid_: 运行前提、评审前提
 
 **Out-of-assumption Observation（假设外观察）**:

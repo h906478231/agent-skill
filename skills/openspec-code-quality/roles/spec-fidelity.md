@@ -13,6 +13,7 @@
 
 > `<SKILL_DIR>` = skill `openspec-code-quality` 的安装目录，由主 agent 在 prompt 中给出实际绝对路径。若 prompt 未给出，用 Glob 搜 `**/openspec-code-quality/SKILL.md` 取其所在目录。
 
+- **威胁模型**：约束流程内 agent 的检查按 `docs/adr/0016-review-threat-model-by-input-source.md` 评审出错与走捷径，其他判据不变。
 - **双轴职责、报告骨架与裁决**：`<SKILL_DIR>/shared/dual-axis-review.md`
 - **finding 字段与维度结论**：`<SKILL_DIR>/../openspec-technical-review/shared/finding-format.md`
 - **上轮闭环验证**（仅重跑时）：`<SKILL_DIR>/../openspec-technical-review/shared/closed-loop-verification.md`

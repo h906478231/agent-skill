@@ -65,7 +65,9 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
      openspec instructions <artifact-id> --change "<name>" --json
      ```
 
-   **定稿后登记（本仓自加）** —— 若 `review-summary.md` 有定稿轮，每次写入规划后按 `openspec-technical-review/shared/gate-policy.md` 第 5 节新增一行登记，写明规划档位。写入前保留修改前内容；写入后按第 5 节逐处对照全部差异与登记，核对通过才记录已核对版本。只在本次登记了方案变更时，在 `tasks.md` 写「规划更新内容仍待技术评审和人工确认」，并提示重走受影响维度；不修改签字行。
+   **受保护的规划登记**：与汇总登记同批写入的规划先准备候选；用户确认后通过 `openspec-technical-review/scripts/review-write.mjs` 的 `publish` 一次完成，不直接修改文件。按技术评审 `gate-policy.md` 第 4 节复核版本、先阻断，再替换规划与汇总。
+
+   **规划登记（本仓自加）** —— 对首次定稿前已选修复的条件落点、运行假设的变更以及定稿后的规划修改，按 `openspec-technical-review/shared/gate-policy.md` 第 5 节新增一行登记，写明规划档位；与规划通过共用入口同批写入。写入前保留修改前内容；写入后按第 5 节逐处对照全部差异与登记，核对通过才记录已核对版本。只在本次登记了方案变更时，在 `tasks.md` 写「规划更新内容仍待技术评审和人工确认」，并提示重走受影响维度；不修改签字行。运行假设按 `openspec-explore/shared/operating-assumptions.md` 核对，有变更时该批相关修改均登记为方案变更，优先于条件落点；保持 `BLOCKED`，全量重审前不得定稿。首次定稿前按原条件逐处核对并记已核对版本，不填写定稿轮，不替换原始评审输入与登记基线。
 
    **STE 检查（本仓自加，非上游原文）** —— 修改产物后运行 `node <STE> check <changeRoot>`（`<STE>` = skill `openspec-ste` 的 `scripts/ste-lint.mjs`，skill 目录随 agent 而不同；找不到时用 Glob 搜 `**/openspec-ste/scripts/ste-lint.mjs`），按该 skill 的 `shared/gate-check.md` 的「Update」列处理结果；找不到脚本时在输出中写明「STE 检查已跳过：未找到 openspec-ste（<原因>）」，不得静默跳过。
 

@@ -31,7 +31,7 @@ Implement tasks from an OpenSpec change.
 
    Full rules live in the sibling skill `openspec-technical-review`, file `../openspec-technical-review/shared/apply-gate-check.md` relative to this SKILL.md (all skills sit flat under one skills root). **Do not hardcode an absolute path** — the skills root differs per agent (`~/.claude/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `~/.cursor/skills/`, a project-level `.claude/skills/`, …). If the relative path does not resolve, Glob for `**/openspec-technical-review/shared/apply-gate-check.md`. **Read that file and follow it exactly.** In short: no `review-summary.md` → ALLOW (change has no gate enabled); has `review-summary.md` but blank sign-off placeholder or verdict `BLOCKED` → STOP, write no implementation code. Never sign on the user's behalf, edit the sign-off line, or talk the user into skipping this.
 
-   按 `../openspec-technical-review/shared/apply-gate-check.md` 核对规划与登记；如需人工确认，在确认返回后、首次写入前按同一规则重新读取并核对，不沿用已变化版本的确认。
+   按 `../openspec-technical-review/shared/apply-gate-check.md` 先固定准入快照，再核对规划、条件状态与登记；如需人工确认，在确认返回后、首次写入前按同一规则重新读取并核对，不沿用已变化版本的确认。
 
    The `PreToolUse` hook cannot see skill/slash-command invocations — this step is the only check on that path, so do not skip it.
 
@@ -79,6 +79,8 @@ Implement tasks from an OpenSpec change.
    - Progress: "N/M tasks complete"
    - Remaining tasks overview
    - Dynamic instruction from CLI
+
+   **首次实施写入前的最终准入** —— 按 `../openspec-technical-review/shared/apply-gate-check.md`「条件状态和最终准入」用 `review-write.mjs admit` 复核之前固定的核对版本；启用技术评审时，无条件或无需再次确认也执行。准入失败时不得写任务基线或实施文件。
 
    **基线任务数（本仓自加，非上游原文）** —— 首次 apply（`tasks.md` 还没有任何 `- [x]`，且开头没有基线行）时，在 `tasks.md` 一级标题之后写一行 `基线任务数：N（YYYY-MM-DD 首次 apply）`，N 为当前 checkbox 总数。该行不是 checkbox，不影响进度解析，之后不修改。已有该行时，比较当前 checkbox 总数与 N：新增任务 > N × 50%，或新增能力、新增顶层模块，按 `../openspec-update-change/SKILL.md`「范围扩展拆分提示」询问用户并记录到 `discussion-log.md`。 将基线行插在一级标题下一行，不改变原有空行；评审版本的比较规则见 `../openspec-technical-review/shared/gate-policy.md` 第 5 节。
 
