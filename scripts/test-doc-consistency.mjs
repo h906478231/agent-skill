@@ -139,6 +139,79 @@ test('运行假设：评审在分级后检查必选区块，单独入口沿用�
   assert.match(await read('claude/commands/opsx/review.md'), /前置校验[^\n]*运行假设/)
 })
 
+/** 方向判据表与三行示例的表头：只允许出现在 operating-assumptions.md。 */
+const DIRECTION_TABLES = [/^\| 方向 \| 判据 \| 规划档位 \| 重走范围 \|$/m, /^\| 行 \| 收窄 \| 放宽 \|$/m]
+
+test('运行假设修改：事实源按措辞、收窄、放宽确定重走范围，收窄由用户选择并留痕', async () => {
+  const rules = await read(OPERATING_ASSUMPTIONS)
+  const section = rules.split('## 修改运行假设\n')[1]?.split('\n## ')[0]
+  assert.ok(section, '缺少「修改运行假设」一节')
+  for (const table of DIRECTION_TABLES) assert.match(section, table)
+  for (const direction of ['措辞', '收窄', '放宽']) assert.match(section, new RegExp(`^\\| ${direction} \\|`, 'm'), direction)
+  for (const row of ['用户', '威胁模型', '规模上限']) assert.match(section, new RegExp(`^\\| ${row} \\|[^\\n]*\\|[^\\n]*\\|$`, 'm'), row)
+  assert.match(section, /^\| 放宽 \|[^\n]*方案变更[^\n]*全部纳入维度/m)
+  assert.match(section, /既有收窄又有放宽[^\n]*无法判断[^\n]*按放宽处理/)
+  assert.match(section, /收窄[^\n]*用户选择[^\n]*「用户选择：」[^\n]*原值、新值与触发阈值/)
+  assert.match(section, /措辞[^\n]*用户选择[^\n]*「用户选择：」/)
+  assert.match(section, /「agent 判定：」[^\n]*措辞[^\n]*收窄[^\n]*按放宽处理/)
+  assert.match(section, /显示原值、新值与所依据的方向判据行/)
+  assert.match(section, /收窄不关闭开放的 finding/)
+  assert.match(section, /已有的开放 Blocker 与 Major[^\n]*不因[^\n]*收窄后的假设外[^\n]*改变状态/)
+  assert.match(section, /放宽[^\n]*引用该行收窄的 risk accepted[^\n]*改回 `open`/)
+  assert.doesNotMatch(rules, /三行任一行修改都按/)
+})
+
+test('运行假设修改：门禁策略、Step 3 与 update 只在放宽时全量重走，引用事实源不复制方向表', async () => {
+  const policy = await read(`${REVIEW_RULES}/gate-policy.md`)
+  const rerun = policy.split('## 2. 什么时候重走门禁')[1]?.split('\n## 3.')[0]
+  assert.ok(rerun, '缺少第 2 节')
+  assert.match(rerun, /^\|[^\n]*放宽运行假设[^\n]*\|[^\n]*\*\*全量重走\*\*/m)
+  assert.match(rerun, /^\|[^\n]*措辞或收窄运行假设[^\n]*\|[^\n]*\*\*不重走\*\*/m)
+  assert.match(rerun, /operating-assumptions\.md/)
+  assert.doesNotMatch(rerun, /修改运行假设的任一行/)
+  const finalize = policy.split('### 定稿前处理开放 finding\n')[1]?.split('\n### ')[0]
+  assert.ok(finalize, '缺少定稿前处理开放 finding')
+  const fixRow = finalize.split('\n').find(line => line.startsWith('| 修复 |'))
+  assert.match(fixRow, /只收窄运行假设[^|]*条件落点/)
+  assert.match(fixRow, /放宽运行假设时全量重走/)
+  assert.match(finalize, /运行假设放宽[^\n]*全量重走[^\n]*优先于条件落点/)
+  assert.doesNotMatch(finalize, /运行假设变化及依赖修改/)
+  const step = (await read('skills/openspec-technical-review/SKILL.md')).split('### Step 3')[1].split('## 重走门禁')[0]
+  assert.match(step, /运行假设放宽[^\n]*全量重审/)
+  assert.match(step, /operating-assumptions\.md/)
+  assert.doesNotMatch(step, /运行假设变化按方案变更登记/)
+  for (const file of ['skills/openspec-update-change/SKILL.md', 'claude/commands/opsx/update.md']) {
+    const register = (await read(file)).split('**规划登记（本仓自加）**')[1]?.split('\n')[0]
+    assert.ok(register, `${file} 缺少规划登记`)
+    assert.match(register, /operating-assumptions\.md[^\n]*放宽[^\n]*方案变更/, file)
+    assert.match(register, /措辞[^\n]*收窄[^\n]*用户选择/, file)
+    assert.doesNotMatch(register, /有变更时该批相关修改均登记为方案变更/, file)
+  }
+  for (const file of [`${REVIEW_RULES}/gate-policy.md`, 'skills/openspec-technical-review/SKILL.md', 'skills/openspec-update-change/SKILL.md', 'claude/commands/opsx/update.md']) {
+    const text = await read(file)
+    for (const table of DIRECTION_TABLES) assert.doesNotMatch(text, table, file)
+  }
+})
+
+test('运行假设修改：第 5 节范围收窄判据包含用户选择的运行假设收窄', async () => {
+  const policy = await read(`${REVIEW_RULES}/gate-policy.md`)
+  const section = policy.split('## 5. 定稿与签字后修改')[1]?.split('\n## 6.')[0]
+  assert.ok(section, '缺少第 5 节')
+  assert.match(section, /^\| 范围收窄 \|[^\n]*用户选择的运行假设收窄[^\n]*operating-assumptions\.md/m)
+})
+
+test('运行假设修改：update 的规划登记引用事实源写措辞与收窄的说明，不只转述收窄', async () => {
+  const section = (await read(OPERATING_ASSUMPTIONS)).split('## 修改运行假设\n')[1]?.split('\n## ')[0]
+  assert.ok(section, '缺少「修改运行假设」一节')
+  assert.match(section, /措辞由用户选择后[^\n]*「用户选择：」[^\n]*原值与新值[^\n]*含义不变的理由/)
+  for (const file of ['skills/openspec-update-change/SKILL.md', 'claude/commands/opsx/update.md']) {
+    const register = (await read(file)).split('**规划登记（本仓自加）**')[1]?.split('\n')[0]
+    assert.ok(register, `${file} 缺少规划登记`)
+    assert.match(register, /说明[^\n]*operating-assumptions\.md`「修改运行假设」/, file)
+    assert.doesNotMatch(register, /收窄写原值、新值与触发阈值/, file)
+  }
+})
+
 test('运行假设：技术评审与两轴质量角色引用 ADR-0016', async () => {
   const adr = /docs\/adr\/0016-review-threat-model-by-input-source\.md/
   const format = await read(`${REVIEW_RULES}/finding-format.md`)
@@ -196,7 +269,7 @@ test('重走范围：登记覆盖核对失败时不沿用，并限制范围外 B
   const verdict = policy.split('## 1. 门禁裁决')[1].split('\n## 2.')[0]
   assert.match(verdict, /Blocker 与 Major[^\n]*按不修的后果/)
   assert.match(verdict, /条件原文[^\n]*修复是否新增机制/)
-  assert.match(policy, /^\|[^\n]*修改运行假设[^\n]*全量重走/m)
+  assert.match(policy, /^\|[^\n]*放宽运行假设[^\n]*全量重走/m)
 })
 
 test('撤销：首次替换同时止住放行，核对同次决定后才清除', async () => {
@@ -247,7 +320,7 @@ test('定稿：处理表有四项，先处理条件再提示签字', async () =>
   for (const word of ['修复', 'risk accepted', '误报', '移到后续变更']) assert.ok(table.includes(word), word)
   assert.doesNotMatch(table, /改变技术决策/)
   assert.match(step, /超过 4 条[^\n]*表/)
-  assert.match(step, /修复[^\n]*运行假设[^\n]*全量重走/)
+  assert.match(step, /修复[^\n]*放宽运行假设[^\n]*全量重走/)
   const conditions = rules.split('## 1. 门禁裁决')[1].split('## 2.')[0]
   assert.match(conditions, /待处理[^]*已写入[^]*risk-accepted[^]*false-positive[^]*deferred/)
   assert.match(conditions, /缺来源[^\n]*Blocker/)
@@ -371,6 +444,28 @@ test('规划登记：verify 按条件落点的两种来源核对', async () => {
   assert.match(section, /超出用户选择[^\n]*CRITICAL/)
 })
 
+test('运行假设修改：verify 核对收窄与措辞登记由用户选择，收窄写阈值且只收窄', async () => {
+  const text = await read(`${REVIEW_RULES}/phase6-verification.md`)
+  const section = text.split('## 核对签字后规划修改的档位\n')[1]?.split('\n## ')[0]
+  assert.ok(section)
+  assert.match(section, /范围收窄行或条件落点行修改运行假设[^\n]*「用户选择：」[^\n]*原值、新值与触发阈值[^\n]*只收窄/)
+  assert.match(section, /措辞行修改运行假设[^\n]*「用户选择：」[^\n]*含义不变/)
+  assert.match(section, /operating-assumptions\.md/)
+  for (const table of DIRECTION_TABLES) assert.doesNotMatch(text, table)
+})
+
+test('运行假设修改：ADR-0019 取代 grill Q9，两份流程文档只在放宽时全量重审', async () => {
+  const adr = await read('docs/adr/0019-operating-assumption-change-by-direction.md')
+  assert.match(adr, /^# ADR-0019: /)
+  assert.match(adr, /取代[^\n]*grill Q9/)
+  assert.ok(adr.includes('任一行修改都全量重审'), 'ADR 缺少被取代的决定原文')
+  for (const file of ['workflow/OpenSpec-工作流速览.md', PROCESS_DOC]) {
+    const text = await read(file)
+    assert.match(text, /放宽运行假设[^\n]*全量重审/, file)
+    assert.doesNotMatch(text, /修改运行假设 →|运行假设改变则先全量重审/, file)
+  }
+})
+
 test('规划登记：统一语言区分定稿轮、签字后规划修改登记与规划档位', async () => {
   const text = await read('CONTEXT.md')
   for (const term of ['定稿轮', '签字后规划修改登记', '规划档位', '修改档位']) {
@@ -385,7 +480,7 @@ test('定稿前处理：Step 3 先排除实质阻断，只引用处理表与推�
   assert.match(step, /实质 Blocker[^\n]*不询问开放 Major/)
   assert.match(step, /gate-policy\.md` 第 5 节/)
   assert.match(step, /先发布 `BLOCKED` 并释放保护/)
-  assert.match(step, /运行假设变化[^\n]*全量重审/)
+  assert.match(step, /运行假设放宽[^\n]*全量重审/)
   assert.doesNotMatch(step, /改变技术决策|推荐 risk accepted/)
 })
 

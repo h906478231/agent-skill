@@ -23,10 +23,12 @@ const Workflow = Object.getPrototypeOf(async function () {}).constructor
 async function run(args, { reviewResult, capture, coverage } = {}) {
   const labels = []
   const reviewPrompts = []
+  const prompts = {}
   const baseline = { assumptionsValid: true, proposal: '固定方案正文', design: '固定设计正文', originalHashes: { 'proposal.md': 'a'.repeat(64), 'design.md': 'b'.repeat(64), 'tasks.md': 'c'.repeat(64) }, tasksHash: 'd'.repeat(64), registrationBase: 4 }
   let summaryPrompt = ''
   const agent = async (prompt, { label }) => {
     labels.push(label)
+    prompts[label] = prompt
     if (label === 'capture-input') return { ...baseline, ...capture }
     if (label === 'check-coverage') return coverage ?? { status: 'covered', roles: args.roles ?? [], locations: ['design.md:10-11'] }
     if (label.startsWith('review:')) reviewPrompts.push(prompt)
@@ -39,7 +41,7 @@ async function run(args, { reviewResult, capture, coverage } = {}) {
   const parallel = fns => Promise.all(fns.map(fn => fn()))
   const workflow = new Workflow('args', 'agent', 'parallel', 'phase', 'log', body)
   const result = await workflow(args, agent, parallel, () => {}, () => {})
-  return { result, reviewed: labels.filter(l => l.startsWith('review:')).map(l => l.slice(7)), summaryPrompt, labels, reviewPrompts }
+  return { result, reviewed: labels.filter(l => l.startsWith('review:')).map(l => l.slice(7)), summaryPrompt, labels, reviewPrompts, prompts }
 }
 
 test('缺 change 直接报错，不回落到演示变更', async () => {
@@ -172,6 +174,20 @@ test('重走范围：版本匹配仍须核对逐处登记，运行假设变化�
   const changed = await run(args, { coverage: { status: 'assumptions-changed', roles: ['security'], locations: ['design.md:91-92'] } })
   assert.deepEqual(changed.reviewed, ['database', 'security'])
   assert.ok(changed.reviewPrompts.every(prompt => !prompt.includes('design.md:91-92')))
+})
+
+test('重走范围：运行假设修改按方向判据比较旧值与新值，只在放宽等情况返回 assumptions-changed', async () => {
+  const { prompts } = await run({ change: 'demo', level: 'L1', roles: ['security'], changedLocations: {
+    locations: ['design.md:91-92'], originalHashes: { 'proposal.md': 'a'.repeat(64), 'design.md': 'b'.repeat(64), 'tasks.md': 'c'.repeat(64) },
+  } })
+  const check = prompts['check-coverage']
+  assert.ok(check, '没有运行范围核对')
+  assert.match(check, /operating-assumptions\.md/)
+  assert.match(check, /登记为措辞、范围收窄还是条件落点[^\n]*方向判据[^\n]*旧值与新值/)
+  assert.match(check, /放宽、新增数量对象、含义变化、混合或无法判断[^\n]*assumptions-changed/)
+  assert.match(check, /措辞登记的说明不以「用户选择：」开头[^\n]*assumptions-changed/)
+  assert.match(check, /范围收窄或条件落点登记的说明不以「用户选择：」开头或未写触发阈值[^\n]*assumptions-changed/)
+  assert.doesNotMatch(check, /检查运行假设是否变化；变化返回 assumptions-changed/)
 })
 
 const writeScript = fileURLToPath(new URL('../skills/openspec-technical-review/scripts/review-write.mjs', import.meta.url))
@@ -638,7 +654,10 @@ test('定稿：汇总先阻断并转交待处理条件，运行假设变化不�
   assert.match(summaryPrompt, /新条件[^\n]*待处理[^\n]*来源 finding ID/)
   assert.match(summaryPrompt, /修复是否新增机制/)
   assert.match(summaryPrompt, /收窄[^\n]*接受风险[^\n]*先处理条件再定稿/)
-  assert.match(summaryPrompt, /运行假设[^\n]*变化[^\n]*全量重审/)
+  const item16 = summaryPrompt.split('\n').find(line => line.startsWith('16)'))
+  assert.match(item16, /运行假设放宽[^\n]*BLOCKED[^\n]*全量重审/)
+  assert.doesNotMatch(summaryPrompt, /运行假设有变化须保持 BLOCKED/)
+  assert.match(summaryPrompt, /归入假设外观察[^\n]*只适用于本轮新发现的待核对条目/)
   assert.match(summaryPrompt, /交主会话[^\n]*BLOCKED/)
 })
 

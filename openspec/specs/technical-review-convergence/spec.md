@@ -9,16 +9,16 @@
 
 裁决首次为 `READY_FOR_HUMAN_APPROVAL` 的一轮 SHALL 是定稿轮。汇总 SHALL 在 `review-summary.md` 的「定稿与签字后修改」节写出 `定稿轮：R<n>`。因方案变更重走门禁后，新一轮的裁决再次为 `READY_FOR_HUMAN_APPROVAL` 时，定稿轮 SHALL 改为该轮。
 
-仍有实质 Blocker 或其他打回原因时，主会话 SHALL 不询问开放 Major 的处理方式。排除这些原因后，主会话 SHALL 在定稿与提示签字前，请用户为每条开放 Major 选择处理方式；不得要求先有可签字裁决。只待用户选择或写入已选修复时，机器可读裁决 SHALL 保持 `BLOCKED`，正文写明「待条件处理」，该等待状态 SHALL 不计为 Blocker。条件处理完成后，SHALL 先确认当前运行假设与本轮固定输入一致，再核对任务、行号或处理记录，才可发布可签字裁决。无法核对时 SHALL 保持 `BLOCKED`。全部发布可签字裁决的入口 SHALL 遵守 `review-operating-assumptions` 的撤销规则，包含条件处理完成后的发布。首次定稿前的条件落点也 SHALL 登记并逐处核对，保留评审输入版本与登记基线。Minor SHALL 可以按维度一次选择。可选的处理 SHALL 为：
+仍有实质 Blocker 或其他打回原因时，主会话 SHALL 不询问开放 Major 的处理方式。排除这些原因后，主会话 SHALL 在定稿与提示签字前，请用户为每条开放 Major 选择处理方式；不得要求先有可签字裁决。只待用户选择或写入已选修复时，机器可读裁决 SHALL 保持 `BLOCKED`，正文写明「待条件处理」，该等待状态 SHALL 不计为 Blocker。条件处理完成后，SHALL 先确认当前运行假设与本轮固定输入一致，或差异只有用户选择的措辞与收窄（判据见 `review-operating-assumptions`），再核对任务、行号或处理记录，才可发布可签字裁决。无法核对时 SHALL 保持 `BLOCKED`。全部发布可签字裁决的入口 SHALL 遵守 `review-operating-assumptions` 的撤销规则，包含条件处理完成后的发布。首次定稿前的条件落点也 SHALL 登记并逐处核对，保留评审输入版本与登记基线。Minor SHALL 可以按维度一次选择。可选的处理 SHALL 为：
 
 | 处理 | 规划修改 | 重走门禁 | 条件状态 |
 |---|---|---|---|
-| 修复 | 签字前用一次 `/opsx:update` 写入修复；未修改运行假设时登记为条件落点 | 不重走；修改运行假设时全量重走 | `已写入` |
+| 修复 | 签字前用一次 `/opsx:update` 写入修复；未修改运行假设或只收窄运行假设时登记为条件落点 | 不重走；放宽运行假设时全量重走 | `已写入` |
 | risk accepted | 按 `gate-policy.md` 第 4 节写接受记录与复查触发阈值 | 不重走 | `risk-accepted` |
 | 误报 | 按 `gate-policy.md` 第 4 节写驳回记录 | 不重走 | `false-positive` |
 | 移到后续变更 | 台账状态为 `deferred`，处理记录写去向 | 不重走 | `deferred` |
 
-选 risk accepted、误报或移到后续变更时，修改者 SHALL 只留痕，SHALL 不修改 proposal、design、specs 与 tasks。有最近一次未撤销且与状态相符的处理记录后，这三种处理 SHALL 不阻断签字、apply、verify 与 archive。未修改运行假设时，修复新增的机制 SHALL 由 quality 与 verify 验收，SHALL 不让技术评审重走。修复修改运行假设时，update SHALL 将变化与依赖新假设的修改按方案变更登记，不得登记为条件落点。汇总 SHALL 保留原评审输入与 `BLOCKED`，全部纳入维度按新假设重审前不得定稿或提示签字。
+选 risk accepted、误报或移到后续变更时，修改者 SHALL 只留痕，SHALL 不修改 proposal、design、specs 与 tasks。有最近一次未撤销且与状态相符的处理记录后，这三种处理 SHALL 不阻断签字、apply、verify 与 archive。未修改运行假设或只收窄运行假设时，修复新增的机制 SHALL 由 quality 与 verify 验收，SHALL 不让技术评审重走。只收窄运行假设的修复，登记行的说明 SHALL 写出原值、新值与触发阈值。修复放宽运行假设，或方向无法判断时，update SHALL 将变化与依赖新假设的修改按方案变更登记，不得登记为条件落点。方向的判据见 `review-operating-assumptions`。汇总 SHALL 保留原评审输入与 `BLOCKED`，全部纳入维度按新假设重审前不得定稿或提示签字。
 
 推荐项 SHALL 取下列规则中第一条符合的：
 
@@ -27,7 +27,7 @@
 3. 修复要新增状态、持久文件、子命令或协议，并且不修的后果是误拒绝或交回会话处理：推荐 risk accepted。
 4. 其他情况：推荐移到后续变更。
 
-每个选项的说明 SHALL 写出修复是否新增机制，以及重走范围。修改运行假设的修复 SHALL 写「全量重走」，其他选项 SHALL 写「不重走」。开放的 Major 不超过 4 条时，主会话 SHALL 用 AskUserQuestion 逐条询问。超过 4 条时，主会话 SHALL 先输出一张表，列为 `ID | 一句话白话 | 推荐处理 | 理由`，再请用户确认整张表或改写其中的行。用户的回复 SHALL 写入处理记录的来源。
+每个选项的说明 SHALL 写出修复是否新增机制，以及重走范围。放宽运行假设的修复 SHALL 写「全量重走」，其他选项 SHALL 写「不重走」。开放的 Major 不超过 4 条时，主会话 SHALL 用 AskUserQuestion 逐条询问。超过 4 条时，主会话 SHALL 先输出一张表，列为 `ID | 一句话白话 | 推荐处理 | 理由`，再请用户确认整张表或改写其中的行。用户的回复 SHALL 写入处理记录的来源。
 
 #### Scenario: 定稿轮选择修复的 Major 一次写入，不重走
 - **WHEN** R5 无实质 Blocker 或其他打回原因，有 7 条开放 Major，用户对 3 条选择修复，对 4 条选择 risk accepted
@@ -40,7 +40,7 @@
 - **THEN** update 把额度写入 design 与 tasks，登记表的规划档位为条件落点
 - **AND** 下一步提示签字，不提示 `/opsx:review`
 
-#### Scenario: 修复 Major 修改运行假设时先全量重审
+#### Scenario: 修复 Major 放宽运行假设时先全量重审
 - **WHEN** 用户选择修复 Major，update 将运行假设的规模上限从 50 改为 100
 - **THEN** 该修改和依赖新上限的修改登记为方案变更，不登记为条件落点
 - **AND** 裁决保留 `BLOCKED`，不写定稿轮、不提示签字
@@ -74,6 +74,11 @@
 - **WHEN** R3 的裁决为 `BLOCKED`，有 2 条 Blocker 与 9 条 Major
 - **THEN** 汇总只请用户处理 Blocker，9 条 Major 在台账中保持 `open`
 
+#### Scenario: 修复 Major 只收窄运行假设时不重走
+- **WHEN** 用户对 PERF-02 选择修复，修复把运行假设的规模上限从 100 改为 20，条件原文写明该上限
+- **THEN** 该修改登记为条件落点，说明写出原值、新值与触发阈值
+- **AND** 条件状态为 `已写入`，下一步提示签字，不提示 `/opsx:review`
+
 ### Requirement: 定稿后的规划修改 SHALL 登记规划档位
 
 定稿轮之后，每次修改 `proposal.md`、`design.md`、`specs/` 或 `tasks.md`，修改者 SHALL 在 `review-summary.md` 的「定稿与签字后修改」节的登记表写一行。列 SHALL 为 `序号 | 日期 | 轮次 | 文件:行号 | 关联 | 规划档位 | 说明`。「关联」SHALL 写 finding ID 或条件编号。规划档位 SHALL 取下表中的一个值：
@@ -82,7 +87,7 @@
 |---|---|
 | 措辞 | 只改用词、错别字或排版。SHALL、场景、决策与任务的含义不变 |
 | 条件落点 | 只写入汇总已列的条件，或用户已选的处理。写入的内容不超出条件原文 |
-| 范围收窄 | 只移除需求、场景或任务，不增加行为。保留部分不再引用移除的内容 |
+| 范围收窄 | 只移除需求、场景或任务，不增加行为。保留部分不再引用移除的内容。也包含用户选择的运行假设收窄，判据见 `review-operating-assumptions` |
 | 方案变更 | 其他修改，包含新增或改变决策、机制、持久文件、状态、需求与场景的行为 |
 
 判据不确定时，规划档位 SHALL 取方案变更。
@@ -191,9 +196,14 @@ update SHALL 按上述规则核对本批差异。只在登记了方案变更时�
 - **WHEN** 汇总没有「定稿与签字后修改」节，规划输入版本与当前文件不同
 - **THEN** apply 前置校验停止，提示重走门禁
 
+#### Scenario: 运行假设收窄登记为范围收窄
+- **WHEN** 签字之后，用户选择把「用户」一行从 3 个人改为单用户，登记行说明以「用户选择：」开头并写出触发阈值
+- **THEN** 登记行的规划档位为范围收窄，签字不失效
+- **AND** apply 前置校验请用户确认该行的规划档位
+
 ### Requirement: verify SHALL 核对签字后规划修改的档位
 
-verify SHALL 读取登记表中规划档位为措辞、条件落点、范围收窄的行，按判据核对对应位置的内容。范围收窄行关闭了 Blocker 时，verify SHALL 另外核对该 Blocker「位置」与「涉及代码模块」列出的内容已从保留的 design、specs、tasks 中移除。内容不符合判据时，verify SHALL 记一条 CRITICAL，写出登记序号、`文件:行号` 与不符合的判据。
+verify SHALL 读取登记表中规划档位为措辞、条件落点、范围收窄的行，按判据核对对应位置的内容。范围收窄行关闭了 Blocker 时，verify SHALL 另外核对该 Blocker「位置」与「涉及代码模块」列出的内容已从保留的 design、specs、tasks 中移除。范围收窄行或条件落点行修改运行假设时，verify SHALL 另外核对：说明以「用户选择：」开头，写出原值、新值与触发阈值，并且新值按 `review-operating-assumptions` 的判据只收窄。措辞行修改运行假设时，verify SHALL 另外核对：说明以「用户选择：」开头，并且含义不变。内容不符合判据时，verify SHALL 记一条 CRITICAL，写出登记序号、`文件:行号` 与不符合的判据。
 
 #### Scenario: 条件落点超出条件原文
 - **WHEN** 一行登记为条件落点，对应位置写入了条件原文之外的新机制
@@ -206,6 +216,18 @@ verify SHALL 读取登记表中规划档位为措辞、条件落点、范围收�
 #### Scenario: 收窄范围关闭的 Blocker 位置仍在保留规划中
 - **WHEN** 一行范围收窄关闭了一条 Blocker，该 Blocker 的位置是 design 的决策 D3，D3 仍在 design 中
 - **THEN** verify 记 CRITICAL，写出该行序号与 `design.md` 中 D3 的行号
+
+#### Scenario: 运行假设措辞登记由 agent 判定
+- **WHEN** 一行登记为措辞，修改了运行假设的「用户」一行，说明以「agent 判定：」开头
+- **THEN** verify 记 CRITICAL，写出该行序号与「运行假设措辞未由用户选择」
+
+#### Scenario: 登记为范围收窄的运行假设修改实际放宽
+- **WHEN** 一行登记为范围收窄，说明以「用户选择：」开头，对应位置把规模上限从 10 改为 50
+- **THEN** verify 记 CRITICAL，写出该行序号与「运行假设放宽，不属于范围收窄」
+
+#### Scenario: 运行假设收窄缺少触发阈值
+- **WHEN** 一行登记为范围收窄，把规模上限从 50 改为 10，说明没有写触发阈值
+- **THEN** verify 记 CRITICAL，写出该行序号与「缺少触发阈值」
 
 ### Requirement: 第 3 轮起的评审汇总 SHALL 写收敛检查
 

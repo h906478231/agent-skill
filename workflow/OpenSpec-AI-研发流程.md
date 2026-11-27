@@ -970,7 +970,7 @@ finding 的 10 个字段、五条硬规则与「建议修复」的写法由 `ski
 
 先排除实质 Blocker 和其他打回原因，再让用户处理开放 Major；处理和核对完成前，保持 `BLOCKED`，不写定稿轮。条件状态、处理选项、推荐项和提问方式以 [门禁规则第 1、5 节](../skills/openspec-technical-review/shared/gate-policy.md) 为准。
 
-修复经一次 `/opsx:update` 落到任务或 `<文件>:<行号>`；其他决定按对应有效处理记录核对。运行假设改变则先全量重审。apply 不补写条件；verify 核对当前记录，归档在同一次写入保护内复核报告版本和对应实现指纹。移动后才按确认同步主规格。
+修复经一次 `/opsx:update` 落到任务或 `<文件>:<行号>`；其他决定按对应有效处理记录核对。放宽运行假设时先全量重审，措辞与用户选择的收窄不重走（方向判据见[运行假设](../skills/openspec-explore/shared/operating-assumptions.md)）。apply 不补写条件；verify 核对当前记录，归档在同一次写入保护内复核报告版本和对应实现指纹。移动后才按确认同步主规格。
 
 ---
 
